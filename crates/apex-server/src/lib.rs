@@ -618,13 +618,14 @@ impl Server {
     /// yet (the proposal is in flight) is left alone.
     /// A window's notification follows its status: raised when the
     /// status comes to ask for the user (done, blocked, error) -- in the
-    /// name of whoever said it, so a tool's goes with the tool -- and
-    /// the window shown; raised already, no matter; lowered when the
+    /// name of whoever said it, so a tool's goes with the tool -- the
+    /// layout left as it is (its handle, its strip's or its stash card
+    /// says so wherever it is); raised already, no matter; lowered when the
     /// status no longer asks. Between, the user may take it, and the
     /// status stays. Another of the three is news again (blocked, then
     /// done); the same one with other words is not. Statuses that stood
     /// when the daemon came up are where they were: their flags too.
-    pub fn status_flags(&mut self, log: &mut Log, view: &mut Node) -> Vec<Proposal> {
+    pub fn status_flags(&mut self, log: &mut Log, view: &mut Node) {
         use apex_core::status::State;
         let now: HashMap<WindowId, (State, AttachmentId)> = view
             .state
@@ -632,13 +633,11 @@ impl Server {
             .keys()
             .filter_map(|&w| view.window_status(w).filter(|s| matches!(s.state, State::Done | State::Blocked | State::Error)).map(|s| (w, (s.state, s.by))))
             .collect();
-        let Some(was) = self.asking.replace(now.iter().map(|(w, (s, _))| (*w, *s)).collect()) else { return Vec::new() };
-        let mut out = Vec::new();
+        let Some(was) = self.asking.replace(now.iter().map(|(w, (s, _))| (*w, *s)).collect()) else { return };
         for (&w, &(state, by)) in &now {
             if was.get(&w) != Some(&state) {
                 let e = log.notify(by, w);
                 let _ = view.state.apply(Shard::Meta, &e);
-                out.push(Proposal::Notice { window: w });
             }
         }
         for &w in was.keys().filter(|w| !now.contains_key(w)) {
@@ -647,7 +646,6 @@ impl Server {
                 let _ = view.state.apply(Shard::Meta, &e);
             }
         }
-        out
     }
 
     pub fn close_orphan_terms(&mut self, log: &mut Log, view: &Node) {

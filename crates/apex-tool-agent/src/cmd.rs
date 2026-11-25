@@ -9,7 +9,7 @@ use crate::event::{self, Tail};
 use crate::{hook, install, win};
 
 fn usage() -> ! {
-    eprintln!("usage: apex tool agent [-cwd DIR] [-a] [-all] [-thoughts] [-quiet]");
+    eprintln!("usage: apex tool agent [-cwd DIR] [-a] [-all] [-thoughts]");
     eprintln!("       apex tool agent install|uninstall [claude|codex|muse|pi]...");
     eprintln!("       apex tool agent ls | wait ID | events [-all]");
     eprintln!("       apex tool agent hook claude|codex|muse|pi");
@@ -78,7 +78,8 @@ fn parse_pane(args: &[String]) -> win::Opts {
             "-a" | "--a" => opts.pane = true,
             "-thoughts" | "--thoughts" => opts.thoughts = true,
             "-all" | "--all" => opts.all = true,
-            "-quiet" | "--quiet" => opts.quiet = true,
+            // its notes in +Errors are gone; the flag is still taken
+            "-quiet" | "--quiet" => {}
             _ => usage(),
         }
     }

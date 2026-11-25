@@ -315,8 +315,10 @@ fn standing(a: &crate::agent::Agent, t: &Turn) -> String {
         return String::new();
     }
     if a.state == State::Asking {
-        let what = a.asked.as_deref().map(|c| format!(": {c}")).unwrap_or_default();
-        return format!("<p class=\"ax-standing\">Needs you{} — answer in its terminal (⌘↩)</p>\n\n", escape(&what));
+        // that it needs you is its tag's to say; here, what about, and where
+        // to answer
+        let what = a.asked.as_deref().map(|c| format!("{c} — a")).unwrap_or_else(|| "A".into());
+        return format!("<p class=\"ax-standing\">{}nswer in its terminal (⌘↩)</p>\n\n", escape(&what));
     }
     let now = a.running.last().map(|(_, line)| line.as_str()).or_else(|| t.parts.iter().rev().find_map(|p| match p {
         Part::Call { title, .. } => Some(*title),

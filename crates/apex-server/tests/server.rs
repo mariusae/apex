@@ -36,8 +36,7 @@ fn pump_until(log: &mut Log, node: &mut Node, server: &mut Server, rx: &mut Unbo
                 let props = server.pump(log, node, ev);
                 perform(node, log, props);
                 // the notifications follow the statuses, as the daemon has them
-                let props = server.status_flags(log, node);
-                perform(node, log, props);
+                server.status_flags(log, node);
             }
             Err(_) => std::thread::sleep(Duration::from_millis(10)),
         }

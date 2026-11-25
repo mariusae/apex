@@ -260,19 +260,14 @@ handle itself, and a halo is a shape apart from any of their colours.
 Every handle shows it: a tag's, a minimized column's, a stash card's,
 a sidebar row's.
 
-A notification does not leave its window hidden, nor move more than it
-must (`Node::notice`, which the daemon proposes as it records one): a
-maximize that hides it (B3) becomes one that shows the rest (B2's), the
-maximized window or column keeping the room. A window hidden behind one
-grown to its column brings the column's others back as tags; one in a
-column hidden behind one given the row brings the row's others back as
-strips; a window hidden in a column hidden so, both -- its column a
-strip whose handles all stand where their windows are. Either way the
-notified handle, haloed, is in sight. B1 on the maximized one's box
-still gives back what each had before the B3, and B3 hides the rest
-again; nothing goes back on its own when the notification does. All the
-hidden ones come back, not the notified alone: one of them back and the
-rest hidden is a state the layout does not have.
+A notification moves nothing. (It once did: `Node::notice`, proposed
+as the daemon recorded one, undid a maximize that hid the window so its
+haloed handle would show. A status that rearranged the columns under
+the user was the louder thing, and so it went.) A window hidden behind
+one grown to its column or the row is not on screen, and so its status
+is said where windows not in sight are: the sidebar's row for it (the
+only place a status is said in words but its tag), the session's square
+and ⌘G, which takes the user there.
 A stashed window stays stashed: its card, if under the top one, is drawn
 out of the bunch far enough to show its handle and the start of its
 name (each further notified card as far again), keeping its place in

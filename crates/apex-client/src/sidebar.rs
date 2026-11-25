@@ -459,9 +459,17 @@ impl Acme {
             )
     }
 
-    /// Window `w`'s row, in the shown session.
+    /// Window `w`'s row, in the shown session: its status said only when
+    /// its tag, which says it, is not in sight (stashed, in a strip, hidden
+    /// behind a window grown to its column or the row).
     fn window_row(&self, w: WindowId, stashed: bool, cx: &mut Context<Self>) -> impl IntoElement {
-        self.win_row(win_line(&self.node, w, self.window_dot(w)), None, stashed, now_secs(), cx)
+        let mut line = win_line(&self.node, w, self.window_dot(w));
+        if self.tag_in_sight(w) {
+            line.status = None;
+        } else if let Some(s) = line.status.as_mut() {
+            s.2 &= self.window_notified(w);
+        }
+        self.win_row(line, None, stashed, now_secs(), cx)
     }
 
     /// A window's row, in the shown session (`tab` none) or another: its
@@ -587,7 +595,8 @@ struct WinLine {
 
 fn win_line(node: &Node, w: WindowId, dot: Dot) -> WinLine {
     let (label, dir) = names(node, w);
-    let status = node.window_status(w).and_then(|s| Some((shortened(&s.text()?, 120), s.since, asks(s.state), crate::text_element::status_icon(s.state, s.kind))));
+    // asking for the user while its notification stands
+    let status = node.window_status(w).and_then(|s| Some((shortened(&s.text()?, 120), s.since, asks(s.state) && node.window_notified(w), crate::text_element::status_icon(s.state, s.kind))));
     WinLine { w, label, dir, status, dot }
 }
 

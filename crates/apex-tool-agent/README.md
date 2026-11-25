@@ -14,7 +14,6 @@ those agents offer and written against the public tool API
     apex tool agent                   # this session's agents; no window of its own
     apex tool agent -a                # and the overview window, DIR/-agent
     apex tool agent -all              # every agent on the machine, not only this session's
-    apex tool agent -quiet            # no notes in +Errors
     apex tool agent -thoughts         # transcripts show the agents' thinking
     apex tool agent uninstall
 
@@ -167,10 +166,9 @@ wait at all, so an agent is never held up by one that is not there.
 Until the answer is in, the agent's terminal shows the hook running and
 no prompt: the notification is what says where the question is.
 
-When an agent comes to ask, or its turn fails, a line in the session's
-`+Errors` says which and what (`claude 0b1c1425 asks: Bash: rm -rf
-target`); B3 on the id there opens the transcript. `-quiet` leaves
-`+Errors` alone.
+When an agent comes to ask, or its turn fails, its window's status says
+so -- the box in its tag, and the notification its handle carries --
+and nothing else does: no line in `+Errors`, no toast.
 
 ## Reaching the agent
 

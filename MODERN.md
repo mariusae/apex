@@ -566,6 +566,16 @@ windows put away out of the tiling, which is the core's
   gone, the link goes to the next under the shells already running: no
   dead agent in an old shell. A daemon no connection started keeps its
   own agent (a Mac's); `apex env` says where the link points.
+- **A status is said once** (as Manifold has it): in words only in its
+  window's tag (the pill), or, the tag out of sight (stashed, in a
+  strip, hidden behind a maximized window), in the sidebar's row for it;
+  that it wants the user only by its handle's halo; per scope one mark
+  more (the session's square, each session's row, the Dock). No toast
+  and no line in +Errors for an agent asking or failing, nothing moved
+  in the layout, no badge on the sidebar's button while the sidebar is
+  open. Anything done in the window -- a click, a key, the wheel --
+  takes its notification and a Done with it; a pill still blocked or
+  failed stays, said plainly.
 - **B4 on a box minimizes** -- shift-B1 on a laptop, which is B4
   everywhere (`tiling::colminimize`, `rowminimize`): on a
   window's box (or handle), the window down to its tag where it stands,

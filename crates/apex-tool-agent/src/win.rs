@@ -58,7 +58,6 @@ pub struct Opts {
     /// Every agent, wherever it is, rather than this session's (`-all`).
     pub all: bool,
     /// No notes in +Errors when an agent asks or fails.
-    pub quiet: bool,
     /// Where the agents keep their sessions: `~/.claude`, `~/.codex`,
     /// `~/.local/share/muse`, `~/.pi/agent`.
     pub claude_home: PathBuf,
@@ -70,7 +69,7 @@ pub struct Opts {
 impl Opts {
     pub fn new(cwd: PathBuf, dir: PathBuf) -> Opts {
         let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/".into()));
-        Opts { cwd, dir, thoughts: false, pane: false, all: false, quiet: false, claude_home: home.join(".claude"), codex_home: home.join(".codex"), muse_home: history::muse_home(), pi_home: history::pi_home() }
+        Opts { cwd, dir, thoughts: false, pane: false, all: false, claude_home: home.join(".claude"), codex_home: home.join(".codex"), muse_home: history::muse_home(), pi_home: history::pi_home() }
     }
 }
 
@@ -688,24 +687,11 @@ impl Pane {
 
     /// A hook's word about a call, in the transcript window when one is
     /// open: running, wanted, refused. A turn's end, in the page. An
-    /// agent come to want you, or to grief, in +Errors, where its id
-    /// is B3'd for the transcript.
-    fn heard(&mut self, ev: &event::Event, was: Option<State>) -> apex_tool::Result<()> {
+    /// agent come to want you is said by its window's status alone
+    /// (`statuses`), not again in +Errors.
+    fn heard(&mut self, ev: &event::Event, _was: Option<State>) -> apex_tool::Result<()> {
         if ev.event == "Stop" {
             self.show_page(&ev.session)?;
-        }
-        if !self.opts.quiet {
-            if let Some(a) = self.agents.get(&ev.session) {
-                let note = match (was, a.state) {
-                    (Some(State::Asking), State::Asking) | (Some(State::Failed), State::Failed) => None,
-                    (_, State::Asking) => Some(format!("{} {} asks: {}\n", a.kind, a.short(), a.asked.as_deref().map(transcript::brief).unwrap_or_default())),
-                    (_, State::Failed) => Some(format!("{} {} failed: {}\n", a.kind, a.short(), a.why.as_deref().unwrap_or("the turn failed"))),
-                    _ => None,
-                };
-                if let Some(n) = note {
-                    self.t.errors(None, &n)?;
-                }
-            }
         }
         let Some(d) = self.details.values_mut().find(|d| d.session == ev.session) else { return Ok(()) };
         let glyph = match ev.event.as_str() {

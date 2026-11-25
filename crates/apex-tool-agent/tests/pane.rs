@@ -239,12 +239,13 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     }
     assert!(said.contains("Goto 0b1c1425: claude was not started in an apex window"), "{said:?}");
     // a question: the block offers the words that answer it, +Errors
-    // says who asks, and the hook waits on the log for the answer
+    // says nothing (the window's status is what says it asks), and the
+    // hook waits on the log for the answer
     event::append(&logs, &Event { apex: Some("main".into()), win: Some(1), call: Some("t7".into()), title: Some("Bash: Remove the build directory".into()), ..ev("PermissionRequest") }).unwrap();
     let text = wait_text(&mut c, &pane_name, |t| t.contains("\n? claude"));
     assert!(text.contains("  ? Bash: Remove the build directory  Allow Deny Ask\n"), "{text}");
-    let errs = wait_text(&mut c, "errors ", |t| t.contains("asks:"));
-    assert!(errs.contains("claude 0b1c1425 asks: Bash: Remove the build directory\n"), "{errs:?}");
+    let errs: String = c.node.state.windows.keys().filter(|x| c.node.window_kind(**x) == WinKind::Errors).map(|x| text_of(&c, *x)).collect();
+    assert!(!errs.contains("asks:"), "{errs:?}");
     let from = std::fs::metadata(event::log_path(&logs, "0b1c1425-aaaa")).unwrap().len();
     let log = event::log_path(&logs, "0b1c1425-aaaa");
     let asked = std::thread::spawn(move || hook::await_decision(&log, from, "t7", Duration::from_secs(5)));

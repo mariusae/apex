@@ -2236,20 +2236,38 @@ impl Acme {
         true
     }
 
-    /// A click or a key in a window: its notification, if any, dismissed
-    /// -- and, a lens on the top of its chain, those of the windows under
-    /// it, whose its handle shows: an agent done under its conversation is
-    /// attended to there.
-    fn attend(&mut self, w: WindowId) {
+    /// Anything done in a window -- a click, a key, the wheel: its
+    /// notification, if any, dismissed -- and, a lens on the top of its
+    /// chain, those of the windows under it, whose its handle shows: an
+    /// agent done under its conversation is attended to there. A Done
+    /// status goes with it, its news taken; one still blocked or failed
+    /// stays, said plainly now (its pill no longer asks).
+    pub(crate) fn attend(&mut self, w: WindowId) {
         // worked in in the stash's preview: first among its cards after
         self.touch_stashed(w);
         let mut any = false;
         for x in self.handle_of(w) {
             any |= self.dismiss(x);
+            if self.node.window_status(x).is_some_and(|s| s.state == apex_core::status::State::Done) {
+                apex_server::perform(&mut self.node, &mut self.log, vec![apex_server::Proposal::SetStatus { window: x, status: None }]);
+                any = true;
+            }
         }
         if any {
             self.after();
         }
+    }
+
+    /// Is window `w`'s status said on screen -- the tag of its place (the
+    /// top of its chain of lenses) in sight: laid out in a column that is
+    /// neither a strip nor hidden behind one given the row, and not hidden
+    /// behind a window grown to its column?
+    pub(crate) fn tag_in_sight(&self, w: WindowId) -> bool {
+        let l = &self.node.state.layout;
+        let top = l.top_of(w);
+        let Some((ci, _)) = l.place_of(top) else { return false };
+        let col = &l.cols[ci];
+        !apex_core::tiling::is_strip(col.r) && !col.hides(top) && l.full_index().is_none_or(|fi| fi == ci)
     }
 
     /// Is this window in front?
@@ -3151,7 +3169,9 @@ impl Acme {
         });
         // its status, for its pill at the row's right (cut short there
         // as the room it has asks)
-        let chip = n.place_status(w).and_then(|s| Some(crate::text_element::StatusChip { text: s.text()?, asks: crate::sidebar::asks(s.state), icon: crate::text_element::status_icon(s.state, s.kind) }));
+        // asking for the user while its notification stands; seen, said plainly
+        let notified = self.window_notified(w);
+        let chip = n.place_status(w).and_then(|s| Some(crate::text_element::StatusChip { text: s.text()?, asks: crate::sidebar::asks(s.state) && notified, icon: crate::text_element::status_icon(s.state, s.kind) }));
         // the path's picker down: the path being chosen, typed in place
         if let Some(p) = self.picker.as_ref().filter(|p| p.window == w) {
             return Head::picking_in(&p.dir, &p.filter, p.filter.cursor, crate::tagedit::caret_on(p.caret_since), label.as_deref(), chip, &verbs, &n.state.meta.cwd).with_words(&words);
@@ -5001,6 +5021,10 @@ impl Acme {
             return;
         }
         let Some((target, region)) = self.locate(e.position) else { return };
+        // the wheel in a window attends to it, as a click or a key does
+        if let Some(w) = target.window() {
+            self.attend(w);
+        }
         if let Target::Web(w) = target {
             let dy = match e.delta {
                 ScrollDelta::Lines(p) => -f64::from(f32::from(p.y)) * 40.,

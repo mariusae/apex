@@ -6,7 +6,7 @@
 //! diff.
 //!
 //! ```text
-//! apex tool agent [-cwd DIR] [-a] [-all] [-thoughts] [-quiet]
+//! apex tool agent [-cwd DIR] [-a] [-all] [-thoughts]
 //! apex tool agent install [claude|codex|muse|pi]...  put the hooks in (all, by default)
 //! apex tool agent uninstall [claude|codex|muse|pi]...
 //! apex tool agent ls                        every agent, as text
