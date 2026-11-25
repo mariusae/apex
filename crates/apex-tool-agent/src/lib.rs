@@ -27,7 +27,12 @@
 //! transcript, named for the agent's own directory and read from the
 //! agent's own record as it grows; a page with the last exchange it
 //! finished, written afresh as each turn ends; its repository's diff
-//! since the session began -- and while it asks something, `Allow Deny
+//! since the session began -- and `View` (⌘↩) puts its conversation in
+//! the terminal's place, a lens on it: what was asked and answered, kept
+//! up as the agent goes, an input strip under it whose text `Send` (⌘↩
+//! there) types into the terminal, `Stop` in its tag interrupting the
+//! turn; `View` again gives the terminal back, a draft not sent kept for
+//! the next time -- and while it asks something, `Allow Deny
 //! Ask` are there too, the answer going into the log for the hook that
 //! asked to read. An agent that wants you -- its turn over and the next
 //! prompt yours, a question to answer, a turn that failed -- raises a

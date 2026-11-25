@@ -662,3 +662,97 @@ fn an_agent_saying_what_it_is_doing_is_left_to_apex() {
     let by = c.node.window_status(tw).map(|s| (s.by, s.state));
     assert_eq!(by, Some((apex_core::SERVER, apex_core::status::State::Working)), "the window's status is the program's word, through apex");
 }
+
+/// ⌘↩ (`View`) in an agent's terminal: its conversation a lens on the
+/// terminal, an input strip under it; Send types the strip's text into
+/// the terminal; View again gives the terminal back, and a draft left in
+/// the strip is there the next time.
+#[test]
+fn view_in_an_agents_terminal_is_its_conversation_with_a_prompt_under_it() {
+    let sock = daemon();
+    let tmp = std::env::temp_dir().join(format!("apex-tool-agent-lens-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let logs = tmp.join("agent");
+    let proj = tmp.join("proj");
+    std::fs::create_dir_all(&proj).unwrap();
+
+    let mut c = Remote::connect_as(&sock, "main", "watch", AttachmentKind::Tool).unwrap();
+    let sid = c.node.state.meta.id.clone();
+    // the terminal the agent runs in: a real one, sh in it
+    c.send(&ClientMsg::Set { key: "Newterm.shell".into(), value: "/bin/sh".into(), attachment: None });
+    let _ = c.step(Duration::from_millis(50));
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Top, text: "Newterm".into() }, Duration::from_secs(5)).unwrap();
+    let term = |c: &Remote| c.node.state.windows.values().find(|w| matches!(w.body, Body::Term(_))).map(|w| w.id);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while term(&c).is_none() && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    let tw = term(&c).expect("a terminal");
+    let ev = |event: &str| Event { ms: event::now_ms(), agent: "claude".into(), event: event.into(), session: "0b1c1425-aaaa".into(), cwd: proj.display().to_string(), apex: Some(sid.clone()), win: Some(tw.0), ..Event::default() };
+    event::append(&logs, &Event { kind: Some("startup".into()), ..ev("SessionStart") }).unwrap();
+    event::append(&logs, &Event { text: Some("what is in hosts?".into()), ..ev("UserPromptSubmit") }).unwrap();
+    event::append(&logs, &Event { text: Some("It names localhost.".into()), ..ev("Stop") }).unwrap();
+
+    let mut t = Tool::attach_to(&sock, "main", "agent").unwrap();
+    // the page's converter: the markdown itself, so the test can read it
+    t.set("Preview.md", "cat");
+    let pane = Pane::start(t, Opts { claude_home: tmp.join("claude-home"), codex_home: tmp.join("codex-home"), ..Opts::new(tmp.clone(), logs.clone()) }).unwrap();
+    std::thread::spawn(move || {
+        let mut pane = pane;
+        if let Err(e) = pane.serve() {
+            eprintln!("serve: {}", e.0);
+        }
+    });
+    // View on the terminal, once the agent's words are offered there
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !apex_core::plumb::claims_verb(&c.node.state.meta.rules, "View", &c.node.window_path(tw), c.node.window_kind(tw), tw, None) && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    let lensed = |c: &Remote| c.node.state.layout.lens_of(tw).filter(|l| c.node.state.window(*l).is_ok_and(|w| w.input.is_some()));
+    let view = |c: &mut Remote| {
+        c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(tw), text: "View".into() }, Duration::from_secs(5)).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while lensed(c).is_none() && Instant::now() < deadline {
+            let _ = c.step(Duration::from_millis(20));
+        }
+        lensed(c).expect("the conversation a lens on the terminal, with a strip")
+    };
+    let lens = view(&mut c);
+    assert!(c.node.state.layout.place_of(tw).is_none(), "the terminal under it");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !(text_of(&c, lens).contains("> what is in hosts?") && text_of(&c, lens).contains("It names localhost.")) && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    assert!(text_of(&c, lens).contains("> what is in hosts?") && text_of(&c, lens).contains("It names localhost."), "{}", text_of(&c, lens));
+    // a prompt written in the strip and sent: typed into the terminal,
+    // the strip empty
+    let strip = |c: &Remote| c.node.state.window(lens).ok().and_then(|w| w.input).and_then(|b| c.node.state.buffer(b).ok()).map(|b| (b.id, b.version, b.text.to_string()));
+    let (ib, version, _) = strip(&c).unwrap();
+    c.propose(apex_server::Proposal::ReplaceRange { select: false, dir: None, buffer: ib, version, q0: 0, q1: 0, text: "echo hello-lens".into() }, Duration::from_secs(5)).unwrap();
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(lens), text: "Send".into() }, Duration::from_secs(5)).unwrap();
+    let Body::Term(tid) = c.node.state.window(tw).unwrap().body else { unreachable!() };
+    let screen = |c: &Remote| c.node.state.terms.get(&tid).map(|t| t.grid.iter().map(|r| r.iter().map(|x| x.ch).collect::<String>()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while !screen(&c).lines().any(|l| l.trim() == "hello-lens") && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    assert!(screen(&c).lines().any(|l| l.trim() == "hello-lens"), "the prompt typed and entered: {}", screen(&c));
+    assert_eq!(strip(&c).map(|s| s.2).as_deref(), Some(""));
+    // a draft left in the strip, and View: the terminal back
+    let (ib, version, _) = strip(&c).unwrap();
+    c.propose(apex_server::Proposal::ReplaceRange { select: false, dir: None, buffer: ib, version, q0: 0, q1: 0, text: "half a thought".into() }, Duration::from_secs(5)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(lens), text: "View".into() }, Duration::from_secs(5)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while (c.node.state.window(lens).is_ok() || c.node.state.layout.place_of(tw).is_none()) && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    assert!(c.node.state.window(lens).is_err() && c.node.state.layout.place_of(tw).is_some(), "the terminal back");
+    // and View again: the draft where it was
+    let lens = view(&mut c);
+    assert_eq!(c.node.state.window(lens).ok().and_then(|w| w.input).and_then(|b| c.node.state.buffer(b).ok()).map(|b| b.text.to_string()).as_deref(), Some("half a thought"));
+    let _ = std::fs::remove_dir_all(&tmp);
+}

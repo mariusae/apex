@@ -24,6 +24,43 @@ pub fn markdown(asked: &str, said: &str) -> String {
     md
 }
 
+/// An agent's conversation as markdown, for its lens (`View`): each
+/// exchange finished, what was asked quoted and then the answer, and the
+/// turn going, if one is -- what it was asked, and what it is doing.
+pub fn conversation(a: &crate::agent::Agent) -> String {
+    let mut md = String::new();
+    for x in &a.exchanges {
+        md.push_str(&markdown(&x.asked, &x.said));
+        md.push_str("\n---\n\n");
+    }
+    let going = matches!(a.state, crate::agent::State::Working | crate::agent::State::Asking | crate::agent::State::Starting);
+    if going {
+        let finished = a.exchanges.last().map(|x| x.asked.trim()) == a.prompt.as_deref().map(str::trim);
+        if let Some(p) = a.prompt.as_deref().filter(|_| !finished) {
+            md.push_str(&markdown(p, ""));
+        }
+        let doing = match (a.state, a.running.last(), a.asked.as_deref()) {
+            (crate::agent::State::Asking, _, Some(call)) => format!("asks to run {call}"),
+            (crate::agent::State::Asking, _, None) => "has a question".to_string(),
+            (_, Some((_, line)), _) => line.clone(),
+            _ => "working".to_string(),
+        };
+        md.push_str(&format!("*{}*\n", escape(doing.trim())));
+    } else if a.exchanges.is_empty() {
+        md.push_str("*nothing asked yet*\n");
+    }
+    md
+}
+
+/// Markdown as a page, through the session's converter.
+pub fn render_md(t: &Tool, cwd: &Path, md: &str) -> String {
+    let cmd = t.setting("Preview.md").unwrap_or_else(|| "apex md".to_string());
+    match filter(&cmd, md, cwd) {
+        Ok(html) => html,
+        Err(e) => format!("<pre>{}</pre>", escape(&format!("{cmd}: {e}\n\n{md}"))),
+    }
+}
+
 /// The exchange as a page, or a word when there is none yet.
 pub fn render(t: &Tool, cwd: &Path, exchange: Option<(&str, &str)>) -> String {
     let Some((asked, said)) = exchange else {

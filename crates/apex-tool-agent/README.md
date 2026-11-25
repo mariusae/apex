@@ -221,6 +221,15 @@ when the agent does. A rule may name a window
 (`Rule::verb("Preview").window(w)`), which is all this is. Without `-a`
 this and the notifications are the whole of the tool's face.
 
+`View` (⌘↩) in the agent's window makes its conversation a lens on the
+terminal (DESIGN.md "Lenses"): every exchange, what was asked quoted
+and then the answer, and the turn going with what it is doing, kept up
+as the agent goes, the page at its foot; under it an input strip,
+whose text `Send` (⌘↩ in the strip) types into the terminal, pasted
+then Enter; `Stop` in its tag presses Escape, the agents' interrupt.
+`View` on the conversation takes it away, the terminal back; a draft
+left in the strip is put back the next time.
+
 ## The transcript
 
 `AGENTDIR/-claude+0b1c1425`: named for the agent's own directory, so a

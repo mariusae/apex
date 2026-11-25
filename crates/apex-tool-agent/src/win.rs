@@ -105,6 +105,21 @@ struct Detail {
 }
 
 /// An agent's open preview and the exchange it is showing.
+/// An agent's conversation, a lens on its terminal (`View`, ⌘↩): what
+/// was asked and answered, kept up as it goes, an input strip under it
+/// for the next prompt; `View` again, the terminal back.
+struct Lens {
+    session: String,
+    /// The terminal it is a lens on.
+    base: WindowId,
+    /// The words offered on it: View, Send, Stop.
+    view: RuleId,
+    send: RuleId,
+    stop: RuleId,
+    /// The markdown it last showed, so that only a change is written.
+    md: String,
+}
+
 struct Page {
     session: String,
     at: Option<usize>,
@@ -139,6 +154,11 @@ pub struct Pane {
     pages: HashMap<WindowId, Page>,
     /// The diff windows open, by agent.
     diffs: HashMap<WindowId, String>,
+    /// The conversations that are lenses on agents' terminals.
+    lenses: HashMap<WindowId, Lens>,
+    /// What was in a lens's input strip, not sent, when it went: put back
+    /// the next time, by agent.
+    drafts: HashMap<String, String>,
     /// The history window, while `History` has one open, and the
     /// sessions it last listed, by id, which is what an id B3'd
     /// anywhere is looked up in.
@@ -243,7 +263,7 @@ fn current_in_windows<'a>(agents: &'a Agents, session: &str, windows: &[WindowId
 
 /// The verbs on an agent's own window: the transcript, named as
 /// apex-acp names its own; the page; the changes.
-const TARGET_VERBS: [&str; 3] = ["Transcript", "Preview", "Changes"];
+const TARGET_VERBS: [&str; 4] = ["Transcript", "Preview", "Changes", "View"];
 const ASKING_VERBS: [&str; 3] = ["Allow", "Deny", "Ask"];
 
 impl Pane {
@@ -305,7 +325,7 @@ impl Pane {
         let presence = event::panes_dir(&opts.dir).join(std::process::id().to_string());
         let _ = std::fs::write(&presence, b"");
         let (session, _) = t.session();
-        let mut pane = Pane { t, w, opts, agents: Agents::default(), logs: HashMap::new(), header: String::new(), blocks: Vec::new(), starts: Vec::new(), footer: String::new(), details: HashMap::new(), pages: HashMap::new(), diffs: HashMap::new(), hist: None, past: HashMap::new(), verbs, look, look_any, pulsing: false, dirty: false, last_slow: Instant::now(), last_render: Instant::now(), home, watcher, woken, watched: BTreeMap::new(), presence, session, targets: HashMap::new(), copy, flags: HashMap::new(), said: HashMap::new() };
+        let mut pane = Pane { t, w, opts, agents: Agents::default(), logs: HashMap::new(), header: String::new(), blocks: Vec::new(), starts: Vec::new(), footer: String::new(), details: HashMap::new(), pages: HashMap::new(), diffs: HashMap::new(), lenses: HashMap::new(), drafts: HashMap::new(), hist: None, past: HashMap::new(), verbs, look, look_any, pulsing: false, dirty: false, last_slow: Instant::now(), last_render: Instant::now(), home, watcher, woken, watched: BTreeMap::new(), presence, session, targets: HashMap::new(), copy, flags: HashMap::new(), said: HashMap::new() };
         let dir = pane.opts.dir.clone();
         pane.watch(&dir);
         pane.look()?;
@@ -334,6 +354,7 @@ impl Pane {
                 self.look()?;
                 self.sweep();
                 self.render()?;
+                self.render_lenses()?;
                 self.sync_targets()?;
                 self.sync_flags();
                 self.sync_status();
@@ -350,6 +371,11 @@ impl Pane {
                 None => {}
                 Some(Event::Deleted { window }) if Some(window) == self.w => return Ok(()),
                 Some(Event::Deleted { window }) => {
+                    if let Some(l) = self.lenses.remove(&window) {
+                        for r in [l.view, l.send, l.stop] {
+                            self.t.withdraw(r);
+                        }
+                    }
                     if let Some(page) = self.pages.remove(&window) {
                         self.t.withdraw(page.back);
                         self.t.withdraw(page.fwd);
@@ -391,7 +417,11 @@ impl Pane {
                     });
                     // in an agent's own window, the verb means that agent
                     let target = p.window.and_then(|w| self.targets.get(&w).map(|t| t.session.clone()));
+                    // a word in a conversation lens: View, Send or Stop
+                    let lens = p.window.filter(|w| self.lenses.get(w).is_some_and(|l| [l.view, l.send, l.stop].contains(&p.rule)));
                     let taken = match (page_nav, self.verbs.get(&p.rule).copied(), target) {
+                        _ if lens.is_some() => self.lens_verb(lens.unwrap(), p.rule)?,
+                        (None, Some("View"), Some(key)) => self.view_for(p.window.unwrap(), &key)?,
                         (Some((w, nav)), _, _) => self.navigate_page(w, nav)?,
                         (None, Some(v), Some(key)) => self.verb_for(v, &key)?,
                         (None, Some(v), None) => self.verb(v, &p.text, p.at)?,
@@ -1142,6 +1172,86 @@ impl Pane {
         let Some(a) = self.agents.get(&page.session) else { return Ok(()) };
         let html = page::render(&self.t, Path::new(&a.cwd), page.at.and_then(|i| a.exchanges.get(i)).map(|x| (x.asked.as_str(), x.said.as_str())));
         self.t.replace(w, 0, END, &html)
+    }
+
+    // ---- the conversation, a lens ----
+
+    /// `View` (⌘↩) in an agent's terminal: its conversation in the
+    /// terminal's place, a lens on it (DESIGN.md "Lenses"), the draft
+    /// left last time back in its input strip.
+    fn view_for(&mut self, base: WindowId, key: &str) -> apex_tool::Result<bool> {
+        let Some(a) = self.agents.get(key).cloned() else { return Ok(false) };
+        let kind = if a.kind.is_empty() { "agent" } else { &a.kind };
+        let dir = format!("{}/", a.cwd.trim_end_matches('/'));
+        let md = page::conversation(&a);
+        let html = page::render_md(&self.t, Path::new(&a.cwd), &md);
+        let w = self.t.lens_page(base, &dir, Some(&format!("{kind} {}", a.short())), &html)?;
+        let _ = self.t.set_owner(w, true);
+        let _ = self.t.set_live(w, true);
+        let _ = self.t.set_tag(w, "Look Stop");
+        let view = self.t.offer(Rule::verb("View").window(w))?;
+        let send = self.t.offer(Rule::verb("Send").window(w))?;
+        let stop = self.t.offer(Rule::verb("Stop").window(w))?;
+        let draft = self.drafts.remove(key).unwrap_or_default();
+        self.t.set_input(w, Some(&draft))?;
+        // the latest at the foot, where the next prompt goes
+        let _ = self.t.scroll_page(w, apex_tool::Scroll::Fraction(1.0));
+        self.lenses.insert(w, Lens { session: key.to_string(), base, view, send, stop, md });
+        Ok(true)
+    }
+
+    /// A word in a conversation lens: View takes it away (its draft kept
+    /// for the next), Send gives the agent what is in the strip, Stop
+    /// interrupts its turn.
+    fn lens_verb(&mut self, w: WindowId, rule: RuleId) -> apex_tool::Result<bool> {
+        let Some(l) = self.lenses.get(&w) else { return Ok(false) };
+        let (base, key) = (l.base, l.session.clone());
+        if rule == l.view {
+            let draft = self.t.input(w).unwrap_or_default();
+            if !draft.trim().is_empty() {
+                self.drafts.insert(key, draft);
+            }
+            self.t.delete(w)?;
+        } else if rule == l.send {
+            let text = self.t.take_input(w)?;
+            let text = text.trim_end();
+            if !text.is_empty() {
+                // pasted, then Enter: a prompt of several lines is one
+                self.t.term_send(base, &format!("{text}\n"))?;
+                let _ = self.t.scroll_page(w, apex_tool::Scroll::Fraction(1.0));
+            }
+        } else if rule == l.stop {
+            // the agents' interrupt: Escape
+            self.t.term_key(base, "escape", Some("\x1b"))?;
+        }
+        Ok(true)
+    }
+
+    /// Each conversation lens kept up with its agent: written afresh when
+    /// what it says changed (the page at its foot when it grew), and its
+    /// strip's draft remembered, so a lens gone (its terminal, the user's
+    /// Del) leaves it for the next.
+    fn render_lenses(&mut self) -> apex_tool::Result<()> {
+        let ws: Vec<WindowId> = self.lenses.keys().copied().collect();
+        for w in ws {
+            let Some(l) = self.lenses.get(&w) else { continue };
+            let Some(a) = self.agents.get(&l.session) else { continue };
+            let md = page::conversation(a);
+            let cwd = a.cwd.clone();
+            if let Some(draft) = self.t.input(w).filter(|d| !d.trim().is_empty()) {
+                self.drafts.insert(l.session.clone(), draft);
+            }
+            if md == l.md {
+                continue;
+            }
+            let html = page::render_md(&self.t, Path::new(&cwd), &md);
+            self.t.replace(w, 0, END, &html)?;
+            let _ = self.t.scroll_page(w, apex_tool::Scroll::Fraction(1.0));
+            if let Some(l) = self.lenses.get_mut(&w) {
+                l.md = md;
+            }
+        }
+        Ok(())
     }
 
     // ---- the changes ----

@@ -600,7 +600,10 @@ session's terminals that run coding agents (Claude Code, Codex, Muse,
 pi), fed by the hooks those agents offer: apex tool agent install puts
 them in (uninstall takes them out), each one apex tool agent hook AGENT,
 which appends the event to ~/.apex/agent/SESSION.jsonl. While an agent
-runs, its terminal's tools menu has Transcript, Preview and Changes;
+runs, its terminal's tools menu has Transcript, Preview and Changes,
+and View (⌘↩) puts its conversation in the terminal's place, a prompt
+written under it and Send (⌘↩ there) typing it in, View again giving
+the terminal back;
 while it asks something, Allow Deny Ask; when it wants you, its
 terminal raises a notification; and its terminal's status says how it
 stands, as apex status has it (working on the call it runs, as far

@@ -500,6 +500,16 @@ windows put away out of the tiling, which is the core's
   lens away, the window put at the line the page had at its top (the
   client tells a page's owner that line as it scrolls,
   `WindowEvent::Scrolled`; `Proposal::Origin` puts a window there).
+- **An input strip** (`Window::input`): a window's second text, a
+  tool's, at its body's foot, as tall as its text (six lines at most):
+  apex text, replicated, a draft in every UI. ⌘↩ in it is Send, the
+  word its tool claims there to take the text (`take_input`).
+- **An agent's conversation is its terminal's lens**: ⌘↩ in a terminal
+  running an agent (`apex tool agent`) shows what was asked and
+  answered in its place, kept up as it goes, a prompt written in the
+  strip under it and sent with ⌘↩, typed into the terminal; Stop in its
+  tag interrupts; ⌘↩ on the conversation gives the terminal back, an
+  unsent draft kept for the next time.
 - **B4 on a box minimizes** -- shift-B1 on a laptop, which is B4
   everywhere (`tiling::colminimize`, `rowminimize`): on a
   window's box (or handle), the window down to its tag where it stands,

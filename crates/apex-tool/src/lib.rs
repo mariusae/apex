@@ -76,7 +76,7 @@ use apex_server::proto::{ClientMsg, ServerMsg};
 use apex_server::remote::{Remote, ToolPlumb};
 use apex_server::Proposal;
 
-pub use apex_core::entry::{AttachmentKind, WinKind};
+pub use apex_core::entry::{AttachmentKind, Scroll, WinKind};
 pub use apex_core::ids::{RuleId, WindowId};
 pub use apex_core::status::{Kind, State};
 
@@ -760,6 +760,13 @@ impl Tool {
         let w = self.propose(Proposal::Lens { base, by: me, body: apex_server::LensBody::Page(page) })?.ok_or("no lens made")?;
         self.remember(w);
         Ok(w)
+    }
+
+    /// Scroll page `w`, on every client showing it: to a source line's
+    /// mark (a converter's `data-line`), or a fraction of the way down.
+    pub fn scroll_page(&mut self, w: WindowId, scroll: apex_core::Scroll) -> Result<()> {
+        self.propose(Proposal::PageScroll { window: w, scroll: Some(scroll) })?;
+        Ok(())
     }
 
     /// Give window `w` an input strip with `text` in it (a draft put
