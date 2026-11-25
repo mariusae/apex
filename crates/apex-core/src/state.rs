@@ -178,15 +178,18 @@ pub struct Slot {
     pub premax: i32,
 }
 
-/// A window covered by another (`apex editor` from a terminal: the file
-/// in the terminal's place): out of the tiling while it is, and back in
-/// the place of the one over it when that one goes. The windows over one
-/// another are a stack, the top in the tiling (or the stash) and each
-/// under the one before it.
+/// A lens: a window standing in for another, its base, in the base's
+/// place -- a file's preview, an agent's conversation over its terminal,
+/// the file `apex editor` edits over the terminal it ran in. The base is
+/// out of the tiling while it is, and back in its place when the lens
+/// goes. Lenses chain: a lens on a window that has one goes on the top,
+/// its base the lens under it. A lens is only made and removed; it goes
+/// with its base, and with `by`, the attachment that made it.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
-pub struct Cover {
-    pub top: WindowId,
-    pub under: WindowId,
+pub struct Lens {
+    pub lens: WindowId,
+    pub base: WindowId,
+    pub by: AttachmentId,
 }
 
 /// A window put away in the session's stash (⌘M, `Stash`): out of the
@@ -284,9 +287,9 @@ pub struct Layout {
     /// The windows put away (⌘M, `Stash`), in the order they went.
     #[serde(default)]
     pub stash: Vec<Stashed>,
-    /// The windows covered by others (`Cover`), each once.
+    /// The lenses (`Lens`): each base once.
     #[serde(default)]
-    pub covers: Vec<Cover>,
+    pub lenses: Vec<Lens>,
 }
 
 impl Layout {
@@ -319,30 +322,34 @@ impl Layout {
     pub fn is_stashed(&self, w: WindowId) -> bool {
         self.stashed_of(w).is_some()
     }
-    /// The window right under `w`, when it covers one.
-    pub fn under(&self, w: WindowId) -> Option<WindowId> {
-        self.covers.iter().find(|c| c.top == w).map(|c| c.under)
+    /// The window `w` is a lens on, when it is one.
+    pub fn base_of(&self, w: WindowId) -> Option<WindowId> {
+        self.lenses.iter().find(|c| c.lens == w).map(|c| c.base)
     }
-    /// The window right over `w`, when it is covered.
-    pub fn over(&self, w: WindowId) -> Option<WindowId> {
-        self.covers.iter().find(|c| c.under == w).map(|c| c.top)
+    /// The lens on `w`, when it has one.
+    pub fn lens_of(&self, w: WindowId) -> Option<WindowId> {
+        self.lenses.iter().find(|c| c.base == w).map(|c| c.lens)
     }
-    /// The top of the stack `w` is in (`w` itself, when it is covered by
-    /// none): the window in the tiling in their place.
-    pub fn stack_top(&self, w: WindowId) -> WindowId {
+    /// The lens record whose lens is `w`.
+    pub fn lens(&self, w: WindowId) -> Option<&Lens> {
+        self.lenses.iter().find(|c| c.lens == w)
+    }
+    /// The top of the chain `w` is in (`w` itself, when it has no lens):
+    /// the window in the tiling in their place.
+    pub fn top_of(&self, w: WindowId) -> WindowId {
         let mut t = w;
-        for _ in 0..=self.covers.len() {
-            match self.over(t) {
+        for _ in 0..=self.lenses.len() {
+            match self.lens_of(t) {
                 Some(o) => t = o,
                 None => break,
             }
         }
         t
     }
-    /// The stack `w` is in, its top first.
-    pub fn stack(&self, w: WindowId) -> Vec<WindowId> {
-        let mut out = vec![self.stack_top(w)];
-        while let Some(u) = self.under(*out.last().unwrap()) {
+    /// The chain `w` is in, its top first and its first base last.
+    pub fn chain(&self, w: WindowId) -> Vec<WindowId> {
+        let mut out = vec![self.top_of(w)];
+        while let Some(u) = self.base_of(*out.last().unwrap()) {
             if out.contains(&u) {
                 break;
             }
@@ -368,13 +375,13 @@ impl Layout {
             c.wins.retain(|s| s.window != w);
         }
         self.stash.retain(|s| s.slot.window != w);
-        // a window gone from a stack: the one under it under the one over
-        // it (the leader says where the top's place goes; a replica keeps
-        // the stack whole)
-        let (over, under) = (self.over(w), self.under(w));
-        self.covers.retain(|c| c.top != w && c.under != w);
+        // a window gone from a chain: the lens over it is on the window
+        // under it (the leader takes the lenses over a window away first;
+        // a replica keeps the chain whole)
+        let (over, under) = (self.lenses.iter().find(|c| c.base == w).copied(), self.base_of(w));
+        self.lenses.retain(|c| c.lens != w && c.base != w);
         if let (Some(o), Some(u)) = (over, under) {
-            self.covers.push(Cover { top: o, under: u });
+            self.lenses.push(Lens { base: u, ..o });
         }
     }
 }
@@ -730,10 +737,11 @@ impl State {
                 l.top = Some(*top);
                 l.r = *r;
             }
-            LayoutOp::Arrange { r, cols, full, stash, covers } => {
-                // a window may sit in one place only (covered is a place)
+            LayoutOp::Arrange { r, cols, full, stash, lenses } => {
+                // a window may sit in one place only (under a lens is a
+                // place)
                 let mut seen = std::collections::BTreeSet::new();
-                for w in cols.iter().flat_map(|c| c.wins.iter().map(|s| s.window)).chain(stash.iter().map(|s| s.slot.window)).chain(covers.iter().map(|c| c.under)) {
+                for w in cols.iter().flat_map(|c| c.wins.iter().map(|s| s.window)).chain(stash.iter().map(|s| s.slot.window)).chain(lenses.iter().map(|c| c.base)) {
                     if !seen.insert(w) {
                         return Err(ApplyError::Exists(format!("window {w} placed twice")));
                     }
@@ -741,7 +749,7 @@ impl State {
                 l.r = *r;
                 l.cols = cols.clone();
                 l.stash = stash.clone();
-                l.covers = covers.clone();
+                l.lenses = lenses.clone();
                 l.full = full.filter(|f| cols.iter().any(|c| c.id == *f));
             }
             LayoutOp::Snarf { text } => l.snarf = text.clone(),
@@ -1008,8 +1016,8 @@ impl State {
         for s in &self.layout.stash {
             h.update(&postcard::to_stdvec(s).unwrap_or_default());
         }
-        h.update(b"covers");
-        h.update(&postcard::to_stdvec(&self.layout.covers).unwrap_or_default());
+        h.update(b"lenses");
+        h.update(&postcard::to_stdvec(&self.layout.lenses).unwrap_or_default());
         h.update(b"nav");
         h.update(&postcard::to_stdvec(&(&self.layout.nav_back, &self.layout.nav_forward)).unwrap_or_default());
         h.update(self.layout.snarf.as_bytes());

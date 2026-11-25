@@ -215,5 +215,5 @@ impl Acme {
 pub(crate) fn dot_in(node: &apex_core::Node, w: apex_core::WindowId, note: Option<f32>) -> crate::text_element::Dot {
     let t = crate::theme::theme();
     let live = node.window_live(w) || node.state.window(w).is_ok_and(|x| x.body == apex_core::Body::Page(apex_core::Source::Url));
-    crate::text_element::dot(&t, false, node.window_unsaved(w), live, node.window_working(w), note).at(node.window_progress(w))
+    crate::text_element::dot(&t, false, node.window_unsaved(w), live, node.place_working(w), note).at(node.place_progress(w))
 }

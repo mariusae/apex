@@ -292,7 +292,7 @@ impl Acme {
         let stashed: Vec<WindowId> = self.shelved();
         self.pulled.retain(|w, _| stashed.contains(w));
         for w in stashed {
-            let out = self.node.window_working(w) || self.window_notified(w);
+            let out = self.node.place_working(w) || self.window_notified(w);
             match self.pulled.get(&w) {
                 Some(&(was, _)) if was == out => {}
                 // first seen in, as it always was: nothing to slide

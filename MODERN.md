@@ -475,22 +475,22 @@ windows put away out of the tiling, which is the core's
   word is is washed faintly in B3's blue, under the selection; once the
   selection is elsewhere, the marks are gone. A tag's later `Look`s are
   words like any other.
-- **A window over another** (`state::Cover`): `apex editor` run in a
-  window -- a terminal, win's, a command from a tag: `$winid` -- ($EDITOR
-  for git, say) opens the file over that window, in its place, rather
-  than somewhere else: a window of its own, on the
-  file's text if it is open elsewhere too (as Zerox makes one). The
-  terminal is under it, out of the tiling and still running, and comes
-  back in the place when the window over it goes -- wherever that window
-  has been moved or stashed meanwhile. Its Del is drawn as an × on the
-  top card of two (it closes this one only), and Swap (an arrow up and
-  one down) changes the two over: the terminal on top, the file under
-  it. Going to a covered window -- Look, the plumber, the finder, a
-  notification taken -- brings it to the top the same way, and a
-  notification on one under shows on the top's handle. Windows over one
-  another are a stack: each covers the one under it, and closing one
-  closes the stack over it. Only `apex editor` covers a window so;
-  anything else opens as ever.
+- **A lens on a window** (`state::Lens`, DESIGN.md "Lenses"): a
+  window standing in for another, its base, in the base's place, made
+  and removed and nothing else. `apex editor` run in a window -- a
+  terminal, win's, a command from a tag: `$winid` -- ($EDITOR for git,
+  say) opens the file as a lens on that window, rather than somewhere
+  else: a window of its own, on the file's text if it is open elsewhere
+  too (as Zerox makes one). The terminal is under it, out of the tiling
+  and still running, and comes back in the place when the lens goes --
+  wherever it has been moved or stashed meanwhile -- or when editor
+  does: a lens goes with the attachment that made it, and with its
+  base. Its Del is drawn as an × on the top card of two (it takes the
+  lens away only). Going to a window under a lens -- Look, the
+  plumber, the finder, a notification taken -- shows the place as it
+  is, the lens on top, and the place's handle says the most pressing
+  status and any notification in it. A lens on a window with one goes
+  on the top; closing one closes the lenses over it.
 - **B4 on a box minimizes** -- shift-B1 on a laptop, which is B4
   everywhere (`tiling::colminimize`, `rowminimize`): on a
   window's box (or handle), the window down to its tag where it stands,

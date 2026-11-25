@@ -289,7 +289,7 @@ impl Node {
 
     /// Append the whole tiling as it now stands in `l`.
     pub(crate) fn arrange(&mut self, log: &mut Log, l: &Layout) -> Result<()> {
-        self.append(log, Shard::Layout, Op::Layout(LayoutOp::Arrange { r: l.r, cols: l.cols.clone(), full: l.full, stash: l.stash.clone(), covers: l.covers.clone() }))?;
+        self.append(log, Shard::Layout, Op::Layout(LayoutOp::Arrange { r: l.r, cols: l.cols.clone(), full: l.full, stash: l.stash.clone(), lenses: l.lenses.clone() }))?;
         Ok(())
     }
 
@@ -519,52 +519,69 @@ impl Node {
         Ok(id)
     }
 
-    /// A window on `body` over window `under` (and what is over it): in
-    /// its place, the stack's new top -- `apex editor` from a terminal,
-    /// the file where the terminal was, the terminal back when it goes.
-    pub fn cover_window(&mut self, log: &mut Log, under: WindowId, body: BufferId, label: Option<String>) -> Result<WindowId> {
-        let top = self.state.layout.stack_top(under);
+    /// A lens on `base`, made by `by` (`state::Lens`): a window on `body`
+    /// in the place of the top of `base`'s chain, the window under it --
+    /// `apex editor` from a terminal, the file where the terminal was, the
+    /// terminal back when it goes.
+    #[allow(clippy::too_many_arguments)]
+    pub fn lens_window(&mut self, log: &mut Log, base: WindowId, body: Body, path: String, label: Option<String>, via: Via, dir: String, by: AttachmentId) -> Result<WindowId> {
+        self.state.window(base)?;
+        let top = self.state.layout.top_of(base);
         if self.state.layout.place_of(top).is_none() && !self.state.layout.is_stashed(top) {
-            return Err(CoreError::Missing(format!("window {under} is not placed")));
+            return Err(CoreError::Missing(format!("window {base} is not placed")));
         }
-        let id = self.make_window_shards(log, Body::Text(body), String::new(), label, false, Via::Host, String::new())?;
-        let mut stack = self.state.layout.stack(top);
-        stack.insert(0, id);
+        let id = self.make_window_shards(log, body, path, label, false, via, dir)?;
         let mut l = self.state.layout.clone();
-        tiling::restack(&mut l, top, &stack, &*self.tiling);
+        tiling::lens_on(&mut l, top, id, by, &*self.tiling);
         self.arrange(log, &l)?;
         self.warp = Some(Warp::NewWindow(id));
         Ok(id)
     }
 
-    /// `Swap`: the window and the one it covers change places -- that one
-    /// on top, in the place, this one right under it.
-    pub fn swap_window(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
-        let stack = self.state.layout.stack(w);
-        if stack.len() < 2 || stack[0] != w {
-            return Ok(());
+    /// A lens on `base` that is a window on text `body`.
+    pub fn lens_text(&mut self, log: &mut Log, base: WindowId, body: BufferId, by: AttachmentId) -> Result<WindowId> {
+        self.lens_window(log, base, Body::Text(body), String::new(), None, Via::Host, String::new(), by)
+    }
+
+    /// A page lens on `base` (as `open_page` makes a page in a column).
+    pub fn lens_page(&mut self, log: &mut Log, base: WindowId, page: NewPage, by: AttachmentId) -> Result<WindowId> {
+        let NewPage { content, via, base: dir, label } = page;
+        match content {
+            NewContent::Html { name, text } => {
+                let dir = if dir.is_empty() { base_of(&name) } else { dir };
+                let body = self.create_buffer_as(log, &name, &text, None, WinKind::Page, true)?;
+                self.lens_window(log, base, Body::Page(Source::Buffer(body)), String::new(), label, via, dir, by)
+            }
+            NewContent::Url(url) => self.lens_window(log, base, Body::Page(Source::Url), url, label, via, dir, by),
         }
-        let mut next = stack.clone();
-        next.swap(0, 1);
-        let mut l = self.state.layout.clone();
-        tiling::restack(&mut l, w, &next, &*self.tiling);
-        self.arrange(log, &l)?;
-        self.warp = Some(Warp::WinButton(next[0]));
+    }
+
+    /// The lenses `by` made, gone with it, and the lenses over each with
+    /// it (it is their base). One that would take text that is nowhere
+    /// else and not put stays, the session's now (`SERVER`'s), for the
+    /// user to Put or Del.
+    pub fn drop_lenses_of(&mut self, log: &mut Log, by: AttachmentId) -> Result<()> {
+        while let Some(c) = self.state.layout.lenses.iter().find(|c| c.by == by).copied() {
+            let l = &self.state.layout;
+            let chain = l.chain(c.lens);
+            let upto = chain.iter().position(|&w| w == c.lens).unwrap_or(0);
+            if chain[..=upto].iter().any(|&w| self.lone_dirty(w)) {
+                let mut l = self.state.layout.clone();
+                for d in l.lenses.iter_mut().filter(|d| d.lens == c.lens) {
+                    d.by = SERVER;
+                }
+                self.arrange(log, &l)?;
+                continue;
+            }
+            self.delete_window(log, c.lens)?;
+        }
         Ok(())
     }
 
-    /// A covered window brought to the top of its stack, the rest under it
-    /// in their order: what going to it does.
-    pub fn raise_window(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
-        let stack = self.state.layout.stack(w);
-        if stack[0] == w {
-            return Ok(());
-        }
-        let mut next: Vec<WindowId> = stack.iter().copied().filter(|&x| x != w).collect();
-        next.insert(0, w);
-        let mut l = self.state.layout.clone();
-        tiling::restack(&mut l, stack[0], &next, &*self.tiling);
-        self.arrange(log, &l)
+    /// Does window `w` hold the only view of text not yet put?
+    fn lone_dirty(&self, w: WindowId) -> bool {
+        let Some(b) = self.state.window(w).ok().and_then(|w| w.body_buffer()) else { return false };
+        self.state.buffer(b).is_ok_and(|b| !b.name.is_empty() && !b.scratch && b.dirty() && b.views.len() <= 1)
     }
 
     /// acme's `makenewwindow`: a window on `body` in the active column
@@ -809,10 +826,8 @@ impl Node {
     /// tag, or obscured): grow it a little (`colgrow` with button 1) so
     /// what is shown can be seen. No mouse warp: that is the caller's.
     pub fn reveal(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
-        // a covered one comes to the top of its stack, the rest under it
-        if self.state.layout.over(w).is_some() {
-            self.raise_window(log, w)?;
-        }
+        // under a lens: the lens is what shows, in their place
+        let w = self.state.layout.top_of(w);
         // a stashed window is never a dead end: whatever goes to it
         // brings it back where it was; nor is one hidden behind a window
         // grown to the whole column
@@ -843,8 +858,8 @@ impl Node {
     /// What each had before the B3 is still what B1 on the box gives
     /// back. A stashed window stays put: its card in the stash says so.
     pub fn notice(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
-        // covered: the stack's top is what shows (its handle says it)
-        let w = self.state.layout.stack_top(w);
+        // under a lens: the chain's top is what shows (its handle says it)
+        let w = self.state.layout.top_of(w);
         let Some((ci, _)) = self.state.layout.place_of(w) else { return Ok(()) };
         let mut l = self.state.layout.clone();
         let mut moved = false;
@@ -1250,6 +1265,27 @@ impl Node {
         (s.by == SERVER || self.state.meta.attachments.contains_key(&s.by)).then_some(s)
     }
 
+    /// The status a window's place shows: the most pressing in its chain
+    /// (`state::Lens`), the top's of those alike -- an agent done under its
+    /// conversation is done. A window under a lens shows nothing itself.
+    pub fn place_status(&self, window: WindowId) -> Option<crate::state::WindowStatus> {
+        let chain = self.state.layout.chain(window);
+        if chain[0] != window {
+            return None;
+        }
+        chain.iter().filter_map(|&w| self.window_status(w)).rev().max_by_key(|s| s.state.rank())
+    }
+
+    /// Is the work in a window's place going on (`place_status`)?
+    pub fn place_working(&self, w: WindowId) -> bool {
+        self.place_status(w).is_some_and(|s| s.state == crate::status::State::Working)
+    }
+
+    /// How far along the work in a window's place says it is.
+    pub fn place_progress(&self, w: WindowId) -> Option<u8> {
+        self.place_status(w).filter(|s| s.state == crate::status::State::Working).and_then(|s| s.progress)
+    }
+
     /// The owning tool's note on a window (`WindowOp::Note`).
     pub fn window_note(&self, window: WindowId) -> Option<&str> {
         self.state.window(window).ok()?.note.as_deref()
@@ -1298,10 +1334,6 @@ impl Node {
                 }
             }
         }
-        // over another window: the two change places
-        if self.state.layout.under(w).is_some() {
-            out.push("Swap");
-        }
         match win.body {
             // a page's history and reload (the client does them)
             Body::Page(Source::Url) => out.extend(["Back", "Fwd", "Get"]),
@@ -1331,21 +1363,24 @@ impl Node {
     /// space, acme moves the mouse onto its `Del`; that is recorded in
     /// `warp`.
     pub fn delete_window(&mut self, log: &mut Log, window: WindowId) -> Result<()> {
+        // the lenses on it go with it, the top first: each the top as it
+        // goes
+        while let Some(o) = self.state.layout.lens_of(window) {
+            let top = self.state.layout.top_of(o);
+            self.delete_window(log, top)?;
+        }
         let w = self.state.window(window)?.clone();
         self.append(log, Shard::Buffer(w.tag), Op::Buffer(BufferOp::ViewDel { view: ViewId::Tag(window) }))?;
         if let Some(b) = w.body_buffer() {
             self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::ViewDel { view: ViewId::Body(window) }))?;
         }
         let mut next = None;
-        let stack = self.state.layout.stack(window);
-        if stack.len() > 1 {
-            // in a stack: the one under it takes its place (when it is the
-            // top), or the stack closes over it
-            let rest: Vec<WindowId> = stack.iter().copied().filter(|&x| x != window).collect();
+        if self.state.layout.base_of(window).is_some() {
+            // a lens: its base back in its place (and the pointer left be:
+            // onto the Del of the one coming back -- a terminal -- a second
+            // click would close it too)
             let mut l = self.state.layout.clone();
-            tiling::restack(&mut l, stack[0], &rest, &*self.tiling);
-            // (and the pointer left be: onto the Del of the one coming back
-            // -- a terminal -- a second click would close it too)
+            tiling::unlens(&mut l, window, &*self.tiling);
             self.arrange(log, &l)?;
         } else if let Some((ci, wi)) = self.state.layout.place_of(window) {
             let mut l = self.state.layout.clone();
@@ -2089,7 +2124,7 @@ impl Node {
         }
         match t.split_whitespace().next().unwrap_or("") {
             "Cut" | "Paste" | "Snarf" | "Undo" | "Redo" | "Look" | "Edit" | "Newcol" | "Delcol" | "Del" | "Delete" | "Zerox"
-            | "Stash" | "Swap" | "Font" | "Sort" | "Exit" | "Tab" | "Indent" | "ID" | "Send" => Handler::Leader,
+            | "Stash" | "Font" | "Sort" | "Exit" | "Tab" | "Indent" | "ID" | "Send" => Handler::Leader,
             "New" if t.split_whitespace().nth(1).is_none() => Handler::Leader,
             _ => Handler::Server,
         }
@@ -2281,10 +2316,6 @@ impl Node {
             "Stash" => {
                 let w = win.ok_or_else(|| CoreError::Missing("Stash needs a window".into()))?;
                 self.stash_window(log, w)?;
-            }
-            "Swap" => {
-                let w = win.ok_or_else(|| CoreError::Missing("Swap needs a window".into()))?;
-                self.swap_window(log, w)?;
             }
             "Tab" => {
                 let w = win.ok_or_else(|| CoreError::Missing("Tab needs a window".into()))?;

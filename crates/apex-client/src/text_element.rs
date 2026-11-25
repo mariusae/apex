@@ -134,7 +134,6 @@ pub const VERB_ICONS: &[(&str, &str)] = &[
     ("Fwd", r#"<path d="M9 6l6 6-6 6"/>"#),
     // a window over another: the two change places -- one arrow up, one
     // down, side by side
-    ("Swap", r#"<path d="M8 19V5M8 5L5 8M8 5l3 3M16 5v14M16 19l-3-3M16 19l3-3"/>"#),
     // Del on a window over another: the × on the top card of two, the
     // corner of the one under it showing -- it closes this one only
     (DEL_STACKED, r#"<path d="M10 10l8 8M18 10l-8 8"/><path d="M5.5 14.5V7a1.5 1.5 0 0 1 1.5-1.5h7.5"/>"#),
@@ -160,8 +159,8 @@ pub const VERB_ICONS: &[(&str, &str)] = &[
 const NARROW_CELL: char = '\u{2007}';
 /// The session's directory's icon's name in `VERB_ICONS`.
 pub const HERE: &str = "./";
-/// Del on a window over another (`Cover`): its own icon, the command
-/// still Del (`verb_command`).
+/// Del on a lens (`state::Lens`): its own icon, the command still Del
+/// (`verb_command`).
 pub const DEL_STACKED: &str = "Del/stacked";
 
 /// The command an icon in the tag runs: its name, but for a variant's.

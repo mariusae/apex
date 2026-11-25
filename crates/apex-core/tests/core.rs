@@ -913,41 +913,79 @@ fn a_diagnostic_window_is_made_stashed_and_says_how_far_along() {
     assert!(r.window_diagnostic(d) && r.state.layout.is_stashed(d));
 }
 #[test]
-fn a_window_covers_another_in_its_place_and_gives_it_back() {
+fn a_lens_stands_in_its_bases_place_and_gives_it_back() {
     let (mut log, mut node, col) = session();
+    let by = apex_core::AttachmentId(7);
     let t = node.new_window(&mut log, col, "/tmp/term", "$ git commit\n").unwrap();
     let other = node.new_window(&mut log, col, "/tmp/other", "x\n").unwrap();
     let place = node.state.layout.slot(t).unwrap().r;
     let msg = node.create_buffer_as(&mut log, "/tmp/COMMIT_EDITMSG", "", None, WinKind::File, false).unwrap();
-    // the file over the terminal: in its place, the terminal out of the
-    // tiling, under it
-    let e = node.cover_window(&mut log, t, msg, None).unwrap();
+    // the file a lens on the terminal: in its place, the terminal out of
+    // the tiling, under it
+    let e = node.lens_text(&mut log, t, msg, by).unwrap();
     assert_eq!(node.state.layout.slot(e).unwrap().r, place);
     assert!(node.state.layout.place_of(t).is_none());
-    assert_eq!((node.state.layout.under(e), node.state.layout.over(t)), (Some(t), Some(e)));
-    assert_eq!(node.state.layout.stack(t), vec![e, t]);
-    assert!(node.window_verbs(e).contains(&"Swap") && !node.window_verbs(other).contains(&"Swap"));
-    // Swap: the terminal on top, the file under it
-    node.exec(&mut log, ExecCtx::Window(e), "Swap").unwrap();
-    assert_eq!(node.state.layout.stack(e), vec![t, e]);
-    assert_eq!(node.state.layout.slot(t).unwrap().r.y0, place.y0);
-    // going to the file brings it back up
-    node.reveal(&mut log, e).unwrap();
-    assert_eq!(node.state.layout.stack(t), vec![e, t]);
+    assert_eq!((node.state.layout.base_of(e), node.state.layout.lens_of(t)), (Some(t), Some(e)));
+    assert_eq!(node.state.layout.chain(t), vec![e, t]);
+    assert_eq!(node.state.layout.lens(e).map(|c| c.by), Some(by));
+    // no swapping: made and removed, nothing else
+    assert!(!node.window_verbs(e).contains(&"Swap") && !node.window_verbs(other).contains(&"Swap"));
+    // going to the terminal shows the place as it is, the lens on top
+    node.reveal(&mut log, t).unwrap();
+    assert_eq!(node.state.layout.top_of(t), e);
+    assert!(node.state.layout.place_of(t).is_none());
     // and a replica sees the same
-    assert_eq!(follower(&log).state.layout.stack(t), vec![e, t]);
-    // the top deleted: the terminal back in its place, the stack gone
+    assert_eq!(follower(&log).state.layout.chain(t), vec![e, t]);
+    // the lens deleted: the terminal back in its place
     node.delete_window(&mut log, e).unwrap();
     assert_eq!(node.state.layout.slot(t).unwrap().r.y0, place.y0);
-    assert!(node.state.layout.covers.is_empty());
-    // a covered window gone: the stack closes over it
-    let msg2 = node.create_buffer_as(&mut log, "/tmp/COMMIT_EDITMSG", "", None, WinKind::File, false).unwrap();
-    let e2 = node.cover_window(&mut log, t, msg2, None).unwrap();
-    node.delete_window(&mut log, t).unwrap();
-    assert!(node.state.layout.covers.is_empty());
-    assert!(node.state.layout.place_of(e2).is_some());
+    assert!(node.state.layout.lenses.is_empty());
     assert_eq!(f_hash(&log), node.state.hash());
 }
+
+#[test]
+fn lenses_chain_and_go_with_their_base_and_their_maker() {
+    let (mut log, mut node, col) = session();
+    let (a, b) = (apex_core::AttachmentId(7), apex_core::AttachmentId(8));
+    let t = node.new_window(&mut log, col, "/tmp/term", "$ claude\n").unwrap();
+    let place = node.state.layout.slot(t).unwrap().r;
+    let conv = node.create_buffer_as(&mut log, "/tmp/conv", "", None, WinKind::File, true).unwrap();
+    let msg = node.create_buffer_as(&mut log, "/tmp/COMMIT_EDITMSG", "", None, WinKind::File, false).unwrap();
+    // a lens on a window with one goes on the top: its base the lens
+    let l1 = node.lens_text(&mut log, t, conv, a).unwrap();
+    let l2 = node.lens_text(&mut log, t, msg, b).unwrap();
+    assert_eq!(node.state.layout.chain(t), vec![l2, l1, t]);
+    assert_eq!(node.state.layout.base_of(l2), Some(l1));
+    assert_eq!(node.state.layout.slot(l2).unwrap().r.y0, place.y0);
+    // the top removed: the one under it back
+    node.delete_window(&mut log, l2).unwrap();
+    assert_eq!(node.state.layout.chain(t), vec![l1, t]);
+    // the base gone: its lenses with it (the file's buffer went with its
+    // last window)
+    let msg = node.create_buffer_as(&mut log, "/tmp/COMMIT_EDITMSG", "", None, WinKind::File, false).unwrap();
+    let l2 = node.lens_text(&mut log, t, msg, b).unwrap();
+    node.delete_window(&mut log, t).unwrap();
+    assert!(node.state.window(l1).is_err() && node.state.window(l2).is_err());
+    assert!(node.state.layout.lenses.is_empty());
+    // its maker gone: its lens, and the lenses over that, with it
+    let t = node.new_window(&mut log, col, "/tmp/term", "$ claude\n").unwrap();
+    let conv = node.create_buffer_as(&mut log, "/tmp/conv", "", None, WinKind::File, true).unwrap();
+    let l1 = node.lens_text(&mut log, t, conv, a).unwrap();
+    let other = node.create_buffer_as(&mut log, "/tmp/other", "", None, WinKind::File, true).unwrap();
+    let l2 = node.lens_text(&mut log, t, other, b).unwrap();
+    node.drop_lenses_of(&mut log, a).unwrap();
+    assert!(node.state.window(l1).is_err() && node.state.window(l2).is_err());
+    assert!(node.state.layout.place_of(t).is_some());
+    // but not text that is nowhere else and not put: that stays, the
+    // session's
+    let msg = node.create_buffer_as(&mut log, "/tmp/COMMIT_EDITMSG", "", None, WinKind::File, false).unwrap();
+    let e = node.lens_text(&mut log, t, msg, b).unwrap();
+    node.insert(&mut log, ViewId::Body(e), "fix\n").unwrap();
+    node.drop_lenses_of(&mut log, b).unwrap();
+    assert_eq!(node.state.layout.lens(e).map(|c| c.by), Some(SERVER));
+    assert_eq!(f_hash(&log), node.state.hash());
+}
+
 #[test]
 fn the_first_look_in_a_tag_has_the_word_looked_for() {
     use apex_core::text::{find_all, find_match};
@@ -1031,8 +1069,8 @@ fn the_hash_sees_every_replicated_window_flag_and_the_stacks() {
         changed(&node, &what);
     }
     let b = node.create_buffer_as(&mut log, "/tmp/over", "", None, WinKind::File, false).unwrap();
-    node.cover_window(&mut log, w, b, None).unwrap();
-    changed(&node, "a cover");
+    node.lens_text(&mut log, w, b, SERVER).unwrap();
+    changed(&node, "a lens");
     node.append(&mut log, Shard::Layout, Op::Layout(LayoutOp::Visit { from: None, to: Loc { session: None, name: "/tmp/x".into(), pos: Pos::Keep } })).unwrap();
     changed(&node, "a visit");
 }

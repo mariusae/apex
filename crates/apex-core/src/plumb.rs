@@ -232,7 +232,7 @@ pub const EXEC: &str = "exec";
 /// for that window (§6.2); everything else about them is apex's.
 pub const BUILTINS: &[&str] = &[
     // the leader's (`Node::builtin`)
-    "Cut", "Paste", "Snarf", "Undo", "Redo", "Look", "Edit", "Newcol", "Delcol", "Del", "Delete", "Zerox", "Stash", "Swap", "Font", "Sort", "Exit", "Tab", "Indent", "ID", "Send",
+    "Cut", "Paste", "Snarf", "Undo", "Redo", "Look", "Edit", "Newcol", "Delcol", "Del", "Delete", "Zerox", "Stash", "Font", "Sort", "Exit", "Tab", "Indent", "ID", "Send",
     // the server's (`Server::perform`)
     "Put", "Putall", "Get", "New", "Newterm", "Win", "Kill", "Dump", "Load",
 ];

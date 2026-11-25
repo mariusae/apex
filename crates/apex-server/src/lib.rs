@@ -35,7 +35,7 @@ use apex_core::state::ExecStatus;
 use apex_core::plumb::{expand, Bindings};
 use apex_core::*;
 
-pub use proposal::Proposal;
+pub use proposal::{LensBody, Proposal};
 pub use term::{TermEvent, TermHost, TermKey};
 pub use proto::Script;
 
@@ -310,7 +310,7 @@ impl Server {
         let (display, text) = self.read_path(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         let hash = Text::new(&text).content_hash();
         let kind = if path.is_dir() { WinKind::Dir } else { WinKind::File };
-        Ok(Proposal::OpenWindow { col, from, name: display, kind, text, hash, select_line, cover: None })
+        Ok(Proposal::OpenWindow { col, from, name: display, kind, text, hash, select_line })
     }
 
     fn put(&mut self, view: &Node, w: WindowId, arg: Option<&str>) -> Result<Vec<Proposal>, String> {

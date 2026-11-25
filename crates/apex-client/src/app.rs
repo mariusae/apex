@@ -2136,18 +2136,18 @@ impl Acme {
     }
 
     /// Does the window carry a notification this client shows -- it, or
-    /// a window it covers (whose handle is this one's while it is)?
+    /// a window it is a lens on (whose handle is this one's while it is)?
     pub fn window_notified(&self, w: WindowId) -> bool {
         let ws = self.handle_of(w);
         self.shown_notifications().any(|n| ws.contains(&n.window))
     }
 
     /// The windows a window's handle speaks for: itself, and, the top of
-    /// a stack (`Cover`), the windows under it.
+    /// a chain of lenses (`state::Lens`), the windows under it.
     fn handle_of(&self, w: WindowId) -> Vec<WindowId> {
         let l = &self.node.state.layout;
-        if l.over(w).is_none() && l.under(w).is_some() {
-            l.stack(w)
+        if l.lens_of(w).is_none() && l.base_of(w).is_some() {
+            l.chain(w)
         } else {
             vec![w]
         }
@@ -2957,7 +2957,7 @@ impl Acme {
                 // while a tool works behind a window, the handle
                 // breathes between its colour and pale
                 let web = win.body == Body::Page(apex_core::Source::Url);
-                let pulse = ((web && self.webs.loading(w)) || self.node.window_working(w)).then(breath);
+                let pulse = ((web && self.webs.loading(w)) || self.node.place_working(w)).then(breath);
                 (win.mono, dirty, stale, web || self.node.window_live(w), pulse)
             }
             _ => (false, false, false, false, None),
@@ -2965,7 +2965,7 @@ impl Acme {
         // a window's handle while it is notified (the session's square
         // says nothing of it: the tab's face does)
         let progress = match view {
-            ViewId::Tag(w) => self.node.window_progress(w),
+            ViewId::Tag(w) => self.node.place_progress(w),
             _ => None,
         };
         let note = match view {
@@ -3096,8 +3096,8 @@ impl Acme {
     pub fn tag_head(&self, w: WindowId) -> Head {
         let n = &self.node;
         let kind = n.window_kind(w);
-        // over another window: its Del closes this one only, and says so
-        let verbs: Vec<&str> = n.window_verbs(w).into_iter().map(|v| if v == "Del" && n.state.layout.under(w).is_some() { crate::text_element::DEL_STACKED } else { v }).collect();
+        // a lens: its Del takes it away only, and says so
+        let verbs: Vec<&str> = n.window_verbs(w).into_iter().map(|v| if v == "Del" && n.state.layout.base_of(w).is_some() { crate::text_element::DEL_STACKED } else { v }).collect();
         // and the tools' words for it, which the user cannot erase
         let words = apex_core::plumb::tag_words(&n.state.meta.rules, &n.window_path(w), kind, Some(w), n.window_owner(w));
         let label = n.window_label(w).or_else(|| match kind {
@@ -3107,7 +3107,7 @@ impl Acme {
         });
         // its status, for its pill at the row's right (cut short there
         // as the room it has asks)
-        let chip = n.window_status(w).and_then(|s| Some(crate::text_element::StatusChip { text: s.text()?, asks: crate::sidebar::asks(s.state), icon: crate::text_element::status_icon(s.state, s.kind) }));
+        let chip = n.place_status(w).and_then(|s| Some(crate::text_element::StatusChip { text: s.text()?, asks: crate::sidebar::asks(s.state), icon: crate::text_element::status_icon(s.state, s.kind) }));
         // the path's picker down: the path being chosen, typed in place
         if let Some(p) = self.picker.as_ref().filter(|p| p.window == w) {
             return Head::picking_in(&p.dir, &p.filter, p.filter.cursor, crate::tagedit::caret_on(p.caret_since), label.as_deref(), chip, &verbs, &n.state.meta.cwd).with_words(&words);

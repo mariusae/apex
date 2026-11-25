@@ -19,12 +19,13 @@ pub enum Proposal {
         text: String,
         hash: String,
         select_line: Option<usize>,
-        /// Over this window, in its place, rather than in `col`
-        /// (`ClientMsg::EditOver`): a window of its own, the file's buffer
-        /// shared if it is open already.
-        #[serde(default)]
-        cover: Option<WindowId>,
     },
+    /// A lens on `base`, made by `by` (`state::Lens`): a window standing
+    /// in for it, in its place, until the lens is deleted, `base` goes, or
+    /// `by` does.
+    Lens { base: WindowId, by: AttachmentId, body: LensBody },
+    /// The lenses `by` made gone with it (it detached).
+    LensesGone { by: AttachmentId },
     /// A window on a new, empty buffer at this path (`New path`): a
     /// file's, or scratch (a tool's window, a transcript), with a label
     /// beside the path.
@@ -189,24 +190,22 @@ fn goto_from(node: &mut Node, log: &mut Log, loc: Loc, from: Option<Loc>) -> Res
     Ok(w)
 }
 
+/// What a lens shows.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum LensBody {
+    /// A file, as `OpenWindow` opens one (`apex editor` run in a window,
+    /// `ClientMsg::EditLens`): a window of its own, on the file's buffer if
+    /// it is open already.
+    File { name: String, kind: WinKind, text: String, hash: String, select_line: Option<usize> },
+    /// A page (a preview, a conversation), as `OpenPage` opens one.
+    Page(apex_core::NewPage),
+}
+
 /// Apply a proposal through the leader. Returns the window it opened or
 /// searched in, if any.
 pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<WindowId>, CoreError> {
     match p {
-        Proposal::OpenWindow { col, from, name, kind, text, hash, select_line, cover } => {
-            // over a window (the one apex editor ran in): a window of its
-            // own in its place, on the buffer open already (as Zerox makes
-            // one) or a new one
-            if let Some(under) = cover.filter(|u| node.state.window(*u).is_ok()) {
-                let b = match node.window_of(&name, kind).and_then(|w| node.state.window(w).ok()).and_then(|w| w.body_buffer()) {
-                    Some(b) => b,
-                    None => node.create_buffer_as(log, &name, &text, Some(hash), kind, false)?,
-                };
-                let w = node.cover_window(log, under, b, None)?;
-                select(node, log, w, select_line)?;
-                node.seltext = Some(ViewId::Body(w));
-                return Ok(Some(w));
-            }
+        Proposal::OpenWindow { col, from, name, kind, text, hash, select_line } => {
             if let Some(w) = node.window_of(&name, kind) {
                 // acme's openfile: show it (a window with no lines grows a
                 // few), and jump the mouse to the selection
@@ -221,6 +220,29 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             select(node, log, w, select_line)?;
             node.seltext = Some(ViewId::Body(w));
             Ok(Some(w))
+        }
+        Proposal::Lens { base, by, body } => {
+            node.catch_up(log)?;
+            match body {
+                // a window of its own in its place, on the buffer open
+                // already (as Zerox makes one) or a new one
+                LensBody::File { name, kind, text, hash, select_line } => {
+                    let b = match node.window_of(&name, kind).and_then(|w| node.state.window(w).ok()).and_then(|w| w.body_buffer()) {
+                        Some(b) => b,
+                        None => node.create_buffer_as(log, &name, &text, Some(hash), kind, false)?,
+                    };
+                    let w = node.lens_text(log, base, b, by)?;
+                    select(node, log, w, select_line)?;
+                    node.seltext = Some(ViewId::Body(w));
+                    Ok(Some(w))
+                }
+                LensBody::Page(page) => Ok(Some(node.lens_page(log, base, page, by)?)),
+            }
+        }
+        Proposal::LensesGone { by } => {
+            node.catch_up(log)?;
+            node.drop_lenses_of(log, by)?;
+            Ok(None)
         }
         Proposal::NewWindow { col, name, label, scratch, diagnostic } => {
             let w = node.new_window_as(log, col, &name, "", &Spec { kind: WinKind::File, scratch, label, diagnostic })?;

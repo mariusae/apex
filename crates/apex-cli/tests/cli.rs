@@ -643,12 +643,12 @@ fn editor_in_a_terminal_edits_over_it_and_gives_it_back() {
         let out = Command::new(env!("CARGO_BIN_EXE_apex")).env("APEX_SOCKET", &s2).env("apexsession", "main").env("winid", t.0.to_string()).args(["editor", &p2]).output().unwrap();
         (out.status.success(), String::from_utf8_lossy(&out.stderr).to_string())
     });
-    let over = |r: &Remote| r.node.state.layout.over(t);
+    let over = |r: &Remote| r.node.state.layout.lens_of(t);
     let deadline = Instant::now() + Duration::from_secs(5);
     while over(&c).is_none() && Instant::now() < deadline {
         let _ = c.step(Duration::from_millis(20));
     }
-    let e = over(&c).expect("a window over the terminal");
+    let e = over(&c).expect("a lens on the terminal");
     assert_eq!(c.node.window_path(e), path);
     assert_eq!(c.node.state.layout.slot(e).map(|s| s.r.y0), Some(place.y0));
     assert!(c.node.state.layout.place_of(t).is_none(), "the terminal under it");
@@ -663,7 +663,7 @@ fn editor_in_a_terminal_edits_over_it_and_gives_it_back() {
     let (success, err) = child.join().unwrap();
     assert!(success, "{err}");
     assert_eq!(c.node.state.layout.slot(t).map(|s| s.r.y0), Some(place.y0), "the terminal back in its place");
-    assert!(c.node.state.layout.covers.is_empty());
+    assert!(c.node.state.layout.lenses.is_empty());
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -681,10 +681,10 @@ fn editor_from_any_window_edits_over_it() {
     let (s2, p2) = (sock.clone(), path.clone());
     let child = std::thread::spawn(move || Command::new(env!("CARGO_BIN_EXE_apex")).env("APEX_SOCKET", &s2).env("apexsession", "main").env("winid", t.0.to_string()).args(["editor", &p2]).output().unwrap());
     let deadline = Instant::now() + Duration::from_secs(5);
-    while c.node.state.layout.over(t).is_none() && Instant::now() < deadline {
+    while c.node.state.layout.lens_of(t).is_none() && Instant::now() < deadline {
         let _ = c.step(Duration::from_millis(20));
     }
-    let e = c.node.state.layout.over(t).expect("a window over the text window");
+    let e = c.node.state.layout.lens_of(t).expect("a window over the text window");
     assert_eq!(c.node.window_path(e), path);
     c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(e), text: "Del".into() }, Duration::from_secs(5)).unwrap();
     let out = child.join().unwrap();
@@ -693,6 +693,37 @@ fn editor_from_any_window_edits_over_it() {
     while c.node.state.layout.slot(t).is_none() && Instant::now() < deadline {
         let _ = c.step(Duration::from_millis(20));
     }
+    assert!(c.node.state.layout.slot(t).is_some(), "the window back");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn an_editor_gone_takes_its_lens_with_it() {
+    let sock = daemon();
+    let dir = std::env::temp_dir().join(format!("apex-editor-gone-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("MSG");
+    std::fs::write(&file, "subject\n").unwrap();
+    let path = file.display().to_string();
+    let t = WindowId(ok(&sock, &["new"]).trim().parse().unwrap());
+    let mut c = Remote::connect_as(&sock, "main", "watcher", AttachmentKind::Tool).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_apex")).env("APEX_SOCKET", &sock).env("apexsession", "main").env("winid", t.0.to_string()).args(["editor", &path]).stderr(std::process::Stdio::null()).spawn().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while c.node.state.layout.lens_of(t).is_none() && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    let e = c.node.state.layout.lens_of(t).expect("a lens on the window");
+    // the editor killed (not interrupted: nothing of its own said): its
+    // lens goes as it detaches, the window back in its place
+    child.kill().unwrap();
+    let _ = child.wait();
+    // (the shards' entries come each in their own time: the window's
+    // going may come before the tiling that puts the other back)
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while (c.node.state.window(e).is_ok() || c.node.state.layout.slot(t).is_none()) && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    assert!(c.node.state.window(e).is_err(), "the lens gone with its editor");
     assert!(c.node.state.layout.slot(t).is_some(), "the window back");
     let _ = std::fs::remove_dir_all(&dir);
 }

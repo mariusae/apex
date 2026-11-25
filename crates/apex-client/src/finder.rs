@@ -9,7 +9,7 @@
 //! equal scores. A path that matches nothing can still be opened as
 //! typed. A window's label (its own, or Errors and Preview, as its tag
 //! has it) is beside its name in its row, a chip, and is matched too, on
-//! its own as a name; windows covered by another are listed after it.
+//! its own as a name; windows under a lens are listed after it.
 //!
 //! ⌘⇧P is the same across every tab of the window: the windows open in
 //! each session the tabs hold (this one's and the parked ones', from
@@ -180,9 +180,9 @@ fn session_entries(node: &Node, url: &SessionUrl, id: crate::pool::TabId, label:
     // after): going to one brings it back
     let order = (0..l.cols.len()).flat_map(|ci| apex_core::tiling::stash_order(l, ci)).map(|(w, _)| w);
     let orphans = l.stash.iter().filter(|s| l.column(s.col).is_none()).map(|s| s.slot.window);
-    // each with the windows it covers after it (`Cover`): going to one
-    // brings it up
-    for w in order.chain(orphans).flat_map(|w| l.stack(w)) {
+    // each with the windows under it after it (`Lens`): going to one
+    // shows their place
+    for w in order.chain(orphans).flat_map(|w| l.chain(w)) {
         let (name, kind) = (node.window_path(w), node.window_kind(w));
         // the label its tag shows: its own, or what its kind says
         let label = node.window_label(w).or_else(|| match kind {

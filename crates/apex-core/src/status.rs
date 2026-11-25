@@ -28,6 +28,18 @@ pub enum State {
 }
 
 impl State {
+    /// How pressing it is: blocked, then error, then done, then working,
+    /// then idle.
+    pub fn rank(self) -> u8 {
+        match self {
+            State::Blocked => 4,
+            State::Error => 3,
+            State::Done => 2,
+            State::Working => 1,
+            State::Idle => 0,
+        }
+    }
+
     /// As the protocol writes it.
     pub fn name(self) -> &'static str {
         match self {
@@ -337,14 +349,7 @@ pub fn summary(records: &[Record]) -> Option<(State, Option<u8>)> {
 /// The most pressing record: blocked, then error, then done, then
 /// working, then idle; of those alike, the root.
 pub fn top(records: &[Record]) -> Option<&Record> {
-    let rank = |s: State| match s {
-        State::Blocked => 4,
-        State::Error => 3,
-        State::Done => 2,
-        State::Working => 1,
-        State::Idle => 0,
-    };
-    records.iter().max_by_key(|r| (rank(r.state), r.id.is_empty()))
+    records.iter().max_by_key(|r| (r.state.rank(), r.id.is_empty()))
 }
 
 /// A state said in a word, where a status has no message of its own

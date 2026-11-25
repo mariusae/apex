@@ -15,7 +15,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::ids::*;
-use crate::state::{Column, Cover, Full, Layout, Slot, Stashed};
+use crate::state::{Column, Full, Layout, Lens, Slot, Stashed};
 
 /// acme's `Border`: between columns and between windows.
 pub const BORDER: i32 = 2;
@@ -645,32 +645,37 @@ pub fn is_maximized_win(c: &Column, wi: usize) -> bool {
     c.wins.len() > 1 && c.wins.iter().enumerate().all(|(j, s)| j == wi || s.body.dy() <= 0) && c.wins.iter().any(|s| s.premax > 0)
 }
 
-/// The stack in `top`'s place (`state::Cover`) made `stack`: its first
-/// the window in that place -- in a column, refitted there, or in the
-/// stash -- each after it under the one before. `stack` holds the windows
-/// that stack is to have, the old top among them or not (gone).
-pub fn restack(l: &mut Layout, top: WindowId, stack: &[WindowId], info: &dyn Info) {
-    let Some(&first) = stack.first() else { return };
-    let old = l.stack(top);
-    if first != top {
-        if let Some((ci, wi)) = l.place_of(top) {
-            l.cols[ci].wins[wi].window = first;
-            if let Some(f) = l.cols[ci].full.as_mut().filter(|f| f.window == top) {
-                f.window = first;
-            }
-            colgrow(l, ci, wi, -1, info);
-        } else if let Some(si) = l.stashed_of(top) {
-            l.stash[si].slot.window = first;
+/// Window `to` put in `from`'s place: in its column, refitted there, or
+/// in the stash, and what was to come back under `from` under `to`.
+fn replace_place(l: &mut Layout, from: WindowId, to: WindowId, info: &dyn Info) {
+    if let Some((ci, wi)) = l.place_of(from) {
+        l.cols[ci].wins[wi].window = to;
+        if let Some(f) = l.cols[ci].full.as_mut().filter(|f| f.window == from) {
+            f.window = to;
         }
-        // what was to come back under the old top comes back under this
-        for s in l.stash.iter_mut().filter(|s| s.above == Some(top)) {
-            s.above = Some(first);
-        }
+        colgrow(l, ci, wi, -1, info);
+    } else if let Some(si) = l.stashed_of(from) {
+        l.stash[si].slot.window = to;
     }
-    l.covers.retain(|c| !old.contains(&c.top) && !old.contains(&c.under) && !stack.contains(&c.top) && !stack.contains(&c.under));
-    for p in stack.windows(2) {
-        l.covers.push(Cover { top: p[0], under: p[1] });
+    for s in l.stash.iter_mut().filter(|s| s.above == Some(from)) {
+        s.above = Some(to);
     }
+}
+
+/// Window `lens`, made by `by`, a lens on the top of `base`'s chain
+/// (`state::Lens`): in that window's place, the window under it.
+pub fn lens_on(l: &mut Layout, base: WindowId, lens: WindowId, by: AttachmentId, info: &dyn Info) {
+    let top = l.top_of(base);
+    replace_place(l, top, lens, info);
+    l.lenses.push(Lens { lens, base: top, by });
+}
+
+/// The lens `lens`, the top of its chain, taken away: its base back in
+/// its place.
+pub fn unlens(l: &mut Layout, lens: WindowId, info: &dyn Info) {
+    let Some(base) = l.base_of(lens) else { return };
+    replace_place(l, lens, base, info);
+    l.lenses.retain(|c| c.lens != lens);
 }
 
 /// Shift-B1 on a window's box: minimized -- down to its tag, where it

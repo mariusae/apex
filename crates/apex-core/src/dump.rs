@@ -20,7 +20,7 @@ use crate::entry::*;
 use crate::ids::*;
 use crate::log::Log;
 use crate::node::{CoreError, Node, COL_TAG, TOP_TAG};
-use crate::state::{Column, Cover, Full, Stashed, State};
+use crate::state::{Column, Full, Layout, Stashed, State};
 use crate::text::Text;
 use crate::tiling::{self, Rect};
 
@@ -149,8 +149,6 @@ struct DumpLayout {
     full: Option<ColumnId>,
     #[serde(default)]
     stash: Vec<Stashed>,
-    #[serde(default)]
-    covers: Vec<Cover>,
 }
 
 /// `state` written down; `history` gives a terminal's output as text.
@@ -162,7 +160,9 @@ pub fn dump(state: &State, history: &mut dyn FnMut(TermId) -> Option<String>) ->
     d.top = state.layout.top.map(text).unwrap_or_default();
     d.columns = state.layout.cols.iter().map(|c| DumpColumn { id: c.id.0, tag: text(c.tag) }).collect();
     let mut shown = std::collections::BTreeSet::new();
-    for w in state.windows.values() {
+    // a lens is not written down: its tool's to make again, or gone with
+    // its process (`apex editor`'s); its first base is in its place
+    for w in state.windows.values().filter(|w| state.layout.base_of(w.id).is_none()) {
         let body = match w.body {
             Body::Text(b) => {
                 shown.insert(b);
@@ -205,9 +205,37 @@ pub fn dump(state: &State, history: &mut dyn FnMut(TermId) -> Option<String>) ->
         let on_disk = matches!(b.kind, WinKind::File | WinKind::Dir) && !b.scratch && b.name.starts_with('/') && b.disk_hash.is_some() && !b.dirty();
         d.buffers.push(DumpBuffer { id: b.id.0, name: b.name.clone(), kind: b.kind, scratch: b.scratch, text: (!on_disk).then(|| b.text.to_string()), disk_hash: b.disk_hash.clone() });
     }
-    let l = &state.layout;
-    d.layout = serde_json::to_value(DumpLayout { r: l.r, cols: l.cols.clone(), full: l.full, stash: l.stash.clone(), covers: l.covers.clone() }).ok();
+    let l = unlensed(&state.layout);
+    d.layout = serde_json::to_value(DumpLayout { r: l.r, cols: l.cols, full: l.full, stash: l.stash }).ok();
     d
+}
+
+/// The tiling with each chain's first base in its top's place, and no
+/// lenses.
+fn unlensed(l: &Layout) -> Layout {
+    let mut l = l.clone();
+    for top in l.lenses.iter().map(|c| c.lens).filter(|&w| l.lens_of(w).is_none()).collect::<Vec<_>>() {
+        let first = *l.chain(top).last().unwrap();
+        let swap = |w: &mut WindowId| {
+            if *w == top {
+                *w = first;
+            }
+        };
+        for c in &mut l.cols {
+            c.wins.iter_mut().for_each(|s| swap(&mut s.window));
+            if let Some(f) = c.full.as_mut() {
+                swap(&mut f.window);
+            }
+        }
+        for s in &mut l.stash {
+            swap(&mut s.slot.window);
+            if let Some(a) = s.above.as_mut() {
+                swap(a);
+            }
+        }
+    }
+    l.lenses.clear();
+    l
 }
 
 /// What loading a dump needs of the host: the files, and terminals.
@@ -327,14 +355,13 @@ impl Node {
                 l.cols = s.cols;
                 l.full = s.full;
                 l.stash = s.stash;
-                l.covers = s.covers;
                 self.arrange(log, &l)?;
                 // a window the tiling did not have a place for (its
                 // column gone, the one over it gone) is placed anew
                 let last = self.state.layout.cols.last().map(|c| c.id);
                 for &w in wins.values() {
                     let l = &self.state.layout;
-                    let placed = l.place_of(w).is_some() || l.is_stashed(w) || l.covers.iter().any(|c| c.under == w);
+                    let placed = l.place_of(w).is_some() || l.is_stashed(w);
                     if let (false, Some(col)) = (placed, last) {
                         self.place(log, col, w, None)?;
                     }
@@ -386,6 +413,5 @@ fn remap(mut l: DumpLayout, cols: &BTreeMap<u64, (ColumnId, BufferId)>, wins: &B
             Some(s)
         })
         .collect();
-    l.covers = l.covers.into_iter().filter_map(|c| Some(Cover { top: win(c.top)?, under: win(c.under)? })).collect();
     Some(l)
 }

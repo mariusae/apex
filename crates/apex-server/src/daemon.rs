@@ -20,7 +20,7 @@ use std::thread;
 use apex_core::*;
 
 use crate::proto::{SessionInfo, file_url_path, Answer, FileFrame, IoFrame, read_frame, write_frame, ClientMsg, Request, ServerMsg, Script};
-use crate::{PlumbReq, PlumbStep, proposal, Proposal, Server, ServerEvent};
+use crate::{PlumbReq, PlumbStep, proposal, proposal::LensBody, Proposal, Server, ServerEvent};
 
 /// Start a daemon on `socket` from the `apex` binary at `exe`, detached
 /// from whoever asked: its own session, so that the end of an ssh
@@ -723,7 +723,9 @@ impl Daemon {
             let _ = s.view.catch_up(&s.log);
         }
         self.pending.retain(|_, p| !matches!(p, Pending::Tool { conn, .. } if *conn == id));
-        self.after(&name, Vec::new());
+        // its lenses go with it, and what was under them shows again
+        let gone = if s.view.state.layout.lenses.iter().any(|c| c.by == a) { vec![Proposal::LensesGone { by: a }] } else { Vec::new() };
+        self.after(&name, gone);
     }
 
     fn handle(&mut self, id: u64, m: ClientMsg) {
@@ -910,14 +912,14 @@ impl Daemon {
                     Err(e) => Proposal::Errors { dir: Some(dir.to_string_lossy().to_string()), text: format!("{e}\n") },
                 });
             }
-            ClientMsg::EditOver { under, name: file } => {
-                let ctx = ExecCtx::Window(under);
+            ClientMsg::EditLens { base, name: file } => {
+                let ctx = ExecCtx::Window(base);
                 let dir = s.server.dir_of(&s.view, ctx);
-                let top = s.view.state.layout.stack_top(under);
+                let top = s.view.state.layout.top_of(base);
                 let col = s.view.state.layout.column_of(top).or_else(|| s.view.state.layout.cols.last().map(|c| c.id));
-                let Some(col) = col else { return };
-                props.push(match s.server.open_file(col, Some(under), &dir, &file, None) {
-                    Ok(Proposal::OpenWindow { col, from, name, kind, text, hash, select_line, .. }) => Proposal::OpenWindow { col, from, name, kind, text, hash, select_line, cover: Some(under) },
+                let (Some(col), Some(by)) = (col, self.conns.get(&id).and_then(|c| c.attachment)) else { return };
+                props.push(match s.server.open_file(col, Some(base), &dir, &file, None) {
+                    Ok(Proposal::OpenWindow { name, kind, text, hash, select_line, .. }) => Proposal::Lens { base, by, body: LensBody::File { name, kind, text, hash, select_line } },
                     Ok(p) => p,
                     Err(e) => Proposal::Errors { dir: Some(dir.to_string_lossy().to_string()), text: format!("{e}\n") },
                 });

@@ -195,3 +195,21 @@ fn a_dump_of_a_later_apex_is_refused() {
     let (mut log, mut node) = bare();
     assert!(node.load_dump(&mut log, &d, &mut Disk(BTreeMap::new())).is_err());
 }
+
+#[test]
+fn a_lens_is_not_written_down_its_base_is_in_its_place() {
+    let (mut log, mut node, col) = session();
+    let a = file(&mut log, &mut node, col, "/w/a.md", "# a\n");
+    let b = file(&mut log, &mut node, col, "/w/b.txt", "b\n");
+    let page = node.create_buffer_as(&mut log, "/w/a.md", "<h1>a</h1>", None, WinKind::Page, true).unwrap();
+    node.lens_window(&mut log, a, Body::Page(Source::Buffer(page)), String::new(), None, Via::Host, String::new(), SERVER).unwrap();
+    let msg = node.create_buffer(&mut log, "/w/MSG", "", None).unwrap();
+    node.lens_text(&mut log, b, msg, SERVER).unwrap();
+    let d = again(&dump::dump(&node.state, &mut |_| None));
+    assert_eq!(d.windows.len(), 2, "the bases alone");
+    let (mut log2, mut node2) = bare();
+    node2.load_dump(&mut log2, &d, &mut Disk(BTreeMap::from([("/w/a.md".to_string(), "# a\n".to_string()), ("/w/b.txt".to_string(), "b\n".to_string())]))).unwrap();
+    // (in the column they were in, the session's second)
+    assert_eq!(tiling(&node2), (vec![vec![], vec!["/w/a.md".to_string(), "/w/b.txt".to_string()]], vec![]));
+    assert!(node2.state.layout.lenses.is_empty());
+}

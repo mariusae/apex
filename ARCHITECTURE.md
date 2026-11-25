@@ -158,7 +158,7 @@ proposal in the protocol collapse (Plan, step 2).
 2. **The divergence check has holes.** `State::hash`
    (`apex-core/src/state.rs`, `fn hash`) leaves out:
    - on each window: `owner`, `live`, `working`, `progress`, `diagnostic`;
-   - on the layout: `covers`, `nav_back`, `nav_forward`;
+   - on the layout: `nav_back`, `nav_forward`;
    - on each terminal: links, view and progress.
 
    Replicas can diverge on any of these unnoticed. Hash the postcard
@@ -209,12 +209,12 @@ Open { body: Text{name, kind, scratch, text} | Term(id) | Page{content, via, bas
        label, reuse: bool, pos: Pos }
 ```
 
-- `EditOver` becomes `place: Over(w)`, instead of the daemon rewriting
+- `EditLens` becomes `place: Lens(w)`, instead of the daemon rewriting
   the proposal (`daemon.rs:683-694`).
 - `NewWindow.diagnostic` becomes `place: Stash`.
 
 **"Go to a location": four paths.**
-- The requests that start it: `ClientMsg::OpenFile`, `ClientMsg::EditOver`,
+- The requests that start it: `ClientMsg::OpenFile`, `ClientMsg::EditLens`,
   `Plumb{edit_only}`, `Proposal::Goto` and `Proposal::Switch`.
 - An open can take three round trips:
   1. `Plumb` → the server proposes `Goto`.
@@ -474,7 +474,7 @@ on which machine you attach from. Put them in the session.
 | `preview.rs` (which converter for which file) | the preview tool |
 | `fuzzy.rs` (generic) | a small crate |
 | `double_click`, `acme_isalnum`, `isfilec` (in `node.rs`) | `text.rs` or a `words.rs` |
-| UI built-ins (Font, Web, Exit, ID, Stash, Swap) | client or server handlers |
+| UI built-ins (Font, Web, Exit, ID, Stash) | client or server handlers |
 | Placement and attention policy | the caller |
 
 `node.rs` (about 2,200 lines) splits naturally into:
