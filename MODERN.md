@@ -503,7 +503,9 @@ windows put away out of the tiling, which is the core's
 - **An input strip** (`Window::input`): a window's second text, a
   tool's, afloat at its body's foot in a box of its own -- rounded,
   bordered, a shadow under it, in from the sides -- so it reads as a
-  place to write; as tall as its text, two lines to six. What it floats
+  place to write, a round send button at its right (an arrow up, the
+  accent's while there is something to send: what ⌘↩ in it does); as
+  tall as its text, one line to six. What it floats
   over can always be scrolled clear of it: a text's last line goes to
   the window's top as ever, a page is given room at its foot as tall
   as the box, and a terminal, which cannot scroll past its last row,

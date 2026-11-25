@@ -66,16 +66,18 @@ use text_element::TextElement;
 /// between cards where acme drew its borders.
 const CARD_X: i32 = 3;
 const CARD_Y: i32 = 1;
-/// How many lines an input strip is tall (`Window::input`): two at the
-/// least, so there is room to write before anything is written, and as
-/// many as its text takes up to six.
-const STRIP_MIN: usize = 2;
+/// How many lines an input strip is tall (`Window::input`): as many as
+/// its text takes, one to six (its box says it is a place to write).
+const STRIP_MIN: usize = 1;
 const STRIP_MAX: usize = 6;
 /// The strip's box, afloat over the body: its distance from the body's
 /// sides and foot, the room inside it round the text, its corners.
 const STRIP_MARGIN: i32 = 10;
 const STRIP_PAD: i32 = 8;
 const STRIP_RADIUS: f32 = 14.;
+/// The send button at the box's right: a circle this wide, an arrow up.
+const SEND: f32 = 22.;
+const SEND_ARROW: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="black" d="M12 4.5 5.2 11.3a1.1 1.1 0 0 0 1.56 1.56L10.9 8.7V19a1.1 1.1 0 0 0 2.2 0V8.7l4.14 4.16a1.1 1.1 0 0 0 1.56-1.56Z"/></svg>"#;
 
 impl Render for Acme {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -420,12 +422,11 @@ impl Render for Acme {
                     Some(ib) => {
                         let text = self.node.state.buffer(ib).map(|b| b.text.to_string()).unwrap_or_default();
                         let lh = self.node.tiling.body_font_height(w).max(1);
-                        let inner = bw - text_element::LANE as i32 - 2 * STRIP_MARGIN - 2 * STRIP_PAD;
+                        let inner = bw - text_element::LANE as i32 - 2 * STRIP_MARGIN - 2 * STRIP_PAD - SEND as i32 - STRIP_PAD;
                         let per = (inner / (lh / 2).max(1)).max(1) as usize;
                         let lines: usize = text.split('\n').map(|l| l.chars().count().div_ceil(per).max(1)).sum();
-                        // two lines at the least, room to write in
-                        // before there is anything written; six at most
-                        let h = lines.clamp(STRIP_MIN, STRIP_MAX) as i32 * lh + 2 * STRIP_PAD;
+                        // one line to six, and never lower than its button
+                        let h = (lines.clamp(STRIP_MIN, STRIP_MAX) as i32 * lh + 2 * STRIP_PAD).max(SEND as i32 + 2 * (STRIP_PAD - 2));
                         (h + 2 * STRIP_MARGIN < bh - lh).then_some(h)
                     }
                     None => None,
@@ -438,8 +439,35 @@ impl Render for Acme {
                     let wd = bw - text_element::LANE as i32 - 2 * STRIP_MARGIN;
                     let y = s.body.y0 + bh - STRIP_MARGIN - h;
                     let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.14), offset: gpui::point(px(0.), px(4.)), blur_radius: px(14.), spread_radius: px(0.), inset: false };
+                    // the send button: what ⌘↩ in the box does, at its
+                    // right, by its last line; quiet while there is
+                    // nothing to send
+                    let empty = win.input.and_then(|b| self.node.state.buffer(b).ok()).is_none_or(|b| b.text.to_string().trim().is_empty());
+                    let send = div()
+                        .id(("send", w.0))
+                        .flex_none()
+                        .size(px(SEND))
+                        .rounded(px(SEND / 2.))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .bg(if empty { gpui::rgb(t.body_border) } else { gpui::rgb(t.accent) })
+                        .cursor(if empty { CursorStyle::Arrow } else { CursorStyle::PointingHand })
+                        .child(gpui::svg().data(SEND_ARROW).size(px(14.)).text_color(gpui::rgb(t.body_bg)))
+                        .on_mouse_down(
+                            gpui::MouseButton::Left,
+                            cx.listener(move |acme, _, _, cx| {
+                                cx.stop_propagation();
+                                acme.execute(apex_core::ExecCtx::Window(w), "Send", cx);
+                                cx.notify();
+                            }),
+                        );
                     let boxed = div()
                         .size_full()
+                        .flex()
+                        .flex_row()
+                        .items_end()
+                        .gap(px(STRIP_PAD as f32))
                         .rounded(px(STRIP_RADIUS))
                         .overflow_hidden()
                         .bg(gpui::rgb(t.body_bg))
@@ -450,7 +478,8 @@ impl Render for Acme {
                         .px(px(STRIP_PAD as f32))
                         // over a page, its hole in the page's view
                         .child(self.web_cut_by(px(STRIP_RADIUS)))
-                        .child(TextElement { acme: me.clone(), view: ViewId::Input(w) }.into_any_element());
+                        .child(div().flex_1().h_full().child(TextElement { acme: me.clone(), view: ViewId::Input(w) }.into_any_element()))
+                        .child(div().flex_none().pb(px(1.)).child(send));
                     at(x, y, wd, h, boxed.into_any_element()).cursor(hold(CursorStyle::IBeam))
                 });
                 let bh = if matches!(win.body, Body::Term(_)) { bh - foot } else { bh };
