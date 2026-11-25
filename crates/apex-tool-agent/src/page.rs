@@ -32,7 +32,6 @@ pub fn markdown(asked: &str, said: &str) -> String {
 const STYLE: &str = r#"<style>
 .ax-turn { margin: 0 0 2.2em; }
 .ax-turn + .ax-turn { padding-top: 0.6em; }
-h4.ax-mark { height: 0; margin: 0; padding: 0; overflow: hidden; opacity: 0; }
 pre.ax-prompt { font: inherit; line-height: 1.45;
   white-space: pre-wrap; word-wrap: break-word; width: fit-content; max-width: 82%; box-sizing: border-box;
   margin: 0 0 1.1em auto; background: var(--apex-code-bg); border: none; border-radius: 14px; padding: 0.55em 0.9em; }
@@ -125,10 +124,12 @@ fn page(turns: &[Turn], a: &crate::agent::Agent) -> String {
     }
     let last = shown.len().saturating_sub(1);
     for (i, t) in shown.iter().enumerate() {
-        out.push_str(&format!("<section class=\"ax-turn\" id=\"turn-{}\">\n\n", turns.len() - shown.len() + i));
+        // each turn an entry of the page's outline, titled by what was
+        // asked: its outline its turns, and nothing else (no heading of
+        // an answer's)
+        let mark = t.asked.map(|a| format!(" data-apex-outline=\"1\" data-apex-title=\"{}\"", escape(&title(a)).replace('"', "&quot;"))).unwrap_or_default();
+        out.push_str(&format!("<section class=\"ax-turn\" id=\"turn-{}\"{mark}>\n\n", turns.len() - shown.len() + i));
         if let Some(asked) = t.asked {
-            // a mark for the page's outline: its turns
-            out.push_str(&format!("<h4 class=\"ax-mark\">{}</h4>\n\n", escape(&title(asked))));
             match notification(asked) {
                 Some(note) => out.push_str(&format!("<p class=\"ax-event\">{}</p>\n\n", escape(&note))),
                 None => out.push_str(&format!("<pre class=\"ax-prompt\">{}</pre>\n\n", prompt_html(asked.trim()))),

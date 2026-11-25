@@ -325,6 +325,10 @@ windows put away out of the tiling, which is the core's
   there (a diff's files by their names, cut from the left when too long,
   since a path's end says most). Back in the bar, it is a pill again.
   Only with two headings or more; nothing of it is drawn in the page.
+  A page may say what its outline is instead: its elements marked
+  `data-apex-outline="LEVEL"`, titled by `data-apex-title` or their
+  text, are its entries and nothing else (an agent's conversation, a
+  turn each, the headings of its answers not among them).
 - **A tag is what the window is, then your words.** The head is drawn
   from the window's state (DESIGN.md, *Windows are what they are*), none
   of it in the tag's text: the path, its folders dim and its name

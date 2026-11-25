@@ -299,13 +299,21 @@ const TOC_SCRIPT: &str = r#"(function () {
     const at = (h) => h.getBoundingClientRect().top + view().scrollTop;
     let heads = [], last = '';
     function build() {
-      heads = Array.from(document.body ? document.body.querySelectorAll('h1,h2,h3,h4') : []).filter((h) => h.textContent.trim());
+      // a page that says what its outline is -- its elements marked
+      // data-apex-outline="LEVEL", titled by data-apex-title or their
+      // text: an agent's conversation, a turn each -- has that alone;
+      // any other, its headings
+      const body = document.body;
+      const marked = body ? Array.from(body.querySelectorAll('[data-apex-outline]')) : [];
+      const title = (h) => (h.getAttribute('data-apex-title') || h.textContent).trim().replace(/\s+/g, ' ');
+      heads = (marked.length ? marked : Array.from(body ? body.querySelectorAll('h1,h2,h3,h4') : [])).filter((h) => title(h));
       const lines = [String(Math.round(view().scrollHeight))];
       for (const h of heads) {
         // a diff's file: its name alone
         const name = h.querySelector('.name');
-        const label = (name || h).textContent.trim().replace(/\s+/g, ' ');
-        lines.push(h.tagName[1] + '\t' + Math.round(at(h)) + '\t' + (h.closest('section.file') ? 'p' : '') + '\t' + label);
+        const label = marked.length ? title(h) : (name || h).textContent.trim().replace(/\s+/g, ' ');
+        const level = marked.length ? Math.min(4, Math.max(1, parseInt(h.getAttribute('data-apex-outline'), 10) || 1)) : h.tagName[1];
+        lines.push(level + '\t' + Math.round(at(h)) + '\t' + (h.closest('section.file') ? 'p' : '') + '\t' + label);
       }
       const now = lines.join('\n');
       if (now !== last) {

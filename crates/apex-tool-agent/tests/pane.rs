@@ -725,7 +725,7 @@ fn view_in_an_agents_terminal_is_its_conversation_with_a_prompt_under_it() {
     }
     assert!(text_of(&c, lens).contains("ax-prompt\">what is in hosts?</pre>") && text_of(&c, lens).contains("It names localhost."), "{}", text_of(&c, lens));
     // each turn marked for the page's outline: its turns
-    assert!(text_of(&c, lens).contains("<h4 class=\"ax-mark\">what is in hosts?</h4>"), "{}", text_of(&c, lens));
+    assert!(text_of(&c, lens).contains("data-apex-outline=\"1\" data-apex-title=\"what is in hosts?\""), "{}", text_of(&c, lens));
     // a prompt written in the strip and sent: typed into the terminal,
     // the strip empty
     let strip = |c: &Remote| c.node.state.window(lens).ok().and_then(|w| w.input).and_then(|b| c.node.state.buffer(b).ok()).map(|b| (b.id, b.version, b.text.to_string()));
@@ -827,7 +827,7 @@ fn a_resumed_sessions_lens_is_its_whole_transcript() {
         let _ = c.step(Duration::from_millis(20));
     }
     let text = text_of(&c, lens);
-    assert!(text.contains("ax-mark\">the old question</h4>") && text.contains("ax-prompt\">the old question</pre>") && text.contains("<summary>Ran a command</summary>") && text.contains("<li>Bash: ls old</li>") && text.contains("the old answer"), "{text}");
+    assert!(text.contains("data-apex-title=\"the old question\"") && text.contains("ax-prompt\">the old question</pre>") && text.contains("<summary>Ran a command</summary>") && text.contains("<li>Bash: ls old</li>") && text.contains("the old answer"), "{text}");
     // the terminal resumes another session: the lens is that one's
     std::thread::sleep(Duration::from_millis(20));
     event::append(&logs, &Event { kind: Some("resume".into()), ..ev("2222bbbb-0000", &two, "SessionStart") }).unwrap();
