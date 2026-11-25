@@ -101,45 +101,39 @@ impl Acme {
         if let Some((toc, current)) = self.webs.toc(w) {
             return Some((toc.clone(), self.webs.page_scroll(w), current));
         }
-        // a terminal's: the commands its shell marked, each at its
-        // prompt's line, with when it ran and how it went
-        if let Some(apex_core::Body::Term(t)) = self.node.state.window(w).ok().map(|x| x.body) {
-            let term = self.node.state.terms.get(&t)?;
-            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
-            let heads: Vec<TocHead> = term
-                .marks
-                .iter()
-                .filter(|m| m.started.is_some() || m.cmd.is_some())
-                .map(|m| TocHead {
-                    level: 1,
-                    title: m.cmd.clone().unwrap_or_else(|| "a command".into()),
-                    top: m.prompt as f64,
-                    path: false,
-                    detail: apex_server::run_said(m, now),
-                    failed: m.exit.is_some_and(|x| x != 0),
-                })
-                .collect();
-            if heads.len() < 2 {
-                return None;
+        // a terminal's or a text's, as the session says it
+        // (`apex_server::outline`): a terminal's commands, each at its
+        // prompt's line, with when it ran and how it went; the outline a
+        // tool gave a text, each item at its line
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+        let entries = apex_server::outline::of(&self.node, w, now)?;
+        let (heads, height, scroll): (Vec<TocHead>, f64, (f64, f64, f64)) = match self.node.state.window(w).ok()?.body {
+            apex_core::Body::Term(t) => {
+                let term = self.node.state.terms.get(&t)?;
+                if entries.len() < 2 {
+                    return None;
+                }
+                let heads = entries.into_iter().map(|e| TocHead { level: e.level, title: e.title, top: match e.at { apex_server::outline::At::Term(l) => l as f64, _ => 0. }, path: false, detail: e.detail, failed: e.failed }).collect();
+                let height = term.total.max(1) as f64;
+                (heads, height, (term.top as f64, height, term.rows as f64))
             }
-            let toc = Toc { height: term.total.max(1) as f64, heads };
-            let scroll = (term.top as f64, term.total.max(1) as f64, term.rows as f64);
-            let current = toc.current(Some(scroll));
-            return Some((toc, Some(scroll), current));
-        }
-        let o = self.node.window_outline(w).filter(|o| !o.items.is_empty())?;
-        let b = self.node.state.window(w).ok()?.body_buffer()?;
-        let buf = self.node.state.buffer(b).ok()?;
-        let n = buf.text.line_count().max(1);
-        let heads = o.items.iter().map(|it| TocHead { level: it.level.clamp(1, 4), title: it.title.clone(), top: buf.text.line_of(it.at.min(buf.text.len())) as f64, path: false, detail: None, failed: false }).collect();
-        let toc = Toc { height: n as f64, heads };
-        let scroll = match self.layouts.get(&apex_core::ViewId::Body(w)) {
-            Some(l) => (l.first_line as f64, l.total_lines.max(1) as f64, l.lines.len() as f64),
-            None => {
-                let origin = buf.views.get(&apex_core::ViewId::Body(w)).map(|v| v.origin).unwrap_or(0);
-                (buf.text.line_of(origin.min(buf.text.len())) as f64, n as f64, 1.)
+            apex_core::Body::Text(b) => {
+                let buf = self.node.state.buffer(b).ok()?;
+                let n = buf.text.line_count().max(1);
+                let heads = entries.into_iter().map(|e| TocHead { level: e.level, title: e.title, top: match e.at { apex_server::outline::At::Text(a) => buf.text.line_of(a.min(buf.text.len())) as f64, _ => 0. }, path: false, detail: e.detail, failed: e.failed }).collect();
+                let scroll = match self.layouts.get(&apex_core::ViewId::Body(w)) {
+                    Some(l) => (l.first_line as f64, l.total_lines.max(1) as f64, l.lines.len() as f64),
+                    None => {
+                        let origin = buf.views.get(&apex_core::ViewId::Body(w)).map(|v| v.origin).unwrap_or(0);
+                        (buf.text.line_of(origin.min(buf.text.len())) as f64, n as f64, 1.)
+                    }
+                };
+                (heads, n as f64, scroll)
             }
+            // a page's is the client's own, positions and all (above)
+            apex_core::Body::Page(_) => return None,
         };
+        let toc = Toc { height, heads };
         let current = toc.current(Some(scroll));
         Some((toc, Some(scroll), current))
     }
