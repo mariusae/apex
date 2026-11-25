@@ -426,9 +426,13 @@ impl Render for Acme {
                     Some(ib) => {
                         let text = self.node.state.buffer(ib).map(|b| b.text.to_string()).unwrap_or_default();
                         let lh = self.node.tiling.body_font_height(w).max(1);
-                        let inner = bw - text_element::LANE as i32 - 2 * STRIP_MARGIN - 2 * STRIP_PAD - SEND as i32;
-                        let per = (inner / (lh / 2).max(1)).max(1) as usize;
-                        let lines: usize = text.split('\n').map(|l| l.chars().count().div_ceil(per).max(1)).sum();
+                        // the rows its text wraps to, shaped as the text is
+                        // drawn: its face, and the width the text element
+                        // in the box wraps at (the box less its border, its
+                        // pads and the button, less the element's margin)
+                        let wd = bw - text_element::LANE as i32 - 2 * STRIP_MARGIN;
+                        let room = (wd as f32 - 2. - (STRIP_PAD as f32 - 1.) - (STRIP_PAD as f32 + SEND) - text_element::MARGIN - 4.).max(10.);
+                        let lines = input_rows(window, &text, win.mono, px(room));
                         // one line to six, room over and under them enough
                         // for the button by the last
                         let vpad = STRIP_PAD.max((SEND as i32 - lh) / 2 + 4);
@@ -490,7 +494,8 @@ impl Render for Acme {
                                 .child(TextElement { acme: me.clone(), view: ViewId::Input(w) }.into_any_element()),
                         )
                         .child(div().absolute().right(px(STRIP_PAD as f32 - 3.)).bottom(px(send_bottom)).child(send));
-                    at(x, y, wd, h, boxed.into_any_element()).cursor(hold(CursorStyle::IBeam))
+                    // the pointer as over any text: acme's arrow
+                    at(x, y, wd, h, boxed.into_any_element()).cursor(hold(CursorStyle::Arrow))
                 });
                 let bh = if banded { bh - foot } else { bh };
                 if win.body == Body::Page(apex_core::Source::Url) && !strip {
@@ -1342,6 +1347,23 @@ fn empty_column(t: &theme::Theme, bunny: bool) -> gpui::AnyElement {
                 .child(row("⌘⇧P", "every command")),
         )
         .into_any_element()
+}
+
+/// How many rows an input box's `text` wraps to at `room` across, in
+/// its window's face, as the text element will set it: each line at
+/// least one, a tab as wide as the spaces it stands for.
+fn input_rows(window: &mut gpui::Window, text: &str, mono: bool, room: gpui::Pixels) -> usize {
+    let fs = text_element::font_for(mono);
+    text.split('\n')
+        .map(|line| {
+            if line.is_empty() {
+                return 1;
+            }
+            let line = line.replace('\t', "    ");
+            let run = gpui::TextRun { len: line.len(), font: fs.font.clone(), color: gpui::black(), background_color: None, underline: None, strikethrough: None };
+            window.text_system().shape_text(line.into(), fs.size, &[run], Some(room), None).map_or(1, |v| v.iter().map(|l| l.wrap_boundaries().len() + 1).sum::<usize>().max(1))
+        })
+        .sum()
 }
 
 /// Where the window's buttons end across the title bar, with air before
