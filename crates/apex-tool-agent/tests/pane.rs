@@ -724,6 +724,8 @@ fn view_in_an_agents_terminal_is_its_conversation_with_a_prompt_under_it() {
         let _ = c.step(Duration::from_millis(20));
     }
     assert!(text_of(&c, lens).contains("> what is in hosts?") && text_of(&c, lens).contains("It names localhost."), "{}", text_of(&c, lens));
+    // each turn a heading: the page's outline is its turns
+    assert!(text_of(&c, lens).contains("### what is in hosts?"), "{}", text_of(&c, lens));
     // a prompt written in the strip and sent: typed into the terminal,
     // the strip empty
     let strip = |c: &Remote| c.node.state.window(lens).ok().and_then(|w| w.input).and_then(|b| c.node.state.buffer(b).ok()).map(|b| (b.id, b.version, b.text.to_string()));

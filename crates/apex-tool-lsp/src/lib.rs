@@ -14,7 +14,10 @@
 //! (cmd-B3 on an identifier is `Def` at the pointer; B3 itself stays
 //! acme's look), and `Back`/`Fwd` in any file window no tool owns.
 //! Diagnostics go to
-//! `root/+lsp`.
+//! `root/+lsp`. Each file a server serves has its symbols for an
+//! outline (`textDocument/documentSymbol`, nested a level a parent),
+//! asked for as it opens and again once its edits settle; the client
+//! shows it down the window's scrollbar.
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, Write};
@@ -205,6 +208,8 @@ struct Server {
     stdin: Arc<Mutex<Box<dyn Write + Send>>>,
     next_id: u64,
     initialized: bool,
+    /// Whether it gives a document's symbols (`documentSymbolProvider`).
+    symbols: bool,
     /// Notifications to send once initialized.
     queued: Vec<(String, Value)>,
     /// Buffers open in this server, by uri: our version counter.
@@ -262,6 +267,7 @@ impl Server {
             stdin: Arc::new(Mutex::new(stdin)),
             next_id: 1,
             initialized: false,
+            symbols: false,
             queued: Vec::new(),
             open: HashMap::new(),
             diagnostics: BTreeMap::new(),
@@ -398,6 +404,8 @@ enum Waiting {
     Initialize,
     /// A plumb (B3 or a verb): answer it with ACK/NACK.
     Plumb { plumb: u64, verb: String, buffer: BufferId, ctx: ExecCtx, dir: String },
+    /// A document's symbols, for its outline, as the text was at `version`.
+    Symbols { buffer: BufferId, version: Version },
 }
 
 pub struct Tool {
@@ -415,6 +423,9 @@ pub struct Tool {
     rx: Receiver<Event>,
     /// Languages whose servers could not start, so we stop trying.
     failed: Vec<(String, PathBuf)>,
+    /// Documents whose outline is to be asked for again, since when: once
+    /// their edits settle (`SETTLE`), their symbols.
+    outline_due: HashMap<BufferId, Instant>,
 }
 
 /// Run the tool on the session at `socket`, until the link ends;
@@ -424,7 +435,7 @@ pub fn run(socket: &Path, session: &str, verbose: bool) -> Result<(), String> {
     // `apex tool lsp` is called lsp, not apex, in the top row and ps
     remote.announce("lsp");
     let (tx, rx) = channel();
-    let mut t = Tool { remote, verbose: verbose || debug(), rules: HashMap::new(), servers: HashMap::new(), docs: HashMap::new(), waiting: HashMap::new(), tx, rx, failed: Vec::new() };
+    let mut t = Tool { remote, verbose: verbose || debug(), rules: HashMap::new(), servers: HashMap::new(), docs: HashMap::new(), waiting: HashMap::new(), tx, rx, failed: Vec::new(), outline_due: HashMap::new() };
     t.log(&format!("attached to session {session}; servers start as files of known languages open"));
     t.install_rules()?;
     t.main_loop()
@@ -580,6 +591,7 @@ impl Tool {
                 self.write_window(&key);
             }
             self.sync_docs();
+            busy |= self.ask_symbols();
             if !busy {
                 std::thread::sleep(Duration::from_millis(10));
             }
@@ -601,6 +613,7 @@ impl Tool {
             let start = pos::position(&shadow, *q0);
             let end = pos::position(&shadow, q0 + nd);
             shadow.replace(*q0, *nd, text);
+            self.outline_due.insert(*b, Instant::now());
             if let Some(s) = self.servers.get_mut(&key) {
                 let v = s.open.entry(uri.clone()).or_insert(1);
                 *v += 1;
@@ -647,6 +660,7 @@ impl Tool {
                                     "textDocument": {
                                         "synchronization": { "didSave": false },
                                         "hover": { "contentFormat": ["plaintext", "markdown"] },
+                                        "documentSymbol": { "hierarchicalDocumentSymbolSupport": true },
                                         "publishDiagnostics": {}
                                     },
                                     "window": { "workDoneProgress": true }
@@ -674,6 +688,7 @@ impl Tool {
             s.open.insert(uri.clone(), 1);
             s.notify("textDocument/didOpen", json!({ "textDocument": { "uri": uri, "languageId": lang.id, "version": 1, "text": text } }));
             self.docs.insert(*b, (key, uri));
+            self.outline_due.insert(*b, Instant::now());
         }
         let gone: Vec<BufferId> = self.docs.keys().copied().filter(|b| !present.iter().any(|(p, _)| p == b)).collect();
         for b in gone {
@@ -684,6 +699,65 @@ impl Tool {
                 }
             }
         }
+    }
+
+    /// Documents whose edits have settled: their symbols asked for, of
+    /// servers ready and offering them. Whether any was.
+    fn ask_symbols(&mut self) -> bool {
+        let due: Vec<BufferId> = self.outline_due.iter().filter(|(_, t)| t.elapsed() >= SETTLE).map(|(b, _)| *b).collect();
+        let mut asked = false;
+        for b in due {
+            let Some((key, uri)) = self.docs.get(&b).cloned() else {
+                self.outline_due.remove(&b);
+                continue;
+            };
+            let Some(s) = self.servers.get_mut(&key) else {
+                self.outline_due.remove(&b);
+                continue;
+            };
+            if !s.initialized {
+                continue; // asked once it is
+            }
+            self.outline_due.remove(&b);
+            if !s.symbols {
+                continue;
+            }
+            let version = self.remote.node.state.buffer(b).map(|x| x.version).unwrap_or(0);
+            let id = s.request("textDocument/documentSymbol", json!({ "textDocument": { "uri": uri } }));
+            self.waiting.insert((key, id), Waiting::Symbols { buffer: b, version });
+            asked = true;
+        }
+        asked
+    }
+
+    /// A document's symbols: its outline, each where its name is
+    /// (`DocumentSymbol`, nested a level a parent, to four) or where it
+    /// starts (`SymbolInformation`, flat), in the order they come in the
+    /// text. Not for a text that changed since it was asked: that one is
+    /// asked for again.
+    fn on_symbols(&mut self, buffer: BufferId, version: Version, result: &Value) {
+        let Ok(buf) = self.remote.node.state.buffer(buffer) else { return };
+        if buf.version != version {
+            return;
+        }
+        fn walk(t: &apex_core::text::Text, syms: &[Value], level: u8, out: &mut Vec<apex_core::OutlineItem>) {
+            for s in syms {
+                let start = s.get("selectionRange").or_else(|| s.get("range")).or_else(|| s.get("location").map(|l| &l["range"])).map(|r| &r["start"]);
+                let Some(start) = start else { continue };
+                let title = s["name"].as_str().unwrap_or("").to_string();
+                if !title.is_empty() {
+                    out.push(apex_core::OutlineItem { level, title, at: pos::offset(t, start) });
+                }
+                if let Some(kids) = s["children"].as_array() {
+                    walk(t, kids, (level + 1).min(4), out);
+                }
+            }
+        }
+        let mut items = Vec::new();
+        walk(&buf.text, result.as_array().map(Vec::as_slice).unwrap_or(&[]), 1, &mut items);
+        items.sort_by_key(|i| i.at);
+        let by = self.remote.attachment();
+        let _ = self.propose(Proposal::Outline { buffer, by, items: Some(items) }, TIMEOUT);
     }
 
     fn errors(&mut self, dir: Option<&str>, text: &str) {
@@ -713,6 +787,7 @@ impl Tool {
                     let mut queued = 0;
                     if let Some(s) = self.servers.get_mut(&key) {
                         s.initialized = true;
+                        s.symbols = !matches!(v["result"]["capabilities"]["documentSymbolProvider"], Value::Null | Value::Bool(false));
                         s.notify("initialized", json!({}));
                         let q = std::mem::take(&mut s.queued);
                         queued = q.len();
@@ -728,6 +803,7 @@ impl Tool {
                     }
                     self.say_progress(&key);
                 }
+                Waiting::Symbols { buffer, version } => self.on_symbols(buffer, version, &v["result"]),
                 Waiting::Plumb { plumb, verb, buffer, ctx, dir } => {
                     let ok = self.answer(&key, &verb, buffer, ctx, &dir, &v);
                     self.vlog(&format!("{verb}: {}", if ok { "answered" } else { "nothing" }));

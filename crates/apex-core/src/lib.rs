@@ -26,6 +26,7 @@ pub use entry::*;
 pub use ids::*;
 pub use log::{Log, LogError};
 pub use node::{errors_path, CoreError, EditRun, Executed, LookArg, Node, Spec};
+pub use buffer::{Outline, OutlineItem};
 pub use state::{Applied, ApplyError, State, WindowStatus};
 pub use text::Text;
 pub use tiling::{Rect, Warp};

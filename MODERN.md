@@ -510,6 +510,13 @@ windows put away out of the tiling, which is the core's
   strip under it and sent with ⌘↩, typed into the terminal; Stop in its
   tag interrupts; ⌘↩ on the conversation gives the terminal back, an
   unsent draft kept for the next time.
+- **A tool's outline of a text** (`Buffer::outline`): items a tool
+  gives a window's text, each at a place that moves with the edits as
+  dot does, gone with the tool; drawn as a page's headings are, stops
+  down the scrollbar and the list the pointer brings out there, B1 on
+  one putting its line at the top. The lsp tool gives each file it
+  serves its symbols (`textDocument/documentSymbol`, asked again as
+  edits settle); an agent's conversation has its turns as headings.
 - **B4 on a box minimizes** -- shift-B1 on a laptop, which is B4
   everywhere (`tiling::colminimize`, `rowminimize`): on a
   window's box (or handle), the window down to its tag where it stands,

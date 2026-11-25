@@ -1366,6 +1366,9 @@ pub struct Prepaint {
     scroller: (f32, bool),
     /// The pointer in the scroller's lane: it is open.
     lane: bool,
+    /// The outline's stops down a body's scroller (a tool's, for its
+    /// text: `outline::stops`).
+    stops: Vec<(f32, f32, u32, f32)>,
     hiding: bool,
     key_caret: Option<bool>,
     bare: bool,
@@ -1986,7 +1989,11 @@ impl Element for TextElement {
                 note: src.note,
                 round: src.round,
                 scroller: src.scroller,
-                lane: acme.lane_open(view),
+                lane: acme.lane_open(view) || matches!(view, ViewId::Body(w) if acme.outline.open == Some(w)),
+                stops: match view {
+                    ViewId::Body(w) => acme.outline_of(w).map(|(toc, scroll, current)| crate::outline::stops(&toc, scroll, current)).unwrap_or_default(),
+                    _ => Vec::new(),
+                },
                 hiding: src.hiding,
                 key_caret: src.key_caret,
                 bare: src.bare,
@@ -2391,7 +2398,7 @@ impl Element for TextElement {
 
             // a body's scroller
             if let Some((s0, s1, shows)) = overlay {
-                paint_lane(window, bounds, crate::theme::theme().body_bg, s0, s1, shows, pp.lane, &[]);
+                paint_lane(window, bounds, crate::theme::theme().body_bg, s0, s1, shows, pp.lane, &pp.stops);
             }
             let layout = TextLayout {
                 bounds,

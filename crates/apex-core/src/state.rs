@@ -680,6 +680,16 @@ impl State {
             BufferOp::Origin { view, origin } => {
                 self.buffer_mut(id)?.set_origin(*view, *origin);
             }
+            BufferOp::Outline { outline } => {
+                let b = self.buffer_mut(id)?;
+                let len = b.text.len();
+                b.outline = outline.clone().map(|mut o| {
+                    for it in &mut o.items {
+                        it.at = it.at.min(len);
+                    }
+                    o
+                });
+            }
         }
         Ok(Applied::Ok)
     }

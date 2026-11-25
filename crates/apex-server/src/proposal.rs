@@ -26,6 +26,9 @@ pub enum Proposal {
     Lens { base: WindowId, by: AttachmentId, body: LensBody },
     /// The lenses `by` made gone with it (it detached).
     LensesGone { by: AttachmentId },
+    /// Buffer `buffer`'s outline, `by`'s (`Buffer::outline`): its items, or
+    /// none.
+    Outline { buffer: BufferId, by: AttachmentId, items: Option<Vec<apex_core::OutlineItem>> },
     /// Window `window`'s input strip made, with `text` in it, or taken
     /// away (`None`): text the user writes there, for its tool.
     Input { window: WindowId, text: Option<String> },
@@ -244,6 +247,11 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
                 }
                 LensBody::Page(page) => Ok(Some(node.lens_page(log, base, page, by)?)),
             }
+        }
+        Proposal::Outline { buffer, by, items } => {
+            node.catch_up(log)?;
+            node.set_outline(log, buffer, by, items)?;
+            Ok(None)
         }
         Proposal::Input { window, text } => {
             node.catch_up(log)?;

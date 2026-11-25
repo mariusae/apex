@@ -40,6 +40,23 @@ pub struct Group {
     pub recs: Vec<Rec>,
 }
 
+/// A text's outline (`Buffer::outline`): the tool's that gave it, and
+/// its items in the order they come.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct Outline {
+    pub by: AttachmentId,
+    pub items: Vec<OutlineItem>,
+}
+
+/// One of an outline's items: how deep it is (1 the top), what it is
+/// called, and where it is in the text.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct OutlineItem {
+    pub level: u8,
+    pub title: String,
+    pub at: usize,
+}
+
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct Buffer {
     pub id: BufferId,
@@ -58,6 +75,11 @@ pub struct Buffer {
     /// The file on disk changed underneath while the buffer was dirty.
     pub stale: bool,
     pub views: BTreeMap<ViewId, View>,
+    /// An outline a tool gives the text (`BufferOp::Outline`): its
+    /// symbols, a language server's, each at a place that moves with the
+    /// edits as a view's dot does.
+    #[serde(default)]
+    pub outline: Option<Outline>,
     pub undo: Vec<Group>,
     pub redo: Vec<Group>,
     /// The text's content hash at `version`, worked out when asked
@@ -106,6 +128,7 @@ impl Buffer {
             disk_hash,
             stale: false,
             views: BTreeMap::new(),
+            outline: None,
             undo: Vec::new(),
             redo: Vec::new(),
             hashed: Memo::default(),
@@ -156,8 +179,22 @@ impl Buffer {
         Rec { q0, deleted, inserted: text.to_string() }
     }
 
-    /// acme's `textdelete` then `textinsert` rules, for every view.
+    /// acme's `textdelete` then `textinsert` rules, for every view; and
+    /// the outline's places, an item in what went at where it went, and
+    /// one where text went in after it.
     fn adjust_views(&mut self, q0: usize, nd: usize, ni: usize) {
+        if let Some(o) = self.outline.as_mut() {
+            for it in &mut o.items {
+                if nd > 0 && q0 < it.at {
+                    it.at -= nd.min(it.at - q0);
+                }
+                // (text put in at an item's place is before it: the item
+                // is where its symbol starts)
+                if ni > 0 && q0 <= it.at {
+                    it.at += ni;
+                }
+            }
+        }
         for v in self.views.values_mut() {
             if nd > 0 {
                 if q0 < v.q0 {
@@ -248,6 +285,7 @@ impl Buffer {
             h.update(&v.q1.to_le_bytes());
             h.update(&v.origin.to_le_bytes());
         }
+        h.update(&postcard::to_stdvec(&self.outline).unwrap_or_default());
         for stack in [&self.undo, &self.redo] {
             h.update(&(stack.len() as u64).to_le_bytes());
             for g in stack {

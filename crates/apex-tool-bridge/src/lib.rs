@@ -248,6 +248,16 @@ impl Bridge {
                 self.tool.set_input(window(v)?, v["text"].as_str()).map_err(e)?;
                 Ok(json!({}))
             }
+            "outline" => {
+                // [{level, title, at}], or null for none
+                let items = match &v["items"] {
+                    Value::Null => None,
+                    Value::Array(a) => Some(a.iter().map(|x| apex_tool::OutlineItem { level: x["level"].as_u64().unwrap_or(1) as u8, title: x["title"].as_str().unwrap_or("").to_string(), at: x["at"].as_u64().unwrap_or(0) as usize }).collect()),
+                    _ => return Err("items: a list".into()),
+                };
+                self.tool.set_outline(window(v)?, items).map_err(e)?;
+                Ok(json!({}))
+            }
             "take_input" => Ok(json!({ "text": self.tool.take_input(window(v)?).map_err(e)? })),
             "term_send" => {
                 self.tool.term_send(window(v)?, v["text"].as_str().ok_or("text")?).map_err(e)?;

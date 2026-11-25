@@ -1142,3 +1142,30 @@ fn an_input_strip_is_text_of_its_own_and_goes_with_its_window() {
     assert!(node.state.buffer(b2).is_err());
     assert_eq!(f_hash(&log), node.state.hash());
 }
+
+#[test]
+fn an_outline_a_tool_gives_moves_with_the_text_and_goes_with_the_tool() {
+    let (mut log, mut node, col) = session();
+    let w = node.new_window(&mut log, col, "/tmp/o.rs", "fn a() {}\nfn b() {}\n").unwrap();
+    let b = node.state.window(w).unwrap().body_buffer().unwrap();
+    let (by, _) = log.attach(AttachmentKind::Tool, "lsp");
+    node.catch_up(&log).unwrap();
+    let items = vec![OutlineItem { level: 1, title: "a".into(), at: 0 }, OutlineItem { level: 1, title: "b".into(), at: 10 }];
+    node.set_outline(&mut log, b, by, Some(items)).unwrap();
+    // a line put in before b: b's place moves, a's does not
+    node.select(&mut log, ViewId::Body(w), 10, 10).unwrap();
+    node.insert(&mut log, ViewId::Body(w), "// b\n").unwrap();
+    let at = |n: &Node| n.window_outline(w).map(|o| o.items.iter().map(|i| i.at).collect::<Vec<_>>());
+    assert_eq!(at(&node), Some(vec![0, 15]));
+    // a's line gone: a at where it went
+    node.select(&mut log, ViewId::Body(w), 0, 10).unwrap();
+    node.cut(&mut log, ViewId::Body(w)).unwrap();
+    assert_eq!(at(&node), Some(vec![0, 5]));
+    assert_eq!(follower(&log).window_outline(w).map(|o| o.items.len()), Some(2));
+    assert_eq!(f_hash(&log), node.state.hash());
+    // its tool gone: no outline shown
+    let e = log.detach(by);
+    node.state.apply(Shard::Meta, &e).unwrap();
+    node.catch_up(&log).unwrap();
+    assert!(node.window_outline(w).is_none());
+}

@@ -40,7 +40,8 @@ while True:
         if "--delay-initialize" in sys.argv:
             time.sleep(2)
         send({"jsonrpc": "2.0", "id": id_, "result": {"capabilities": {"textDocumentSync": 2, "definitionProvider": True,
-              "hoverProvider": True, "documentFormattingProvider": True, "referencesProvider": True}}})
+              "hoverProvider": True, "documentFormattingProvider": True, "referencesProvider": True,
+              "documentSymbolProvider": True}}})
         # indexing, a third of the way, until the first document opens;
         # and a word for the user
         send({"jsonrpc": "2.0", "method": "$/progress", "params": {"token": "idx", "value": {"kind": "begin", "title": "indexing", "percentage": 30}}})
@@ -75,6 +76,23 @@ while True:
         text = docs.get(uri, "")
         lines = len(text.split("\n"))
         send({"jsonrpc": "2.0", "id": id_, "result": [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": lines, "character": 0}}, "newText": "package main\n\nfunc f() {}\n"}]})
+    elif method == "textDocument/documentSymbol":
+        # each `func NAME` a symbol, at its name; a `var NAME` in one its
+        # child
+        uri = m["params"]["textDocument"]["uri"]
+        syms = []
+        for n, line in enumerate(docs.get(uri, "").split("\n")):
+            words = line.split()
+            if len(words) >= 2 and words[0] in ("func", "var"):
+                name = words[1].split("(")[0]
+                col = line.index(name, line.index(words[0]) + len(words[0]))
+                r = {"start": {"line": n, "character": col}, "end": {"line": n, "character": col + len(name)}}
+                sym = {"name": name, "kind": 12, "range": r, "selectionRange": r, "children": []}
+                if words[0] == "var" and line.startswith(("\t", " ")) and syms:
+                    syms[-1]["children"].append(sym)
+                else:
+                    syms.append(sym)
+        send({"jsonrpc": "2.0", "id": id_, "result": syms})
     elif method == "textDocument/references":
         send({"jsonrpc": "2.0", "id": id_, "result": []})
     elif id_ is not None:

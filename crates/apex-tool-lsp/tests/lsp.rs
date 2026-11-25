@@ -12,7 +12,10 @@ use apex_server::remote::Remote;
 use apex_server::Proposal;
 
 fn daemon() -> PathBuf {
-    let path = std::env::temp_dir().join(format!("apex-lsp-{}.sock", std::process::id()));
+    // a socket a test, as the tests run side by side
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!("apex-lsp-{}-{n}.sock", std::process::id()));
     let p = path.clone();
     std::thread::spawn(move || Daemon::run_with(&p, "main", None).unwrap());
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -118,5 +121,42 @@ fn documents_sync_diagnostics_show_and_verbs_act() {
     assert!(until(&mut c, |n| !n.state.layout.nav_back.is_empty()), "stack");
     c.propose(Proposal::Exec { ctx: ExecCtx::Window(w), text: "Back".into() }, Duration::from_secs(5)).unwrap();
     assert!(until(&mut c, |n| n.selection(ViewId::Body(w)).ok() == Some((0, 0))), "back: {:?}", c.node.selection(ViewId::Body(w)));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A file's symbols, its outline: each where its name is, a child a
+/// level under its parent; asked again once an edit settles.
+#[test]
+fn a_files_symbols_are_its_outline() {
+    let sock = daemon();
+    let root = std::env::temp_dir().join(format!("apex-lsp-outline-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("go.mod"), "module x\n").unwrap();
+    let main = root.join("main.go");
+    std::fs::write(&main, "package main\nfunc f() {\n\tvar x int\n}\nfunc g() {}\n").unwrap();
+    let fake = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fake-lsp.py");
+    let mut c = Remote::connect_as(&sock, "main", "test", AttachmentKind::Tool).unwrap();
+    c.send(&ClientMsg::Set { key: "lsp.go".into(), value: format!("python3 {}", fake.display()), attachment: None });
+    let col = c.node.state.layout.cols[0].id;
+    c.send(&ClientMsg::OpenFile { col, ctx: ExecCtx::Top, name: main.display().to_string() });
+    assert!(until(&mut c, |n| text_of(n, "main.go").is_some()), "file opened");
+    let s2 = sock.clone();
+    std::thread::spawn(move || {
+        let _ = apex_tool_lsp::run(&s2, "main", false);
+    });
+    let win = |n: &Node| n.state.windows.keys().copied().find(|w| n.window_path(*w).ends_with("main.go"));
+    assert!(until(&mut c, |n| win(n).is_some()), "its window");
+    let w = win(&c.node).unwrap();
+    let outline = |n: &Node| n.window_outline(w).map(|o| o.items.iter().map(|i| (i.level, i.title.clone(), i.at)).collect::<Vec<_>>()).unwrap_or_default();
+    assert!(until(&mut c, |n| outline(n).len() == 3), "the outline: {:?}", outline(&c.node));
+    assert_eq!(outline(&c.node), vec![(1, "f".to_string(), 18), (2, "x".to_string(), 29), (1, "g".to_string(), 42)]);
+    // a function put in at the top: the outline moves at once, and is
+    // asked again, the new one in it
+    let b = c.node.state.window(w).unwrap().body_buffer().unwrap();
+    let version = c.node.state.buffer(b).unwrap().version;
+    c.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0: 13, q1: 13, text: "func e() {}\n".into() }, Duration::from_secs(5)).unwrap();
+    assert_eq!(outline(&c.node).first().map(|i| i.2), Some(30), "moved with the edit");
+    assert!(until(&mut c, |n| outline(n).len() == 4), "asked again: {:?}", outline(&c.node));
+    assert_eq!(outline(&c.node).first(), Some(&(1, "e".to_string(), 18)));
     let _ = std::fs::remove_dir_all(&root);
 }

@@ -139,6 +139,8 @@ pub enum BufferOp {
     Select { view: ViewId, q0: usize, q1: usize },
     /// Scroll origin of a view.
     Origin { view: ViewId, origin: usize },
+    /// The text's outline (`Buffer::outline`), a tool's, or none.
+    Outline { outline: Option<crate::buffer::Outline> },
 }
 
 // ---- window ---------------------------------------------------------------

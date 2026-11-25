@@ -539,7 +539,9 @@ extensions; a workspace root is found by .git). The optional lsp.root setting na
 a workspace marker that takes precedence over the built-in language markers;
 lsp.LANG.root overrides it for one language. Documents are opened as buffers
 appear and every edit is fed incrementally. Diagnostics go to root/+lsp,
-one plumbable file:line:col: message per line. What matters goes to
+one plumbable file:line:col: message per line. Each document's
+symbols are its window's outline, stops down its scrollbar and a list
+the pointer there brings out, asked again as edits settle. What matters goes to
 stderr as it happens: a server starting, its indexing beginning and
 ending, when it is ready, and when it exits; with -v every request,
 answer, progress report and diagnostic too (APEX_LSP_DEBUG=1 dumps the

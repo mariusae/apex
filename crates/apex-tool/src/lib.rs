@@ -77,6 +77,7 @@ use apex_server::remote::{Remote, ToolPlumb};
 use apex_server::Proposal;
 
 pub use apex_core::entry::{AttachmentKind, Scroll, WinKind};
+pub use apex_core::buffer::OutlineItem;
 pub use apex_core::ids::{RuleId, WindowId};
 pub use apex_core::status::{Kind, State};
 
@@ -760,6 +761,17 @@ impl Tool {
         let w = self.propose(Proposal::Lens { base, by: me, body: apex_server::LensBody::Page(page) })?.ok_or("no lens made")?;
         self.remember(w);
         Ok(w)
+    }
+
+    /// Give window `w`'s text an outline: its items (a symbol each, say),
+    /// in order, each where it is in the text -- which moves with the
+    /// edits -- or none. The client shows it down the window's scrollbar,
+    /// and the pointer there lists it to go to; it goes with this tool.
+    pub fn set_outline(&mut self, w: WindowId, items: Option<Vec<apex_core::OutlineItem>>) -> Result<()> {
+        let b = self.body_of(w)?;
+        let by = self.remote.attachment();
+        self.propose(Proposal::Outline { buffer: b, by, items })?;
+        Ok(())
     }
 
     /// Scroll page `w`, on every client showing it: to a source line's

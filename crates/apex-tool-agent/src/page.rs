@@ -29,7 +29,16 @@ pub fn markdown(asked: &str, said: &str) -> String {
 /// turn going, if one is -- what it was asked, and what it is doing.
 pub fn conversation(a: &crate::agent::Agent) -> String {
     let mut md = String::new();
+    // each turn a heading, its prompt's first line: the page's outline is
+    // the conversation's turns, to go to from its scrollbar
+    let heading = |asked: &str| {
+        let first = asked.trim().lines().next().unwrap_or("").trim();
+        let short: String = first.chars().take(60).collect();
+        let more = if first.chars().count() > 60 { "…" } else { "" };
+        format!("### {}{more}\n\n", escape(&short).replace('#', "\\#"))
+    };
     for x in &a.exchanges {
+        md.push_str(&heading(&x.asked));
         md.push_str(&markdown(&x.asked, &x.said));
         md.push_str("\n---\n\n");
     }
@@ -37,6 +46,7 @@ pub fn conversation(a: &crate::agent::Agent) -> String {
     if going {
         let finished = a.exchanges.last().map(|x| x.asked.trim()) == a.prompt.as_deref().map(str::trim);
         if let Some(p) = a.prompt.as_deref().filter(|_| !finished) {
+            md.push_str(&heading(p));
             md.push_str(&markdown(p, ""));
         }
         let doing = match (a.state, a.running.last(), a.asked.as_deref()) {

@@ -1432,6 +1432,22 @@ impl Node {
         }
     }
 
+    /// Buffer `b`'s outline, given by `by` (`Buffer::outline`), or taken
+    /// away (`None`).
+    pub fn set_outline(&mut self, log: &mut Log, b: BufferId, by: AttachmentId, items: Option<Vec<crate::buffer::OutlineItem>>) -> Result<()> {
+        let outline = items.map(|items| crate::buffer::Outline { by, items });
+        self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::Outline { outline }))?;
+        Ok(())
+    }
+
+    /// The outline of a window's text, while the tool that gave it is
+    /// here (the session's own always).
+    pub fn window_outline(&self, w: WindowId) -> Option<&crate::buffer::Outline> {
+        let b = self.state.window(w).ok()?.body_buffer()?;
+        let o = self.state.buffer(b).ok()?.outline.as_ref()?;
+        (o.by == SERVER || self.state.meta.attachments.contains_key(&o.by)).then_some(o)
+    }
+
     /// Window `w`'s input strip (`Window::input`) made, with `text` in it,
     /// or taken away (`None`). Made again, it is a new one.
     pub fn set_input(&mut self, log: &mut Log, w: WindowId, text: Option<&str>) -> Result<Option<BufferId>> {

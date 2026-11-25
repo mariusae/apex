@@ -476,6 +476,25 @@ func (w *Window) NoInput() error {
 	return w.t.call("input", map[string]any{"window": w.ID, "text": nil}, nil)
 }
 
+// An OutlineItem is one of a text's outline's items: how deep (1 the
+// top), its title, and where it is in the text (a character offset).
+type OutlineItem struct {
+	Level int    `json:"level"`
+	Title string `json:"title"`
+	At    int    `json:"at"`
+}
+
+// SetOutline gives the window's text an outline, its items in order, each
+// at a place that moves with the edits; nil takes it away. The client
+// shows it down the window's scrollbar.
+func (w *Window) SetOutline(items []OutlineItem) error {
+	var v any
+	if items != nil {
+		v = items
+	}
+	return w.t.call("outline", map[string]any{"window": w.ID, "items": v}, nil)
+}
+
 // TakeInput takes the text in the window's input strip, leaving it empty.
 func (w *Window) TakeInput() (string, error) {
 	var r struct {

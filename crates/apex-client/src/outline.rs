@@ -1,4 +1,8 @@
-//! A page's outline in its scrollbar: the scrollbar down a page's left
+//! A window's outline in its scrollbar: a page's headings, or the
+//! outline a tool gives a text (`Buffer::outline`, a language server's
+//! symbols), shown alike, a text's lines standing for a page's height.
+//!
+//! The scrollbar down a page's left
 //! (a preview's, a diff's) is acme's, as a text's, and carries the
 //! page's headings (`web::Toc`) as stops down it, dots on the thumb's
 //! axis where each heading is, over the thumb as over the lane -- the
@@ -86,12 +90,64 @@ fn title(h: &TocHead) -> String {
 }
 
 impl Acme {
+    /// Window `w`'s outline: a page's headings (two or more), or the
+    /// outline a tool gave its text, each item at its line; with where
+    /// the view is (top, height, how much shows: a page's pixels, a
+    /// text's lines) and the item it is in.
+    pub fn outline_of(&self, w: WindowId) -> Option<(Toc, Option<(f64, f64, f64)>, Option<usize>)> {
+        if let Some((toc, current)) = self.webs.toc(w) {
+            return Some((toc.clone(), self.webs.page_scroll(w), current));
+        }
+        let o = self.node.window_outline(w).filter(|o| !o.items.is_empty())?;
+        let b = self.node.state.window(w).ok()?.body_buffer()?;
+        let buf = self.node.state.buffer(b).ok()?;
+        let n = buf.text.line_count().max(1);
+        let heads = o.items.iter().map(|it| TocHead { level: it.level.clamp(1, 4), title: it.title.clone(), top: buf.text.line_of(it.at.min(buf.text.len())) as f64, path: false }).collect();
+        let toc = Toc { height: n as f64, heads };
+        let scroll = match self.layouts.get(&apex_core::ViewId::Body(w)) {
+            Some(l) => (l.first_line as f64, l.total_lines.max(1) as f64, l.lines.len() as f64),
+            None => {
+                let origin = buf.views.get(&apex_core::ViewId::Body(w)).map(|v| v.origin).unwrap_or(0);
+                (buf.text.line_of(origin.min(buf.text.len())) as f64, n as f64, 1.)
+            }
+        };
+        let current = toc.current(Some(scroll));
+        Some((toc, Some(scroll), current))
+    }
+
+    /// Window `w` at its outline's item `i`: a page scrolled to the
+    /// heading; a text with the item's line at its top, dot there.
+    pub fn outline_go(&mut self, w: WindowId, i: usize) {
+        if self.webs.toc(w).is_some() {
+            self.webs.toc_go(w, i);
+            return;
+        }
+        let Some(at) = self.node.window_outline(w).and_then(|o| o.items.get(i)).map(|it| it.at) else { return };
+        let v = apex_core::ViewId::Body(w);
+        let Some(start) = self.text_of(v).map(|t| t.line_start(t.line_of(at.min(t.len())))) else { return };
+        let _ = self.node.set_origin(&mut self.log, v, start);
+        let _ = self.node.select(&mut self.log, v, at, at);
+        self.after();
+    }
+
+    /// The scrollbar a pointer at `pos` is in, of a window with an
+    /// outline: a page's, or a text body's.
+    fn outline_bar_at(&self, pos: Point<Pixels>) -> Option<(WindowId, Bounds<Pixels>)> {
+        if let Some((w, b)) = self.web_bars.iter().find(|(w, b)| b.contains(&pos) && self.webs.toc(**w).is_some()) {
+            return Some((*w, *b));
+        }
+        self.layouts.iter().find_map(|(v, l)| match (v, l.scrollbar) {
+            (apex_core::ViewId::Body(w), Some(bar)) if bar.contains(&pos) && self.node.window_outline(*w).is_some_and(|o| !o.items.is_empty()) => Some((*w, Bounds::new(bar.origin, gpui::size(bar.size.width, l.bounds.size.height)))),
+            _ => None,
+        })
+    }
+
     /// The pointer moved: the outline's pill out while it is in a page's
     /// bar (one with an outline); onto the pill, the whole outline from
     /// it, staying while the pointer is on it; back in the bar, the pill
     /// again. Whether anything changed.
     pub fn outline_hover(&mut self, pos: Point<Pixels>) -> bool {
-        let in_bar = self.web_bars.iter().find(|(w, b)| b.contains(&pos) && self.webs.toc(**w).is_some()).map(|(w, b)| (*w, *b));
+        let in_bar = self.outline_bar_at(pos);
         let on_it = self.outline.panel_at.get().is_some_and(|b| b.dilate(px(4.)).contains(&pos));
         let was = (self.outline.open, self.outline.whole);
         match in_bar {
@@ -118,9 +174,10 @@ impl Acme {
     /// can go no higher, or no lower).
     fn place_outline(&mut self) {
         let (Some(w), Some(bar)) = (self.outline.open, self.outline.bar) else { return };
-        let Some((toc, current)) = self.webs.toc(w) else { return };
+        let Some((toc, scroll, current)) = self.outline_of(w) else { return };
+        let toc = &toc;
         let i = current.unwrap_or(0);
-        let y = stop_y(toc, self.webs.page_scroll(w), bar, i);
+        let y = stop_y(toc, scroll, bar, i);
         let (n, tall) = (toc.heads.len(), tall(toc.heads.len(), bar));
         let row = px(PAD + ROW * (i as f32 + 0.5));
         let top = (y - row).min(bar.bottom() - px(8.) - tall).max(bar.top() + px(8.));
@@ -135,7 +192,7 @@ impl Acme {
     pub fn outline_panel(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let w = self.outline.open?;
         let bar = self.outline.bar?;
-        let (toc, current) = self.webs.toc(w)?;
+        let (toc, _, current) = self.outline_of(w)?;
         if !self.outline.whole {
             return self.outline_pill(w, bar);
         }
@@ -164,7 +221,7 @@ impl Acme {
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |acme, _, _, cx| {
-                        acme.webs.toc_go(w, i);
+                        acme.outline_go(w, i);
                         cx.stop_propagation();
                         cx.notify();
                     }),
@@ -207,12 +264,12 @@ impl Acme {
     /// The outline's pill: the part being read, by its stop; the pointer
     /// onto it opens the whole outline (`outline_hover`).
     fn outline_pill(&self, w: WindowId, bar: Bounds<Pixels>) -> Option<AnyElement> {
-        let (toc, current) = self.webs.toc(w)?;
+        let (toc, scroll, current) = self.outline_of(w)?;
         let i = current.unwrap_or(0);
         let head = toc.heads.get(i)?;
         let t = crate::theme::theme();
         let at = self.outline.panel_at.clone();
-        let y = stop_y(toc, self.webs.page_scroll(w), bar, i);
+        let y = stop_y(&toc, scroll, bar, i);
         let top = (y - px(PILL / 2.)).min(bar.bottom() - px(PILL)).max(bar.top());
         let pill = div()
             .relative()
