@@ -79,6 +79,8 @@ pub struct Prepaint {
     scroller: (f32, bool),
     /// The pointer in the scroller's lane: it is open.
     lane: bool,
+    /// The commands' stops down the scroller, while the pointer is in it.
+    stops: Vec<(f32, f32, u32, f32)>,
     /// What B2 just ran is going: drawn again until it has gone.
     ran: bool,
 }
@@ -140,7 +142,8 @@ impl Element for TermElement {
             acme.term_resize(term, cols, rows_n);
             let at = acme.node.state.terms.get(&term).map(|t| t.top)?;
             let scroller = acme.scroller(ViewId::Body(win), at);
-            let lane = acme.lane_open(ViewId::Body(win));
+            let lane = acme.lane_open(ViewId::Body(win)) || acme.outline.open == Some(win);
+            let stops = if lane { acme.outline_of(win).map(|(toc, scroll, current)| crate::outline::stops(&toc, scroll, current)).unwrap_or_default() } else { Vec::new() };
             let t = acme.node.state.terms.get(&term)?;
             let th = crate::theme::theme();
             let correct = crate::theme::contrast();
@@ -233,7 +236,7 @@ impl Element for TermElement {
                 rows.push(RowDraw { text: line.into(), runs, bgs, cols, inks, uls });
             }
             let failed = t.marks.iter().filter(|m| m.exit.is_some_and(|e| e != 0) && m.prompt >= top && m.prompt < top + t.rows as u64).map(|m| (m.prompt - top) as usize).collect();
-            Some(Prepaint { fontspec, cell_w, rows, row_text, cols: t.cols, cursor, keys, exited: t.exit.is_some(), view: (top, t.rows as u64, total), progress: t.working.then_some(t.progress), failed, scroller, lane, ran: ran.is_some() })
+            Some(Prepaint { fontspec, cell_w, rows, row_text, cols: t.cols, cursor, keys, exited: t.exit.is_some(), view: (top, t.rows as u64, total), progress: t.working.then_some(t.progress), failed, scroller, lane, stops, ran: ran.is_some() })
         })
     }
 
@@ -343,7 +346,7 @@ impl Element for TermElement {
             }
             // the scroller
             let (s0, s1) = (top.min(total) as f32 / total as f32, (top + shown).min(total) as f32 / total as f32);
-            crate::text_element::paint_lane(window, bounds, th.body_bg, s0, s1, shows, pp.lane, &[]);
+            crate::text_element::paint_lane(window, bounds, th.body_bg, s0, s1, shows, pp.lane, &pp.stops);
             let layout = TermLayout {
                 bounds,
                 text_origin: origin,

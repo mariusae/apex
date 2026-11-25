@@ -761,7 +761,8 @@ impl Server {
                     TermEvent::Name(t) => h.title = Some(t),
                     // OSC 133: a command marked -- its prompt, its output,
                     // its end and how it went -- for the terminal to carry
-                    TermEvent::Mark(kind, line, exit) => {
+                    TermEvent::Mark(kind, line, exit, cmd) => {
+                        let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
                         let before = h.marks.clone();
                         match kind {
                             b'A' => {
@@ -771,7 +772,7 @@ impl Server {
                                     status_changed = true;
                                 }
                                 if h.marks.last().is_none_or(|m| m.prompt != line) {
-                                    h.marks.push(apex_core::PromptMark { prompt: line, output: None, end: None, exit: None });
+                                    h.marks.push(apex_core::PromptMark { prompt: line, output: None, end: None, exit: None, cmd: None, started: None, ended: None });
                                 }
                                 // a long history keeps its latest commands
                                 let n = h.marks.len();
@@ -780,8 +781,14 @@ impl Server {
                                 }
                             }
                             b'C' => {
+                                // what was run: as the shell said it, else
+                                // as its prompt's line reads, the prompt
+                                // left off
+                                let read = h.marks.last().filter(|m| m.cmd.is_none() && cmd.is_none()).map(|m| command_read(&h.text((0, m.prompt), (0, line))));
                                 if let Some(m) = h.marks.last_mut() {
                                     m.output = Some(line);
+                                    m.started = Some(now_ms);
+                                    m.cmd = cmd.clone().or(read.flatten()).map(|c| c.trim().to_string()).filter(|c| !c.is_empty()).or(m.cmd.take());
                                 }
                             }
                             b'D' => {
@@ -789,6 +796,7 @@ impl Server {
                                     if m.end.is_none() {
                                         m.end = Some(line);
                                         m.exit = exit;
+                                        m.ended = Some(now_ms);
                                     }
                                 }
                             }
@@ -1980,6 +1988,76 @@ pub fn when(t: u64) -> String {
     when_at(t, now_secs())
 }
 
+/// A command as its prompt's line reads (`PromptMark::cmd`, when the
+/// shell does not say it): the last line with anything on it, the prompt
+/// before it left off -- up to the last of the usual prompts' ends.
+pub fn command_read(text: &str) -> Option<String> {
+    // (a space after it, as a prompt with nothing typed after it ends)
+    let line = format!("{} ", text.lines().rev().map(str::trim_end).find(|l| !l.trim().is_empty())?);
+    let line = line.as_str();
+    let cut = ["$ ", "% ", "❯ ", "> ", "# ", "→ ", "λ ", "; "].iter().filter_map(|p| line.rfind(p).map(|i| i + p.len())).max();
+    let cmd = match cut {
+        Some(i) => &line[i..],
+        None => line,
+    };
+    Some(cmd.trim().to_string()).filter(|c| !c.is_empty())
+}
+
+/// When a command began, as Manifold says it: within the hour how long
+/// ago ("4m ago", "just now"), within the day its time ("4:05pm"), within
+/// the week its day and time ("Wed 4:05pm"), else its date ("2 Jan 2026").
+/// Milliseconds since the epoch.
+pub fn began(t_ms: u64, now_ms: u64) -> String {
+    const DAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    let ago = now_ms.saturating_sub(t_ms) / 1000;
+    if ago < 60 {
+        return "just now".into();
+    }
+    if ago < 3600 {
+        return format!("{}m ago", ago / 60);
+    }
+    let secs = (t_ms / 1000) as libc::time_t;
+    // SAFETY: tm is a plain struct localtime_r fills in
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    if unsafe { libc::localtime_r(&secs, &mut tm) }.is_null() {
+        return String::new();
+    }
+    let clock = format!("{}:{:02}{}", if tm.tm_hour % 12 == 0 { 12 } else { tm.tm_hour % 12 }, tm.tm_min, if tm.tm_hour < 12 { "am" } else { "pm" });
+    match ago {
+        d if d > 7 * 24 * 3600 => format!("{} {} {}", tm.tm_mday, MONTHS[(tm.tm_mon as usize).min(11)], tm.tm_year + 1900),
+        d if d > 18 * 3600 => format!("{} {clock}", DAYS[(tm.tm_wday as usize).min(6)]),
+        _ => clock,
+    }
+}
+
+/// A while, as Manifold says one: "40ms", "3.2s", "15s", "2m 52s",
+/// "1h 4m", "2d 3h".
+pub fn took(ms: u64) -> String {
+    let s = ms / 1000;
+    match ms {
+        m if m < 1000 => format!("{m}ms"),
+        m if m < 10_000 => format!("{:.1}s", m as f64 / 1000.),
+        _ if s < 60 => format!("{s}s"),
+        _ if s < 3600 => format!("{}m {}s", s / 60, s % 60),
+        _ if s < 86_400 => format!("{}h {}m", s / 3600, (s % 3600) / 60),
+        _ => format!("{}d {}h", s / 86_400, (s % 86_400) / 3600),
+    }
+}
+
+/// A command's run in a line, as Manifold's outline says it: when it
+/// began, then how it went -- "18m ago › took 2m 52s", "4:05pm › failed
+/// after 5.0s (exit 2)", "just now › running".
+pub fn run_said(m: &apex_core::PromptMark, now_ms: u64) -> Option<String> {
+    let start = m.started?;
+    let how = match (m.ended, m.exit) {
+        (None, _) => "running".to_string(),
+        (Some(e), Some(x)) if x != 0 => format!("failed after {} (exit {x})", took(e.saturating_sub(start))),
+        (Some(e), _) => format!("took {}", took(e.saturating_sub(start))),
+    };
+    Some(format!("{} › {how}", began(start, now_ms)))
+}
+
 /// `when`, as it would be said at `now`.
 pub fn when_at(t: u64, now: u64) -> String {
     const DAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -2516,6 +2594,35 @@ mod when_tests {
         // a day exactly is still the clock; a week exactly the weekday
         assert!(when_at(now - 24 * 3600, now).chars().next().unwrap().is_ascii_digit());
         assert!(!when_at(now - 7 * 24 * 3600, now).chars().next().unwrap().is_ascii_digit());
+    }
+}
+
+#[cfg(test)]
+mod said {
+    use super::*;
+
+    #[test]
+    fn a_while_and_a_run_are_said_as_manifold_says_them() {
+        assert_eq!(took(40), "40ms");
+        assert_eq!(took(3_210), "3.2s");
+        assert_eq!(took(15_000), "15s");
+        assert_eq!(took(172_000), "2m 52s");
+        assert_eq!(took(3_840_000), "1h 4m");
+        assert_eq!(took(183_600_000), "2d 3h");
+        let now = 1_800_000_000_000;
+        assert_eq!(began(now - 20_000, now), "just now");
+        assert_eq!(began(now - 18 * 60_000, now), "18m ago");
+        let mark = |end: Option<u64>, exit| apex_core::PromptMark { prompt: 0, output: Some(1), end: end.map(|_| 2), exit, cmd: Some("make".into()), started: Some(now - 18 * 60_000), ended: end };
+        assert_eq!(run_said(&mark(Some(now - 18 * 60_000 + 172_000), Some(0)), now).as_deref(), Some("18m ago › took 2m 52s"));
+        assert_eq!(run_said(&mark(Some(now - 18 * 60_000 + 5_000), Some(2)), now).as_deref(), Some("18m ago › failed after 5.0s (exit 2)"));
+        assert_eq!(run_said(&mark(None, None), now).as_deref(), Some("18m ago › running"));
+    }
+
+    #[test]
+    fn a_command_is_read_off_its_prompts_line() {
+        assert_eq!(command_read("~/src/apex $ make test\n").as_deref(), Some("make test"));
+        assert_eq!(command_read("apex on main\n❯ cargo build\n\n").as_deref(), Some("cargo build"));
+        assert_eq!(command_read("% \n").as_deref(), None);
     }
 }
 

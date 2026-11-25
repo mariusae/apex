@@ -1362,11 +1362,34 @@ fn a_shells_prompt_marks_reach_the_terminal() {
     }
     let marked = |n: &Node| n.state.terms.get(&t).is_some_and(|t| t.marks.iter().any(|m| m.exit == Some(1)));
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, marked), "{:?}", node.state.terms[&t].marks);
-    let m = *node.state.terms[&t].marks.iter().find(|m| m.exit == Some(1)).unwrap();
+    let m = node.state.terms[&t].marks.iter().find(|m| m.exit == Some(1)).unwrap().clone();
     // the output began on the prompt's line (the printf's '> ' then out),
     // and ended a line below it
     assert_eq!(m.output, Some(m.prompt));
     assert_eq!(m.end, Some(m.prompt + 1));
+    // when it began and ended, the server's clock
+    assert!(m.started.is_some_and(|s| m.ended.is_some_and(|e| e >= s)), "{m:?}");
+}
+
+#[test]
+fn a_command_mark_says_what_ran_and_how_it_went() {
+    let (mut log, mut node, _col, mut server, mut rx) = session();
+    node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let t = node.state.terms.keys().copied().next().expect("terminal");
+    prompt(&mut log, &mut node, &mut server, &mut rx, t);
+    // as fish and the zsh and bash integrations say it: C with the
+    // command line, percent-encoded
+    let cmd = "printf '\\033]133;A\\007$ \\033]133;C;cmdline_url=make%%20test%%3B%%20ls\\007out\\n\\033]133;D;0\\007'\r";
+    for c in cmd.chars() {
+        server.term_key(&mut log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
+    }
+    let marked = |n: &Node| n.state.terms.get(&t).is_some_and(|t| t.marks.iter().any(|m| m.cmd.as_deref() == Some("make test; ls") && m.ended.is_some()));
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, marked), "{:?}", node.state.terms[&t].marks);
+    let m = node.state.terms[&t].marks.iter().find(|m| m.cmd.as_deref() == Some("make test; ls")).unwrap().clone();
+    assert_eq!(m.exit, Some(0));
+    let said = apex_server::run_said(&m, m.ended.unwrap() + 1000).unwrap();
+    assert!(said.starts_with("just now › took "), "{said}");
 }
 
 #[test]

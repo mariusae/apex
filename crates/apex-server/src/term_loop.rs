@@ -30,12 +30,32 @@ pub enum Label {
     /// OSC 7: the shell's working directory, a `file://` URL or a path.
     Cwd(String),
     /// OSC 133 (a semantic prompt): `A` a prompt begins, `B` the command
-    /// line begins, `C` its output begins, `D` it ended, with its status.
-    Mark(u8, Option<i32>),
+    /// line begins, `C` its output begins (with the command line, when
+    /// the shell says it), `D` it ended, with its status.
+    Mark(u8, Option<i32>, Option<String>),
     /// OSC 7501 (the Program Status Protocol): a report's body, or `?`.
     Status(Vec<u8>),
     /// RIS (`ESC c`), a full reset: what the programs said goes with it.
     Reset,
+}
+
+/// `%XX` escapes decoded (a malformed one left as it is).
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).to_string()
 }
 
 /// Cut labels out of `new` (with what an earlier call held back in
@@ -107,8 +127,19 @@ pub fn scan(carry: &mut Vec<u8>, new: &[u8]) -> (Vec<u8>, Vec<(usize, Label)>) {
                 } else if let Some(t) = body.strip_prefix(b"133;") {
                     let mut parts = t.split(|&c| c == b';');
                     let kind = parts.next().and_then(|k| k.first().copied()).unwrap_or(0);
-                    let exit = parts.next().and_then(|e| std::str::from_utf8(e).ok()).and_then(|e| e.trim().parse().ok());
-                    labels.push((out.len(), Label::Mark(kind, exit)));
+                    let rest: Vec<&[u8]> = parts.collect();
+                    let exit = rest.first().and_then(|e| std::str::from_utf8(e).ok()).and_then(|e| e.trim().parse().ok());
+                    // `C`'s command line: `cmdline_url=` (percent-encoded,
+                    // fish's and ghostty's), else `cmdline=` as it is
+                    let cmd = rest.iter().find_map(|p| {
+                        let p = lossy(p);
+                        if let Some(u) = p.strip_prefix("cmdline_url=") {
+                            Some(percent_decode(u))
+                        } else {
+                            p.strip_prefix("cmdline=").map(str::to_string)
+                        }
+                    });
+                    labels.push((out.len(), Label::Mark(kind, exit, cmd)));
                 } else {
                     out.extend_from_slice(&data[i..next]);
                 }
@@ -144,8 +175,8 @@ pub enum Msg {
 pub enum Report {
     Label(Label),
     /// A prompt mark (OSC 133), the history line the cursor was on then,
-    /// and the status a `D` gave.
-    Mark(u8, u64, Option<i32>),
+    /// the status a `D` gave, and the command line a `C` gave.
+    Mark(u8, u64, Option<i32>, Option<String>),
     /// The title (OSC 0, OSC 2).
     Title(String),
     /// OSC 52: text for the snarf buffer.
@@ -346,7 +377,7 @@ impl EventLoop {
             for (at, l) in labels {
                 match l {
                     Label::Status(body) if apex_core::status::is_query(&body) => answers.extend_from_slice(b"\x1b]7501;?\x1b\\"),
-                    Label::Mark(kind, exit) => {
+                    Label::Mark(kind, exit, cmd) => {
                         let line = match self.terminal.lock() {
                             Ok(mut t) => {
                                 t.write(&bytes[fed..at]);
@@ -357,7 +388,7 @@ impl EventLoop {
                             Err(_) => return false,
                         };
                         fed = at;
-                        (self.report)(Report::Mark(kind, line, exit));
+                        (self.report)(Report::Mark(kind, line, exit, cmd));
                     }
                     l => (self.report)(Report::Label(l)),
                 }
@@ -407,6 +438,17 @@ mod tests {
         }
         out.extend(carry);
         (out, labels)
+    }
+
+    #[test]
+    fn a_commands_mark_says_its_command_line() {
+        let (_, labels) = run(&[b"\x1b]133;C;cmdline_url=make%20test%3B%20ls\x07out"]);
+        assert_eq!(labels, vec![Label::Mark(b'C', None, Some("make test; ls".into()))]);
+        let (_, labels) = run(&[b"\x1b]133;D;2\x07"]);
+        assert_eq!(labels, vec![Label::Mark(b'D', Some(2), None)]);
+        let (_, labels) = run(&[b"\x1b]133;C\x07"]);
+        assert_eq!(labels, vec![Label::Mark(b'C', None, None)]);
+        assert_eq!(percent_decode("a%2"), "a%2");
     }
 
     #[test]

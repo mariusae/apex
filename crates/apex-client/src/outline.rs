@@ -45,6 +45,9 @@ const PILL: f32 = 20.;
 #[derive(Default)]
 pub struct Outline {
     pub open: Option<WindowId>,
+    /// The item whose stop is nearest the pointer in the bar: what the
+    /// pill names, and what the list opens level with.
+    pub near: Option<usize>,
     pub bar: Option<Bounds<Pixels>>,
     pub whole: bool,
     pub top: Pixels,
@@ -98,11 +101,37 @@ impl Acme {
         if let Some((toc, current)) = self.webs.toc(w) {
             return Some((toc.clone(), self.webs.page_scroll(w), current));
         }
+        // a terminal's: the commands its shell marked, each at its
+        // prompt's line, with when it ran and how it went
+        if let Some(apex_core::Body::Term(t)) = self.node.state.window(w).ok().map(|x| x.body) {
+            let term = self.node.state.terms.get(&t)?;
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+            let heads: Vec<TocHead> = term
+                .marks
+                .iter()
+                .filter(|m| m.started.is_some() || m.cmd.is_some())
+                .map(|m| TocHead {
+                    level: 1,
+                    title: m.cmd.clone().unwrap_or_else(|| "a command".into()),
+                    top: m.prompt as f64,
+                    path: false,
+                    detail: apex_server::run_said(m, now),
+                    failed: m.exit.is_some_and(|x| x != 0),
+                })
+                .collect();
+            if heads.len() < 2 {
+                return None;
+            }
+            let toc = Toc { height: term.total.max(1) as f64, heads };
+            let scroll = (term.top as f64, term.total.max(1) as f64, term.rows as f64);
+            let current = toc.current(Some(scroll));
+            return Some((toc, Some(scroll), current));
+        }
         let o = self.node.window_outline(w).filter(|o| !o.items.is_empty())?;
         let b = self.node.state.window(w).ok()?.body_buffer()?;
         let buf = self.node.state.buffer(b).ok()?;
         let n = buf.text.line_count().max(1);
-        let heads = o.items.iter().map(|it| TocHead { level: it.level.clamp(1, 4), title: it.title.clone(), top: buf.text.line_of(it.at.min(buf.text.len())) as f64, path: false }).collect();
+        let heads = o.items.iter().map(|it| TocHead { level: it.level.clamp(1, 4), title: it.title.clone(), top: buf.text.line_of(it.at.min(buf.text.len())) as f64, path: false, detail: None, failed: false }).collect();
         let toc = Toc { height: n as f64, heads };
         let scroll = match self.layouts.get(&apex_core::ViewId::Body(w)) {
             Some(l) => (l.first_line as f64, l.total_lines.max(1) as f64, l.lines.len() as f64),
@@ -122,6 +151,14 @@ impl Acme {
             self.webs.toc_go(w, i);
             return;
         }
+        // a terminal: its view to the command's prompt
+        if let Some(apex_core::Body::Term(t)) = self.node.state.window(w).ok().map(|x| x.body) {
+            let Some((toc, _, _)) = self.outline_of(w) else { return };
+            let (Some(head), Some(term)) = (toc.heads.get(i), self.node.state.terms.get(&t)) else { return };
+            let delta = head.top as isize - term.top as isize;
+            self.term_scroll(t, delta);
+            return;
+        }
         let Some(at) = self.node.window_outline(w).and_then(|o| o.items.get(i)).map(|it| it.at) else { return };
         let v = apex_core::ViewId::Body(w);
         let Some(start) = self.text_of(v).map(|t| t.line_start(t.line_of(at.min(t.len())))) else { return };
@@ -136,10 +173,14 @@ impl Acme {
         if let Some((w, b)) = self.web_bars.iter().find(|(w, b)| b.contains(&pos) && self.webs.toc(**w).is_some()) {
             return Some((*w, *b));
         }
-        self.layouts.iter().find_map(|(v, l)| match (v, l.scrollbar) {
+        if let Some(found) = self.layouts.iter().find_map(|(v, l)| match (v, l.scrollbar) {
             (apex_core::ViewId::Body(w), Some(bar)) if bar.contains(&pos) && self.node.window_outline(*w).is_some_and(|o| !o.items.is_empty()) => Some((*w, Bounds::new(bar.origin, gpui::size(bar.size.width, l.bounds.size.height)))),
             _ => None,
-        })
+        }) {
+            return Some(found);
+        }
+        // a terminal's
+        self.term_layouts.iter().find_map(|(w, l)| (l.scrollbar.contains(&pos) && self.outline_of(*w).is_some()).then(|| (*w, Bounds::new(l.scrollbar.origin, gpui::size(l.scrollbar.size.width, l.bounds.size.height)))))
     }
 
     /// The pointer moved: the outline's pill out while it is in a page's
@@ -149,11 +190,18 @@ impl Acme {
     pub fn outline_hover(&mut self, pos: Point<Pixels>) -> bool {
         let in_bar = self.outline_bar_at(pos);
         let on_it = self.outline.panel_at.get().is_some_and(|b| b.dilate(px(4.)).contains(&pos));
-        let was = (self.outline.open, self.outline.whole);
+        let was = (self.outline.open, self.outline.whole, self.outline.near);
         match in_bar {
             Some((w, bar)) => {
                 self.outline.bar = Some(bar);
                 (self.outline.open, self.outline.whole) = (Some(w), false);
+                // the item under the pointer, not the one being read
+                self.outline.near = self.outline_of(w).and_then(|(toc, scroll, _)| {
+                    (0..toc.heads.len()).min_by(|&a, &b| {
+                        let d = |i: usize| (stop_y(&toc, scroll, bar, i) - pos.y).abs();
+                        d(a).partial_cmp(&d(b)).unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                });
             }
             None if on_it && self.outline.open.is_some() => {
                 if !self.outline.whole {
@@ -165,8 +213,9 @@ impl Acme {
         }
         if self.outline.open.is_none() {
             self.outline.panel_at.set(None);
+            self.outline.near = None;
         }
-        was != (self.outline.open, self.outline.whole)
+        was != (self.outline.open, self.outline.whole, self.outline.near)
     }
 
     /// The whole outline placed where the pill was: the heading being
@@ -176,7 +225,7 @@ impl Acme {
         let (Some(w), Some(bar)) = (self.outline.open, self.outline.bar) else { return };
         let Some((toc, scroll, current)) = self.outline_of(w) else { return };
         let toc = &toc;
-        let i = current.unwrap_or(0);
+        let i = self.outline.near.or(current).unwrap_or(0);
         let y = stop_y(toc, scroll, bar, i);
         let (n, tall) = (toc.heads.len(), tall(toc.heads.len(), bar));
         let row = px(PAD + ROW * (i as f32 + 0.5));
@@ -217,7 +266,10 @@ impl Acme {
                 .text_color(rgb(if here { t.accent } else { t.panel_text }))
                 .when(h.level == 1 || here, |d| d.font_weight(crate::fonts::weight(gpui::FontWeight::SEMIBOLD)))
                 .hover(|d| d.bg(rgb(t.tag_bg)))
-                .child(title(h))
+                .gap(px(10.))
+                .child(div().flex_1().min_w_0().overflow_hidden().text_ellipsis().child(title(h)))
+                // what more it says (a command's run), quieter, at the right
+                .when_some(h.detail.clone(), |d, detail| d.child(div().flex_none().font_weight(crate::fonts::weight(gpui::FontWeight::NORMAL)).text_color(rgb(if h.failed { t.text } else { t.panel_dim })).child(detail)))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |acme, _, _, cx| {
@@ -245,7 +297,7 @@ impl Acme {
             .flex()
             .flex_col()
             .min_w(px(170.))
-            .max_w(px(320.))
+            .max_w(px(if toc.heads.iter().any(|h| h.detail.is_some()) { 520. } else { 320. }))
             .h(tall)
             .overflow_hidden()
             .rounded(px(10.))
@@ -265,7 +317,7 @@ impl Acme {
     /// onto it opens the whole outline (`outline_hover`).
     fn outline_pill(&self, w: WindowId, bar: Bounds<Pixels>) -> Option<AnyElement> {
         let (toc, scroll, current) = self.outline_of(w)?;
-        let i = current.unwrap_or(0);
+        let i = self.outline.near.or(current).unwrap_or(0);
         let head = toc.heads.get(i)?;
         let t = crate::theme::theme();
         let at = self.outline.panel_at.clone();

@@ -33,9 +33,9 @@ pub enum TermEvent {
     Exit(i32),
     Name(String),
     Cwd(String),
-    /// OSC 133: a prompt mark, the history line it was made on, and the
-    /// status an end gave.
-    Mark(u8, u64, Option<i32>),
+    /// OSC 133: a prompt mark, the history line it was made on, the
+    /// status an end gave, and the command line a `C` gave.
+    Mark(u8, u64, Option<i32>, Option<String>),
     /// OSC 7501: a program's status report, read (a bad one is dropped).
     Status(apex_core::status::Report),
     /// RIS: a full reset.
@@ -343,13 +343,13 @@ impl TermHost {
             let ev = match r {
                 Report::Label(Label::Name(s)) => TermEvent::Name(s),
                 Report::Label(Label::Cwd(s)) => TermEvent::Cwd(s),
-                Report::Label(Label::Mark(kind, exit)) => TermEvent::Mark(kind, 0, exit),
+                Report::Label(Label::Mark(kind, exit, cmd)) => TermEvent::Mark(kind, 0, exit, cmd),
                 Report::Label(Label::Status(body)) => match apex_core::status::parse(&body) {
                     Some(r) => TermEvent::Status(r),
                     None => return,
                 },
                 Report::Label(Label::Reset) => TermEvent::Reset,
-                Report::Mark(kind, line, exit) => TermEvent::Mark(kind, line, exit),
+                Report::Mark(kind, line, exit, cmd) => TermEvent::Mark(kind, line, exit, cmd),
                 Report::Title(t) => TermEvent::Title(t),
                 Report::Clipboard(t) => TermEvent::Clipboard(t),
                 Report::Bell => TermEvent::Bell,

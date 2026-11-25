@@ -996,7 +996,13 @@ if [[ "$TERM_PROGRAM" == apex ]]; then
     printf '\e]7;file://%s%s' "$HOST" "$PWD"
     printf '\e]133;A'
   }
-  _apex_preexec() { _apex_ran=1; printf '\e]133;C'; }
+  # what is run, with it (percent-encoded: what would end the mark)
+  _apex_preexec() {
+    _apex_ran=1
+    local c=$1
+    c=${c//\%/%25}; c=${c//;/%3B}; c=${c//$'\n'/%0A}; c=${c//$'\a'/%07}; c=${c//$'\e'/%1B}
+    printf '\e]133;C;cmdline_url=%s' "$c"
+  }
   autoload -Uz add-zsh-hook
   add-zsh-hook precmd _apex_precmd
   add-zsh-hook preexec _apex_preexec
@@ -1017,7 +1023,12 @@ if [ "$TERM_PROGRAM" = apex ]; then
     [ "$BASH_COMMAND" = _apex_prompt ] && return
     [ -n "$_apex_ran" ] && return
     _apex_ran=1
-    printf '\e]133;C'
+    # what is run, with it: the line history has, its number left off
+    local c
+    c=$(HISTTIMEFORMAT= builtin history 1)
+    c=${c#"${c%%[![:space:]]*}"}; c=${c#*[[:space:]]}; c=${c#"${c%%[![:space:]]*}"}
+    c=${c//%/%25}; c=${c//;/%3B}; c=${c//$'\n'/%0A}; c=${c//$'\a'/%07}; c=${c//$'\e'/%1B}
+    printf '\e]133;C;cmdline_url=%s' "$c"
   }
   PROMPT_COMMAND="_apex_prompt${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
   trap _apex_preexec DEBUG

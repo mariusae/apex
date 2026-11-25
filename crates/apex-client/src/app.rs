@@ -2946,7 +2946,7 @@ impl Acme {
         }
     }
 
-    fn term_scroll(&mut self, t: TermId, delta: isize) {
+    pub(crate) fn term_scroll(&mut self, t: TermId, delta: isize) {
         self.term_wheel(t, delta, None)
     }
 

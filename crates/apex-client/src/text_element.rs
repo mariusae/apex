@@ -1992,8 +1992,9 @@ impl Element for TextElement {
                 round: src.round,
                 scroller: src.scroller,
                 lane: acme.lane_open(view) || matches!(view, ViewId::Body(w) if acme.outline.open == Some(w)),
+                // the outline's stops while the pointer is in the bar
                 stops: match view {
-                    ViewId::Body(w) => acme.outline_of(w).map(|(toc, scroll, current)| crate::outline::stops(&toc, scroll, current)).unwrap_or_default(),
+                    ViewId::Body(w) if acme.lane_open(view) || acme.outline.open == Some(w) => acme.outline_of(w).map(|(toc, scroll, current)| crate::outline::stops(&toc, scroll, current)).unwrap_or_default(),
                     _ => Vec::new(),
                 },
                 hiding: src.hiding,

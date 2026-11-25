@@ -507,6 +507,10 @@ pub struct Toc {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TocHead {
+    /// What more an item says, after its title (a command's run: "18m ago
+    /// › took 2.4s"), and whether it went wrong (a command that failed).
+    pub detail: Option<String>,
+    pub failed: bool,
     /// 1 to 4: h1 to h4.
     pub level: u8,
     pub title: String,
@@ -527,7 +531,7 @@ impl Toc {
                 let level = f.next()?.parse().ok()?;
                 let top = f.next()?.parse().ok()?;
                 let path = f.next()? == "p";
-                Some(TocHead { level, top, path, title: f.next()?.to_string() })
+                Some(TocHead { level, top, path, title: f.next()?.to_string(), detail: None, failed: false })
             })
             .collect();
         Some(Toc { height, heads })

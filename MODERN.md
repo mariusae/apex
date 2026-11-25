@@ -325,6 +325,9 @@ windows put away out of the tiling, which is the core's
   there (a diff's files by their names, cut from the left when too long,
   since a path's end says most). Back in the bar, it is a pill again.
   Only with two headings or more; nothing of it is drawn in the page.
+  The stops show while the pointer is in the bar, and the pill names
+  the item whose stop is nearest the pointer (the list opening level
+  with it), not the one being read.
   A page may say what its outline is instead: its elements marked
   `data-apex-outline="LEVEL"`, titled by `data-apex-title` or their
   text, are its entries and nothing else (an agent's conversation, a
@@ -523,6 +526,15 @@ windows put away out of the tiling, which is the core's
   strip under it and sent with ⌘↩, typed into the terminal; Stop in its
   tag interrupts; ⌘↩ on the conversation gives the terminal back, an
   unsent draft kept for the next time.
+- **A terminal's commands are its outline**: each command its shell
+  marked (OSC 133) a stop down its scrollbar at its prompt, listed by
+  what ran -- as the shell says it (`C`'s `cmdline_url`, fish's and
+  ghostty's way, and now apex's zsh and bash integrations'), else as
+  its prompt's line reads, the prompt left off -- with when it began
+  and how it went, as Manifold says it: "18m ago › took 2m 52s",
+  "4:05pm › failed after 5.0s (exit 2)", "just now › running"
+  (`PromptMark::cmd`, `started`, `ended`, the server's clock). B1 on
+  one scrolls the terminal to it.
 - **A tool's outline of a text** (`Buffer::outline`): items a tool
   gives a window's text, each at a place that moves with the edits as
   dot does, gone with the tool; drawn as a page's headings are, stops

@@ -365,13 +365,22 @@ pub enum TermOp {
 /// A command as the shell marked it (OSC 133): the history line its
 /// prompt began on (`A`), the line its output began on (`C`), the line
 /// it ended on and how it exited (`D`) -- lines as `TermOp::View` counts
-/// them, the oldest kept being 0.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+/// them, the oldest kept being 0; what was run, as the shell said it
+/// (`C`'s `cmdline_url`, fish's and ghostty's) or as the prompt's line
+/// read; and when it began and ended, the server's clock, in
+/// milliseconds since the epoch.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct PromptMark {
     pub prompt: u64,
     pub output: Option<u64>,
     pub end: Option<u64>,
     pub exit: Option<i32>,
+    #[serde(default)]
+    pub cmd: Option<String>,
+    #[serde(default)]
+    pub started: Option<u64>,
+    #[serde(default)]
+    pub ended: Option<u64>,
 }
 
 // ---- meta -----------------------------------------------------------------
