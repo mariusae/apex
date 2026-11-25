@@ -602,11 +602,21 @@ const SCROLL_SCRIPT: &str = r#"(function () {
     if (now !== last) { last = now; try { window.ipc.postMessage('scroll:' + now); } catch (x) {} }
   }
   function soon() { if (!asked) { asked = true; requestAnimationFrame(say); } }
-  addEventListener('scroll', soon, { passive: true, capture: true });
-  addEventListener('resize', soon);
+  // a page scrolled to its end stays at its end as it grows, as a
+  // terminal does (a conversation going on, a log): what comes is shown,
+  // never left under the foot of the window
+  let atEnd = false;
+  function end() { const e = document.scrollingElement || document.documentElement; return e.scrollTop + e.clientHeight >= e.scrollHeight - 4; }
+  addEventListener('scroll', function () { atEnd = end(); soon(); }, { passive: true, capture: true });
+  function grew() {
+    if (atEnd && !end()) { const e = document.scrollingElement || document.documentElement; e.scrollTop = e.scrollHeight; }
+    soon();
+  }
+  addEventListener('resize', grew);
   addEventListener('load', soon);
   function watch() {
-    try { new ResizeObserver(soon).observe(document.documentElement); } catch (x) {}
+    try { new ResizeObserver(grew).observe(document.documentElement); } catch (x) {}
+    try { new ResizeObserver(grew).observe(document.body); } catch (x) {}
     soon();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watch); else watch();
