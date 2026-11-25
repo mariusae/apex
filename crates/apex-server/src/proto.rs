@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 65;
+pub const PROTOCOL: u32 = 66;
 
 /// A client's terminal colours, RGB: the ink, the paper, and the
 /// sixteen ANSI colours its theme draws.
@@ -448,9 +448,10 @@ pub enum WindowEvent {
     /// A page's script said this (`apex.send`): JSON.
     Message { json: String },
     /// A buffer page scrolled: the source line of the last mark at or
-    /// above its top (a converter's `data-line`), as it changes. What a
-    /// preview puts its file at as its lens goes.
-    Scrolled { line: u32 },
+    /// above its top (a converter's `data-line`), and whether it is at
+    /// its end, as they change. What a preview puts its file at as its
+    /// lens goes; where a conversation's lens is, for the next time.
+    Scrolled { line: u32, end: bool },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

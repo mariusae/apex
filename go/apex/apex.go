@@ -845,7 +845,8 @@ func Redirect(url string) NavAnswer { return NavAnswer{kind: "redirect", url: ur
 // A PageEvent is something that happened in a page the tool owns. What
 // is "navigated" (URL), "loading" (Started), "title" (Title),
 // "message" (Message: what the page's script sent, as JSON) or
-// "scrolled" (Line: the source line of the mark at a buffer page's top).
+// "scrolled" (Line: the source line of the mark at a buffer page's top;
+// End: whether it is at its end).
 type PageEvent struct {
 	What    string          `json:"what"`
 	URL     string          `json:"url"`
@@ -853,6 +854,7 @@ type PageEvent struct {
 	Title   string          `json:"title"`
 	Message json.RawMessage `json:"message"`
 	Line    int             `json:"line"`
+	End     bool            `json:"end"`
 }
 
 // A Request asks for something the tool serves: what a page at

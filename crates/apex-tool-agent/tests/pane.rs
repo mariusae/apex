@@ -720,6 +720,12 @@ fn view_in_an_agents_terminal_is_its_conversation_with_a_prompt_under_it() {
     };
     let lens = view(&mut c);
     assert!(c.node.state.layout.place_of(tw).is_none(), "the terminal under it");
+    // at its end, the first time
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while c.node.state.window(lens).ok().and_then(|w| w.scroll).is_none() && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    assert_eq!(c.node.state.window(lens).unwrap().scroll, Some(apex_core::Scroll::Fraction(1.0)));
     let deadline = Instant::now() + Duration::from_secs(5);
     while !(text_of(&c, lens).contains("ax-prompt\">what is in hosts?</pre>") && text_of(&c, lens).contains("It names localhost.")) && Instant::now() < deadline {
         let _ = c.step(Duration::from_millis(20));
@@ -754,6 +760,8 @@ fn view_in_an_agents_terminal_is_its_conversation_with_a_prompt_under_it() {
     let lens = view(&mut c);
     let strip = |c: &Remote| c.node.state.window(lens).ok().and_then(|w| w.input).and_then(|b| c.node.state.buffer(b).ok()).map(|b| (b.id, b.version, b.text.to_string()));
     assert_eq!(strip(&c).map(|s| s.2).as_deref(), Some(""), "a prompt sent came back as a draft");
+    // scrolled up, as its client says: the next time it opens there
+    c.link.window_event(lens, apex_server::proto::WindowEvent::Scrolled { line: 3, end: false });
     // a draft left in the strip, and View: the terminal back
     let (ib, version, _) = strip(&c).unwrap();
     c.propose(apex_server::Proposal::ReplaceRange { select: false, dir: None, buffer: ib, version, q0: 0, q1: 0, text: "half a thought".into() }, Duration::from_secs(5)).unwrap();
@@ -767,9 +775,14 @@ fn view_in_an_agents_terminal_is_its_conversation_with_a_prompt_under_it() {
         let _ = c.step(Duration::from_millis(20));
     }
     assert!(c.node.state.window(lens).is_err() && c.node.state.layout.place_of(tw).is_some(), "the terminal back");
-    // and View again: the draft where it was
+    // and View again: the draft where it was, and the page where it was
     let lens = view(&mut c);
     assert_eq!(c.node.state.window(lens).ok().and_then(|w| w.input).and_then(|b| c.node.state.buffer(b).ok()).map(|b| b.text.to_string()).as_deref(), Some("half a thought"));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while c.node.state.window(lens).ok().and_then(|w| w.scroll).is_none() && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    assert_eq!(c.node.state.window(lens).unwrap().scroll, Some(apex_core::Scroll::Line(3)), "where it was left");
     let _ = std::fs::remove_dir_all(&tmp);
 }
 

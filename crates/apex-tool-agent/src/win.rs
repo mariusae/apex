@@ -118,11 +118,21 @@ struct Lens {
     stop: RuleId,
     /// The markdown it last showed, so that only a change is written.
     md: String,
+    /// Where the page is, as its client last said (`PageEvent::Scrolled`).
+    at: Option<Spot>,
     /// The session's transcript, read as it grows, and what it has said:
     /// the whole conversation, a resumed session's before this tool saw
     /// it too. None for an agent whose hooks name no transcript (its
     /// exchanges, as the hooks told them, then).
     told: Option<Told>,
+}
+
+/// Where a conversation's lens was: at its end, following it as it
+/// grows, or with this source line (its markdown's) at the top.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Spot {
+    End,
+    Line(u32),
 }
 
 /// A transcript read for a lens: the file, how it is read, what it said.
@@ -172,6 +182,8 @@ pub struct Pane {
     /// What was in a lens's input strip, not sent, when it went: put back
     /// the next time, by agent.
     drafts: HashMap<String, String>,
+    /// Where a lens was when it went, by agent: where the next opens.
+    spots: HashMap<String, Spot>,
     /// The history window, while `History` has one open, and the
     /// sessions it last listed, by id, which is what an id B3'd
     /// anywhere is looked up in.
@@ -338,9 +350,12 @@ impl Pane {
         let presence = event::panes_dir(&opts.dir).join(std::process::id().to_string());
         let _ = std::fs::write(&presence, b"");
         let (session, _) = t.session();
-        let mut pane = Pane { t, w, opts, agents: Agents::default(), logs: HashMap::new(), header: String::new(), blocks: Vec::new(), starts: Vec::new(), footer: String::new(), details: HashMap::new(), pages: HashMap::new(), diffs: HashMap::new(), lenses: HashMap::new(), drafts: HashMap::new(), hist: None, past: HashMap::new(), verbs, look, look_any, pulsing: false, dirty: false, last_slow: Instant::now(), last_render: Instant::now(), home, watcher, woken, watched: BTreeMap::new(), presence, session, targets: HashMap::new(), copy, flags: HashMap::new(), said: HashMap::new() };
+        let mut pane = Pane { t, w, opts, agents: Agents::default(), logs: HashMap::new(), header: String::new(), blocks: Vec::new(), starts: Vec::new(), footer: String::new(), details: HashMap::new(), pages: HashMap::new(), diffs: HashMap::new(), lenses: HashMap::new(), drafts: HashMap::new(), spots: HashMap::new(), hist: None, past: HashMap::new(), verbs, look, look_any, pulsing: false, dirty: false, last_slow: Instant::now(), last_render: Instant::now(), home, watcher, woken, watched: BTreeMap::new(), presence, session, targets: HashMap::new(), copy, flags: HashMap::new(), said: HashMap::new() };
         let dir = pane.opts.dir.clone();
         pane.watch(&dir);
+        // where its lenses are scrolled, said as they go (and so the links
+        // in its pages come here: each answered as it would be anyway)
+        pane.t.handle_pages();
         pane.look()?;
         pane.sweep();
         pane.render()?;
@@ -383,8 +398,25 @@ impl Pane {
                 None if self.w.is_none() && !self.t.alive() => return Ok(()),
                 None => {}
                 Some(Event::Deleted { window }) if Some(window) == self.w => return Ok(()),
+                Some(Event::Navigate(n)) => {
+                    let _ = self.t.answer_navigation(&n, apex_tool::NavAnswer::Default);
+                }
+                Some(Event::Page { window, event: apex_tool::PageEvent::Scrolled { line, end } }) => {
+                    if let Some(l) = self.lenses.get_mut(&window) {
+                        l.at = Some(if end { Spot::End } else { Spot::Line(line) });
+                    }
+                }
                 Some(Event::Deleted { window }) => {
                     if let Some(l) = self.lenses.remove(&window) {
+                        // where it was, for the next
+                        match l.at {
+                            Some(s) => {
+                                self.spots.insert(l.session.clone(), s);
+                            }
+                            None => {
+                                self.spots.remove(&l.session);
+                            }
+                        }
                         for r in [l.view, l.send, l.stop] {
                             self.t.withdraw(r);
                         }
@@ -1197,11 +1229,16 @@ impl Pane {
         let stop = self.t.offer(Rule::verb("Stop").window(w))?;
         let draft = self.drafts.remove(key).unwrap_or_default();
         self.t.set_input(w, Some(&draft))?;
-        // the latest at the foot, where the next prompt goes
-        let _ = self.t.scroll_page(w, apex_tool::Scroll::Fraction(1.0));
         // the page written again from the transcript, once it is read
-        self.lenses.insert(w, Lens { session: key.to_string(), base, view, send, stop, md, told: None });
+        self.lenses.insert(w, Lens { session: key.to_string(), base, view, send, stop, md, at: None, told: None });
         self.render_lenses()?;
+        // then where it was the last time; else the latest at the foot,
+        // where the next prompt goes, and followed as it comes
+        let scroll = match self.spots.get(key) {
+            Some(Spot::Line(line)) => apex_tool::Scroll::Line(*line),
+            _ => apex_tool::Scroll::Fraction(1.0),
+        };
+        let _ = self.t.scroll_page(w, scroll);
         Ok(true)
     }
 
@@ -1210,8 +1247,17 @@ impl Pane {
     /// interrupts its turn.
     fn lens_verb(&mut self, w: WindowId, rule: RuleId) -> apex_tool::Result<bool> {
         let Some(l) = self.lenses.get(&w) else { return Ok(false) };
-        let (base, key) = (l.base, l.session.clone());
+        let (base, key, at) = (l.base, l.session.clone(), l.at);
         if rule == l.view {
+            // where it was, for the next
+            match at {
+                Some(s) => {
+                    self.spots.insert(key.clone(), s);
+                }
+                None => {
+                    self.spots.remove(&key);
+                }
+            }
             // what is in the strip now, and only that, kept for the next
             let draft = self.t.input(w).unwrap_or_default();
             if draft.trim().is_empty() {
@@ -1317,9 +1363,10 @@ impl Pane {
             if self.lenses.get(&w).is_some_and(|l| l.md == md) {
                 continue;
             }
+            // written anew; a page at its end stays there as it grows (the
+            // page's own doing), one scrolled up stays where it is
             let html = page::render_md(&self.t, Path::new(&a.cwd), &md);
             self.t.replace(w, 0, END, &html)?;
-            let _ = self.t.scroll_page(w, apex_tool::Scroll::Fraction(1.0));
             if let Some(l) = self.lenses.get_mut(&w) {
                 l.md = md;
             }

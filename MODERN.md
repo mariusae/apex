@@ -527,7 +527,11 @@ windows put away out of the tiling, which is the core's
   answered in its place, kept up as it goes, a prompt written in the
   strip under it and sent with ⌘↩, typed into the terminal; Stop in its
   tag interrupts; ⌘↩ on the conversation gives the terminal back, an
-  unsent draft kept for the next time.
+  unsent draft kept for the next time, and where it was scrolled: at
+  its end the first time, following what comes, and back where it was
+  left after (only the user's own scrolling takes a page off its end;
+  WebKit holding what was in view in place as the page is written anew
+  does not).
 - **A terminal's commands are its outline**: each command its shell
   marked (OSC 133) a stop down its scrollbar at its prompt, listed by
   what ran -- as the shell says it (`C`'s `cmdline_url`, fish's and

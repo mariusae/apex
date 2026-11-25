@@ -462,7 +462,7 @@ impl Tool {
                 self.render_or_say();
             }
             for (w, e) in std::mem::take(&mut self.remote.link.window_events) {
-                if let (true, apex_server::proto::WindowEvent::Scrolled { line }) = (Some(w) == self.page.map(|(p, _)| p), e) {
+                if let (true, apex_server::proto::WindowEvent::Scrolled { line, .. }) = (Some(w) == self.page.map(|(p, _)| p), e) {
                     self.top = Some(line);
                 }
             }

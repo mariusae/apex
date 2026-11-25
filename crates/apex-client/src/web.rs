@@ -323,6 +323,7 @@ const TOC_SCRIPT: &str = r#"(function () {
     }
     window.__apexTocGo = function (i) {
       const h = heads[i];
+      if (window.__apexNotEnd) __apexNotEnd();
       if (h) view().scrollTo({ top: Math.max(0, at(h) - 12), behavior: 'smooth' });
     };
     // again when the page changes, once a frame at most
@@ -615,8 +616,18 @@ const SCROLL_SCRIPT: &str = r#"(function () {
   // a page scrolled to its end stays at its end as it grows, as a
   // terminal does (a conversation going on, a log): what comes is shown,
   // never left under the foot of the window
-  let atEnd = false;
+  // Whether it is at its end is the user's to change: a scroll they made
+  // (the wheel, a key, a click, apex's scrollbar: `__apexUser`) says so;
+  // one the page made itself -- WebKit keeping what was in view in place
+  // as the page is written anew -- does not, else a conversation filling
+  // in under the view would leave it at some old turn
+  let atEnd = false, userAt = 0;
   function end() { const e = document.scrollingElement || document.documentElement; return e.scrollTop + e.clientHeight >= e.scrollHeight - 4; }
+  const user = function () { userAt = Date.now(); };
+  for (const t of ['wheel', 'keydown', 'mousedown', 'touchstart']) addEventListener(t, user, { passive: true, capture: true });
+  window.__apexUser = user;
+  // apex taking it somewhere else (a line, a fraction, an outline entry)
+  window.__apexNotEnd = function () { atEnd = false; };
   // to its end, and kept there as it grows: what the log's scroll all
   // the way down means (`Scroll::Fraction(1.0)`), whether or not the
   // page is long enough yet to scroll at all
@@ -626,7 +637,7 @@ const SCROLL_SCRIPT: &str = r#"(function () {
     e.scrollTop = e.scrollHeight;
     soon();
   };
-  addEventListener('scroll', function () { atEnd = end(); soon(); }, { passive: true, capture: true });
+  addEventListener('scroll', function () { if (Date.now() - userAt < 1000) atEnd = end(); soon(); }, { passive: true, capture: true });
   function grew() {
     if (atEnd && !end()) { const e = document.scrollingElement || document.documentElement; e.scrollTop = e.scrollHeight; }
     soon();
@@ -1454,7 +1465,7 @@ impl Webs {
     /// The page scrolled by `dy` CSS pixels (down when positive).
     pub fn scroll_by(&self, w: WindowId, dy: f64) {
         if let Some(h) = self.hosts.get(&w) {
-            let _ = h.view.evaluate_script(&format!("(document.scrollingElement || document.documentElement).scrollBy(0, {dy});"));
+            let _ = h.view.evaluate_script(&format!("window.__apexUser && __apexUser(); (document.scrollingElement || document.documentElement).scrollBy(0, {dy});"));
         }
     }
 
@@ -1462,7 +1473,7 @@ impl Webs {
     /// the top: acme's B2 in a scrollbar.
     pub fn scroll_to_fraction(&self, w: WindowId, frac: f64) {
         if let Some(h) = self.hosts.get(&w) {
-            let _ = h.view.evaluate_script(&format!("(function(){{const e = document.scrollingElement || document.documentElement; e.scrollTo(0, {frac} * e.scrollHeight);}})();"));
+            let _ = h.view.evaluate_script(&format!("(function(){{if(window.__apexUser){{__apexUser();}}const e = document.scrollingElement || document.documentElement; e.scrollTo(0, {frac} * e.scrollHeight);}})();"));
         }
     }
 
@@ -1518,6 +1529,7 @@ impl Webs {
     fn follow_line(h: &WebHost, line: u32) {
         let js = format!(
             r#"(function(){{
+if (window.__apexNotEnd) __apexNotEnd();
 const want = {line};
 let best = null, bestLine = -1;
 for (const el of document.querySelectorAll('[data-line]')) {{
@@ -1550,7 +1562,7 @@ if (best) {{
                 let _ = h.view.evaluate_script("(function(){if(window.__apexToEnd){__apexToEnd();}else{const e = document.scrollingElement || document.documentElement; e.scrollTo(0, e.scrollHeight);}})();");
             }
             apex_core::Scroll::Fraction(f) => {
-                let _ = h.view.evaluate_script(&format!("(function(){{const e = document.scrollingElement || document.documentElement; e.scrollTo(0, {f} * e.scrollHeight);}})();"));
+                let _ = h.view.evaluate_script(&format!("(function(){{if(window.__apexNotEnd){{__apexNotEnd();}}const e = document.scrollingElement || document.documentElement; e.scrollTo(0, {f} * e.scrollHeight);}})();"));
             }
             apex_core::Scroll::Outline(i) => {
                 let _ = h.view.evaluate_script(&format!("window.__apexTocGo && window.__apexTocGo({i});"));

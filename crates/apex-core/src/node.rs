@@ -675,9 +675,10 @@ impl Node {
         if !matches!(win.body, Body::Page(Source::Buffer(_))) {
             return Err(CoreError::Missing(format!("window {w}: not a buffer page")));
         }
-        // an outline's entry is gone to however often it is asked for;
-        // anywhere else, once each time it is somewhere new
-        if win.scroll != scroll || matches!(scroll, Some(Scroll::Outline(_))) {
+        // a scroll asked for is gone to however often it is asked for (a
+        // conversation's end once a prompt is sent, though it was there
+        // before the user scrolled up); none, once
+        if win.scroll != scroll || scroll.is_some() {
             self.append(log, Shard::Window(w), Op::Window(WindowOp::PageScroll { scroll }))?;
         }
         Ok(())

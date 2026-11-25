@@ -1135,7 +1135,7 @@ fn view_makes_a_preview_the_files_lens_and_view_again_gives_the_file_back() {
     assert!(c.node.state.layout.place_of(w).is_none(), "the file under its preview");
     assert_eq!(c.node.state.window(page).unwrap().scroll, Some(apex_core::Scroll::Line(21)));
     // the page scrolled, as a client says (to its owner, the preview)
-    c.link.window_event(page, apex_server::proto::WindowEvent::Scrolled { line: 41 });
+    c.link.window_event(page, apex_server::proto::WindowEvent::Scrolled { line: 41, end: false });
     std::thread::sleep(Duration::from_millis(300));
     // View on the page: the lens gone, the window back, at the page's top
     c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(page), text: "View".into() }, Duration::from_secs(5)).unwrap();

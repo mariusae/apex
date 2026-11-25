@@ -182,7 +182,7 @@ impl Bridge {
                     apex_tool::PageEvent::Loading { started } => json!({ "what": "loading", "started": started }),
                     apex_tool::PageEvent::Title { title } => json!({ "what": "title", "title": title }),
                     apex_tool::PageEvent::Message { json } => json!({ "what": "message", "message": serde_json::from_str::<Value>(&json).unwrap_or(Value::String(json)) }),
-                    apex_tool::PageEvent::Scrolled { line } => json!({ "what": "scrolled", "line": line }),
+                    apex_tool::PageEvent::Scrolled { line, end } => json!({ "what": "scrolled", "line": line, "end": end }),
                 };
                 v["event"] = json!("page");
                 v["window"] = json!(window.0);

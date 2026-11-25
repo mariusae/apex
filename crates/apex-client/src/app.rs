@@ -651,7 +651,7 @@ pub struct Acme {
     /// page, and where the link was going.
     pub page_asks: HashMap<u64, (WindowId, String)>,
     /// The source line each page last said is at its top (`Scrolled`).
-    pub page_lines: HashMap<WindowId, u32>,
+    pub page_lines: HashMap<WindowId, (u32, bool)>,
     /// A remote daemon is being restarted for this window: the page
     /// says so, with nothing to press meanwhile.
     pub restarting: bool,
@@ -4608,9 +4608,10 @@ impl Acme {
                     self.webs.set_scroll(w, top, height, view);
                     // the line at its top, to its owner as it changes (a
                     // preview, to put its file there as its lens goes)
-                    if let Some(line) = line.filter(|l| self.page_lines.get(&w) != Some(l)) {
-                        self.page_lines.insert(w, line);
-                        self.tell_owner(w, PageEvent::Scrolled { line });
+                    let end = top + view >= height - 4.;
+                    if let Some(line) = line.filter(|l| self.page_lines.get(&w) != Some(&(*l, end))) {
+                        self.page_lines.insert(w, (line, end));
+                        self.tell_owner(w, PageEvent::Scrolled { line, end });
                     }
                 }
                 // its outline, for the scrollbar
