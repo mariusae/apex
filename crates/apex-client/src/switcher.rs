@@ -279,7 +279,7 @@ impl Acme {
 
     /// Session `id`'s card, `w` by `h` (its window, small and live) with
     /// its label over it; the shown one's edge in the accent.
-    fn session_card(&self, id: TabId, w: f32, h: f32, label_alpha: f32, cx: &mut Context<Self>) -> gpui::Div {
+    pub(crate) fn session_card(&self, id: TabId, w: f32, h: f32, label_alpha: f32, cx: &mut Context<Self>) -> gpui::Div {
         let t = crate::theme::theme();
         let dark = crate::theme::is_dark();
         let avatar_idle = if dark { 0x58585C } else { 0xB8B8BC };

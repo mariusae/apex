@@ -204,6 +204,19 @@ windows put away out of the tiling, which is the core's
   presses walk the sessions most recently settled on first; the ones
   passed on the way are not taken as settled on. A session not
   connected yet is being connected as it is passed.
+- **⌘1 to ⌘9 and ⌘\` go to sessions** (`sessionkeys.rs`), as Manifold's
+  spaces: ⌘1 to ⌘8 in the sidebar's order, ⌘9 the last. ⌘ held alone a
+  quarter second shows each one's key, a pill (`⌘2`) by its row in the
+  sidebar; with the sidebar hidden, the sessions' names slide out
+  across the title bar from the session's own, each with its key (a
+  click goes there). Another modifier, or letting go, puts them away; a
+  key with ⌘ (⌘2, then ⌘3) leaves them. ⌘\` (⇧⌘\` back) is Manifold's
+  ⌥⇥, as ⌘⇥ the Mac's apps: the sessions, the most recently settled on
+  first, walked while ⌘ is held -- a tap goes back to the session
+  before -- their cards (each session's window, small and live) coming
+  up after a fifth of a second, the one chosen ringed; letting go of ⌘
+  goes to it, escape stays, a card clicked goes to it. Nothing moves
+  until ⌘ is let go, where ctrl-tab shows each session as it passes.
 - **⌘⇧\\ (or ⌘') shows every session** (View ▸ Show All Sessions), as Mission
   Control shows the windows: a grid of cards over the window, as large
   as the window allows, each its session's window drawn small and live

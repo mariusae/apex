@@ -442,6 +442,14 @@ pub struct Acme {
     pub web_cuts: std::rc::Rc<std::cell::RefCell<Vec<(gpui::Bounds<Pixels>, Pixels)>>>,
     /// ctrl-tab, control still held: the walk through the sessions.
     pub switcher: Option<crate::switcher::Switcher>,
+    /// ⌘ down alone, since when: its keys show if it stays so a moment
+    /// (`sessionkeys`); and since when they have shown.
+    pub command_down: Option<std::time::Instant>,
+    pub numbers: Option<std::time::Instant>,
+    /// ⌘`, ⌘ still held: the walk through the sessions, and when it began
+    /// (its cards come up a moment after).
+    pub walk: Option<crate::sessionkeys::Walk>,
+    pub walk_began: Option<std::time::Instant>,
     /// A session sliding in (ctrl-tab), and the overview up (⌘⇧\).
     pub switch_slide: Option<crate::switcher::SwitchSlide>,
     pub overview: Option<crate::switcher::Overview>,
@@ -990,14 +998,7 @@ impl Acme {
 
     /// cmd-N: the Nth tab.
     pub fn go_to_tab(&mut self, n: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let tabs = Pool::tabs(cx);
-        if let Some(t) = tabs.get(n.saturating_sub(1)) {
-            if t.id != self.tab {
-                let id = t.id;
-                self.switch_to(id, window, cx);
-                cx.notify();
-            }
-        }
+        self.go_to_numbered(n, window, cx);
     }
 
     /// ⌘⇧[ and ⌘⇧]: the tab on either side of this one, in the order the
@@ -1729,9 +1730,12 @@ impl Acme {
                                 // a walk whose key came up where gpui did not
                                 // hear it (a page had the keys): ended as the
                                 // key coming up ends it
-                                let (_, ctrl) = crate::web::modifiers_down();
+                                let (cmd, ctrl) = crate::web::modifiers_down();
                                 if acme.switcher.is_some() && !ctrl {
                                     acme.switcher_commit(window, cx);
+                                }
+                                if !cmd && (acme.numbers.is_some() || acme.walk.is_some() || acme.command_down.is_some()) {
+                                    acme.command_released(window, cx);
                                 }
                                 if acme.caret_tick() {
                                     cx.notify();
@@ -1812,6 +1816,10 @@ impl Acme {
             pulled: Default::default(),
             web_cuts: Default::default(),
             switcher: None,
+            command_down: None,
+            numbers: None,
+            walk: None,
+            walk_began: None,
             switch_slide: None,
             overview: None,
             url_edit: None,
@@ -4004,6 +4012,10 @@ impl Acme {
     pub fn modifiers_changed(&mut self, e: &ModifiersChangedEvent, window: &mut Window, cx: &mut Context<Self>) {
         let prev = self.mouse.mods;
         self.mouse.mods = e.modifiers;
+        // ⌘ alone: the sessions' keys in a moment; let go, a ⌘` walk ends
+        if e.modifiers.platform != prev.platform || self.command_down.is_some() || self.numbers.is_some() || self.walk.is_some() {
+            self.command_mods(&e.modifiers, window, cx);
+        }
         // gpui takes ctrl-tab for typing (tab has a character, control or
         // not) and hides the pointer for it; while control is down, no key
         // is typing, so none hides it
@@ -5070,6 +5082,12 @@ impl Acme {
         // held; escape then goes back to where it began
         {
             let ks = &e.keystroke;
+            self.command_key(&ks.modifiers, cx);
+            // a ⌘` walk: escape stays where it began
+            if self.walk.is_some() && ks.key == "escape" {
+                self.end_walk(false, window, cx);
+                return;
+            }
             // the overview up: the keys are its (the arrows, return, escape)
             if self.overview.is_some() {
                 let key = ks.key.clone();
@@ -5285,7 +5303,11 @@ impl Acme {
     /// The pointer is left where it is: put back where it last was here,
     /// it jumped under the hand whenever the window came forward (a new
     /// window, the dock, cmd-tab).
-    pub fn window_activated(&mut self, active: bool, window: &mut Window) {
+    pub fn window_activated(&mut self, active: bool, window: &mut Window, cx: &mut Context<Self>) {
+        // the keys gone elsewhere: ⌘'s letting go will not be heard here
+        if !active {
+            self.command_released(window, cx);
+        }
         // ⌘ or ⌥ let go while another window (or app) had the keys: as
         // they are now, and the pill with them
         self.hint_mods(window.modifiers());

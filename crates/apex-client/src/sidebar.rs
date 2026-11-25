@@ -48,6 +48,8 @@ impl Acme {
             .map(|(id, _, node)| (id, status_windows(node).into_iter().map(|w| win_line(node, w, crate::strips::dot_in(node, w, None))).collect()))
             .collect();
         let headed = entries.iter().filter(|e| matches!(e, Entry::Host(..))).count() > 1;
+        // ⌘ held: each open session's key by its row
+        let keys: Vec<TabId> = if self.numbers.is_some() { entries.iter().filter_map(|e| if let Entry::Tab(_, t) = e { Some(t.id) } else { None }).collect() } else { Vec::new() };
         for entry in entries {
             let (i, tab) = match entry {
                 // a host's name over its sessions (when there is more than
@@ -208,9 +210,13 @@ impl Acme {
                 .gap(px(8.))
                 .child(avatar)
                 .child(text);
+            // ⌘ held: its key, where the × and the face would be
+            let key = keys.iter().position(|k| *k == id).and_then(|at| crate::sessionkeys::number(at, keys.len()));
+            if let Some(n) = key {
+                row = row.child(crate::sessionkeys::key_pill(n));
+            } else if self.sidebar_hover == Some(id) {
             // the pointer on the row: an × to let the session go, as a
             // tab's had (the session stays on its host; the tab goes)
-            if self.sidebar_hover == Some(id) {
                 row = row.child(
                     div()
                         .id(("session-close", i))
@@ -865,6 +871,12 @@ impl Acme {
             }
         }
         out
+    }
+
+    /// The open sessions in the order the sidebar lists them, under
+    /// their hosts: what ⌘1 to ⌘9 count (`sessionkeys`).
+    pub fn sidebar_tab_order(&self, cx: &gpui::App) -> Vec<TabId> {
+        self.sidebar_entries(cx).into_iter().filter_map(|e| if let Entry::Tab(_, t) = e { Some(t.id) } else { None }).collect()
     }
 
     /// Host `h` forgotten (the × on its row): out of the known hosts and

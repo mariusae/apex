@@ -33,6 +33,7 @@ mod look;
 mod outline;
 mod miniature;
 mod restart;
+mod sessionkeys;
 mod strips;
 mod switcher;
 mod tagedit;
@@ -175,6 +176,8 @@ impl Render for Acme {
             .on_action(cx.listener(|this, _: &shell::Tab7, window, cx| this.go_to_tab(7, window, cx)))
             .on_action(cx.listener(|this, _: &shell::Tab8, window, cx| this.go_to_tab(8, window, cx)))
             .on_action(cx.listener(|this, _: &shell::Tab9, window, cx| this.go_to_tab(9, window, cx)))
+            .on_action(cx.listener(|this, _: &shell::SwitchSession, window, cx| this.walk_step(false, window, cx)))
+            .on_action(cx.listener(|this, _: &shell::SwitchSessionBack, window, cx| this.walk_step(true, window, cx)))
             .on_action(cx.listener(|this, _: &shell::PrevTab, window, cx| this.cycle_tab(-1, window, cx)))
             .on_action(cx.listener(|this, _: &shell::NextTab, window, cx| this.cycle_tab(1, window, cx)))
             // the host's profile, the session's setup: opened, or made
@@ -290,7 +293,8 @@ impl Render for Acme {
                 Some(o) => root.child(o),
                 None => root,
             };
-            let root = match self.selector_panel(cx) {
+            let root = root.children(self.walk_cards(window, cx));
+        let root = match self.selector_panel(cx) {
                 Some(panel) => root.child(panel),
                 None => root,
             };
@@ -686,6 +690,9 @@ impl Render for Acme {
         // and then the whole fading out (`menu.rs`)
         // (the clock B2's ran text goes by too, `app::RAN`)
         const MENU_IN: f32 = 90.;
+        if self.numbered_strip_moving() {
+            window.request_animation_frame();
+        }
         const BLINK: (f32, f32) = (app::RAN.0, app::RAN.1);
         const MENU_OUT: (f32, f32) = (app::RAN.2, app::RAN.3);
         if let Some(m) = &self.menu {
@@ -1209,7 +1216,7 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
             view.update(cx, |_, cx| {
                 cx.observe_window_activation(window, |acme: &mut Acme, window, cx| {
                     let active = window.is_window_active();
-                    acme.window_activated(active, window);
+                    acme.window_activated(active, window, cx);
                     cx.notify();
                 })
                 .detach();
@@ -1340,6 +1347,8 @@ fn empty_column(t: &theme::Theme, bunny: bool) -> gpui::AnyElement {
 /// Where the window's buttons end across the title bar, with air before
 /// the sidebar's button after them.
 const LIGHTS_W: f32 = 86.;
+/// The sidebar's button in the title bar, across.
+const TOGGLE_W: f32 = 24.;
 
 /// The tools menu painted as the app's other menus are: a panel, its
 /// hairline, corners and shadow; each row centred in the interface's
@@ -1432,7 +1441,7 @@ impl app::Acme {
         let toggle = div()
             .id("title-sidebar")
             .flex_none()
-            .size(px(24.))
+            .size(px(TOGGLE_W))
             .rounded(px(5.))
             .flex()
             .items_center()
@@ -1454,6 +1463,7 @@ impl app::Acme {
         // the sidebar is out, which says all that; then acme's top row,
         // and the stash's room at the right end
         let rest = div()
+            .relative()
             .flex_1()
             .min_w_0()
             .h_full()
@@ -1493,7 +1503,10 @@ impl app::Acme {
                     .children(self.procs_strip(proc_fit, window.viewport_size().width, cx))
                     .child(div().flex_1().min_w_0().h(px(font)).relative().child(text_element::TextElement { acme: me.clone(), view: apex_core::ViewId::Top }).cursor(gpui::CursorStyle::Arrow))
             })
-            .child(bare("title-shelf").w(px(self.shelf_room(cx))));
+            .child(bare("title-shelf").w(px(self.shelf_room(cx))))
+            // ⌘ held, the sidebar hidden: the sessions slid out across the
+            // bar from where the session's name is, each with its key
+            .children(self.numbered_strip(lights + TOGGLE_W + 6., h, cx));
         // the sidebar shown: its card goes up round the window's buttons
         // and its own, one with them as a Mac app's sidebar is; the bar
         // is the rest's

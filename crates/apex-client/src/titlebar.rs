@@ -28,7 +28,7 @@ impl SessionEdit {
 
 impl Acme {
     /// The name, what the sidebar calls this session too.
-    fn session_label(&self) -> String {
+    pub(crate) fn session_label(&self) -> String {
         if self.in_process() {
             "in-process".to_string()
         } else {
