@@ -513,11 +513,13 @@ windows put away out of the tiling, which is the core's
   bordered, a shadow under it, in from the sides -- so it reads as a
   place to write, a round send button at its right (an arrow up, the
   accent's while there is something to send: what ⌘↩ in it does); as
-  tall as its text, one line to six. What it floats
-  over can always be scrolled clear of it: a text's last line goes to
-  the window's top as ever, a page is given room at its foot as tall
-  as the box, and a terminal, which cannot scroll past its last row,
-  stops above it. Apex text, replicated, a draft in every UI. ⌘↩ in it
+  tall as its text, one line to six. Over a text it floats, the text's
+  last line able to go to the window's top as ever; a terminal, which
+  cannot scroll past its last row, and a page, a native view apex draws
+  nothing over, stop above it, the box in a band of its own at the
+  foot. (Over a page it once floated too, through a rounded hole cut in
+  the page and a shadow the page drew in CSS: two layers to keep in
+  step, and when they were not the box vanished.) Apex text, replicated, a draft in every UI. ⌘↩ in it
   is Send, the word its tool claims there to take the text
   (`take_input`).
 - **An agent's conversation is its terminal's lens**: ⌘↩ in a terminal

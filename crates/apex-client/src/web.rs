@@ -111,26 +111,6 @@ fn theme_rules() -> String {
     )
 }
 
-/// The round holes no other hole overlaps, and the bounds of those that
-/// give way to one: an overlay over a strip has the place to itself.
-fn give_way(holes: &[(Bounds<Pixels>, Pixels)], rounds: &[(Bounds<Pixels>, Pixels)]) -> (Vec<(Bounds<Pixels>, Pixels)>, Vec<Bounds<Pixels>>) {
-    let over = |b: &Bounds<Pixels>| holes.iter().any(|(o, m)| o.dilate(*m).intersects(b));
-    let (kept, gone): (Vec<_>, Vec<_>) = rounds.iter().copied().partition(|(b, _)| !over(b));
-    (kept, gone.into_iter().map(|(b, _)| b).collect())
-}
-
-/// Where something afloat over a page's foot is, in the page's view, in
-/// CSS pixels: in from its left, its right and its foot, how tall, its
-/// corners' round (`Webs::set_foot`).
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub struct Float {
-    pub left: f32,
-    pub right: f32,
-    pub bottom: f32,
-    pub height: f32,
-    pub round: f32,
-}
-
 /// Look in a page (`Webs::find`): the next place, found as the browser
 /// finds (whole words or not, any case), and every place the text is,
 /// marked by CSS custom highlights -- which leave the page's own DOM
@@ -433,14 +413,9 @@ pub struct WebHost {
     url: String,
     bounds: Option<Bounds<Pixels>>,
     shown: bool,
-    /// The room at its foot and the float's place last said (`set_foot`),
-    /// none since it loaded.
-    foot: Option<(u32, Option<Float>)>,
-    /// Its float's shadow hidden: the float gave way to an overlay.
-    float_hidden: bool,
     /// The holes cut in the view (`set_holes`), in the view's own
     /// coordinates, as last applied.
-    holes: Vec<(f64, f64, f64, f64, f64)>,
+    holes: Vec<(f64, f64, f64, f64)>,
     /// A page from a buffer: the buffer version shown, and the directory
     /// its relative links resolve in.
     html: Option<(u64, String)>,
@@ -832,11 +807,8 @@ impl Webs {
     /// view's layer, the view's rectangle less the overlays' (even-odd),
     /// so gpui's overlay shows through and the page stays live around
     /// it. No overlay over a view, no mask.
-    /// `rounds` are holes of their own shape: a rounded rectangle, the
-    /// element's bounds exactly, its corners this round (an input strip
-    /// afloat over a page: the page shows up to its edge).
     #[cfg(target_os = "macos")]
-    pub fn set_holes(&mut self, holes: &[(Bounds<Pixels>, Pixels)], rounds: &[(Bounds<Pixels>, Pixels)]) {
+    pub fn set_holes(&mut self, holes: &[(Bounds<Pixels>, Pixels)]) {
         use objc::runtime::Object;
         use objc::{class, msg_send, sel, sel_impl};
         use wry::WebViewExtMacOS;
@@ -850,31 +822,16 @@ impl Webs {
         extern "C" {
             fn CGPathCreateMutable() -> *mut std::ffi::c_void;
             fn CGPathAddRect(path: *mut std::ffi::c_void, m: *const std::ffi::c_void, rect: CGRect);
-            fn CGPathAddRoundedRect(path: *mut std::ffi::c_void, m: *const std::ffi::c_void, rect: CGRect, cw: f64, ch: f64);
             fn CGPathRelease(path: *mut std::ffi::c_void);
         }
         #[link(name = "QuartzCore", kind = "framework")]
         extern "C" {}
-        // a round hole is a hole at its bounds, with corners
-        // a round hole an overlay's hole overlaps gives way to it: two holes
-        // over one another, the mask's even-odd rule would cut the page
-        // back in where they meet. What floats there (an input strip) is
-        // under the page until the overlay goes, its shadow with it.
-        let (rounds, yielded) = give_way(holes, rounds);
-        let holes: Vec<(Bounds<Pixels>, Pixels, f64)> = holes.iter().map(|&(o, m)| (o, m, 0.)).chain(rounds.iter().map(|&(o, r)| (o, gpui::px(0.), f64::from(f32::from(r))))).collect();
-        self.cut = holes.iter().map(|&(o, _, _)| o).collect();
+        self.cut = holes.iter().map(|&(o, _)| o).collect();
         // the panels' shadows reach past their bounds, each its own way
         for h in self.hosts.values_mut() {
             let Some(vb) = h.bounds else { continue };
             if !h.shown {
                 continue;
-            }
-            // a strip that gave way over this page: the page's shadow of it
-            // gone too, back with it
-            let hide = yielded.iter().any(|b| b.intersects(&vb));
-            if h.float_hidden != hide {
-                h.float_hidden = hide;
-                let _ = h.view.evaluate_script(&format!("document.documentElement.classList.toggle('apex-nofloat', {hide});"));
             }
             // what of the overlays lies over this page, their bounds alone:
             // the clicks there are theirs, not the page's (`hit_test`)
@@ -883,7 +840,7 @@ impl Webs {
                 let view = &*wk as *const _ as *mut Object;
                 let hits: Vec<[f64; 4]> = holes
                     .iter()
-                    .filter_map(|&(o, _, _)| {
+                    .filter_map(|&(o, _)| {
                         let x0 = o.origin.x.max(vb.origin.x);
                         let y0 = o.origin.y.max(vb.origin.y);
                         let x1 = (o.origin.x + o.size.width).min(vb.origin.x + vb.size.width);
@@ -893,14 +850,14 @@ impl Webs {
                     .collect();
                 hit::set(view, hits);
             }
-            let local: Vec<(f64, f64, f64, f64, f64)> = holes
+            let local: Vec<(f64, f64, f64, f64)> = holes
                 .iter()
-                .filter_map(|&(o, margin, round)| {
+                .filter_map(|&(o, margin)| {
                     let x0 = (o.origin.x - margin).max(vb.origin.x);
                     let y0 = (o.origin.y - margin).max(vb.origin.y);
                     let x1 = (o.origin.x + o.size.width + margin).min(vb.origin.x + vb.size.width);
                     let y1 = (o.origin.y + o.size.height + margin).min(vb.origin.y + vb.size.height);
-                    (x1 > x0 && y1 > y0).then(|| (f64::from(f32::from(x0 - vb.origin.x)), f64::from(f32::from(y0 - vb.origin.y)), f64::from(f32::from(x1 - x0)), f64::from(f32::from(y1 - y0)), round))
+                    (x1 > x0 && y1 > y0).then(|| (f64::from(f32::from(x0 - vb.origin.x)), f64::from(f32::from(y0 - vb.origin.y)), f64::from(f32::from(x1 - x0)), f64::from(f32::from(y1 - y0))))
                 })
                 .collect();
             let wk = h.view.webview();
@@ -929,16 +886,10 @@ impl Webs {
                 let flipped: bool = msg_send![layer, isGeometryFlipped];
                 let path = CGPathCreateMutable();
                 CGPathAddRect(path, std::ptr::null(), CGRect { origin: CGPoint { x: 0., y: 0. }, size: CGSize { w: bounds.size.w, h: bounds.size.h } });
-                for (x, y, w, hh, round) in &local {
+                for (x, y, w, hh) in &local {
                     // the layer's origin is top-left when flipped, else bottom-left
                     let y = if flipped { *y } else { bounds.size.h - y - hh };
-                    let rect = CGRect { origin: CGPoint { x: *x, y }, size: CGSize { w: *w, h: *hh } };
-                    let r = round.min(w / 2.).min(hh / 2.);
-                    if r > 0. {
-                        CGPathAddRoundedRect(path, std::ptr::null(), rect, r, r);
-                    } else {
-                        CGPathAddRect(path, std::ptr::null(), rect);
-                    }
+                    CGPathAddRect(path, std::ptr::null(), CGRect { origin: CGPoint { x: *x, y }, size: CGSize { w: *w, h: *hh } });
                 }
                 let shape: *mut Object = msg_send![class!(CAShapeLayer), layer];
                 let _: () = msg_send![shape, setFrame: bounds];
@@ -952,9 +903,8 @@ impl Webs {
     }
 
     #[cfg(not(target_os = "macos"))]
-    pub fn set_holes(&mut self, holes: &[(Bounds<Pixels>, Pixels)], rounds: &[(Bounds<Pixels>, Pixels)]) {
-        let (rounds, _) = give_way(holes, rounds);
-        self.cut = holes.iter().map(|&(o, _)| o).chain(rounds.iter().map(|&(o, _)| o)).collect();
+    pub fn set_holes(&mut self, holes: &[(Bounds<Pixels>, Pixels)]) {
+        self.cut = holes.iter().map(|&(o, _)| o).collect();
     }
 
     /// A dialog has the window, and the window goes quiet behind it: gpui
@@ -1324,7 +1274,7 @@ impl Webs {
                 let _ = view.set_visible(visible);
                 round_foot(&view);
                 let loading = if from_buffer { None } else { Some(std::time::Instant::now()) };
-                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, holes: Vec::new(), foot: None, float_hidden: false, html, followed: None, reloads: None, owned: None, loading, watches, plane: self.plane.clone(), scroll: None, restoring: None, toc: None, veil: None });
+                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, holes: Vec::new(), html, followed: None, reloads: None, owned: None, loading, watches, plane: self.plane.clone(), scroll: None, restoring: None, toc: None, veil: None });
             }
             Err(e) => eprintln!("web: {w}: {e}"),
         }
@@ -1463,41 +1413,11 @@ impl Webs {
         self.hosts.get(&w).and_then(|h| h.scroll)
     }
 
-    /// Room at page `w`'s foot, `px` tall, so what it shows can be
-    /// scrolled clear of what floats over its foot (an input strip); none
-    /// at 0. And the shadow of what floats there (`float`), drawn by the
-    /// page round where it is: apex draws nothing over a page, the box
-    /// itself showing through its hole. Said again when the page loads
-    /// anew, its document new.
-    pub fn set_foot(&mut self, w: WindowId, px: u32, float: Option<Float>) {
-        let Some(h) = self.hosts.get_mut(&w) else { return };
-        let now = (px, float);
-        if h.foot == Some(now) || (h.foot.is_none() && px == 0 && float.is_none()) {
-            return;
-        }
-        h.foot = Some(now);
-        let mut css = if px > 0 { format!("html{{scroll-padding-bottom:{px}px}}body{{padding-bottom:{px}px !important}}") } else { String::new() };
-        if let Some(f) = float {
-            // a box as the strip's, its inside clear (an outer shadow is
-            // drawn outside it alone), taking no clicks; none while the
-            // strip gives way to an overlay (`apex-nofloat`)
-            css.push_str(&format!(
-                "html::after{{content:\"\";position:fixed;left:{}px;right:{}px;bottom:{}px;height:{}px;border-radius:{}px;box-shadow:0 4px 14px rgba(0,0,0,.14),0 1px 3px rgba(0,0,0,.08);pointer-events:none;z-index:2147483647}}html.apex-nofloat::after{{display:none}}",
-                f.left, f.right, f.bottom, f.height, f.round
-            ));
-        }
-        let _ = h.view.evaluate_script(&format!(
-            "(function(){{var d=document,s=d.getElementById('apex-foot');if(!s){{s=d.createElement('style');s.id='apex-foot';(d.head||d.documentElement).appendChild(s);}}s.textContent={};}})();",
-            js_string(&css)
-        ));
-    }
-
-    /// Page `w` loaded anew, its document new: the room at its foot and
-    /// the scroll the log has for it are to be said again (one said
-    /// before the document was there went nowhere).
+    /// Page `w` loaded anew, its document new: the scroll the log has
+    /// for it is to be said again (one said before the document was there
+    /// went nowhere).
     pub fn loaded(&mut self, w: WindowId) {
         if let Some(h) = self.hosts.get_mut(&w) {
-            h.foot = None;
             h.followed = None;
         }
     }

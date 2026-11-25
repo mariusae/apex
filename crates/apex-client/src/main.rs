@@ -140,7 +140,6 @@ impl Render for Acme {
         self.sync_notes();
         self.sync_pulls();
         self.web_cuts.borrow_mut().clear();
-        self.web_rounds.borrow_mut().clear();
         self.toasts_at.borrow_mut().clear();
         let root = div()
             .id("apex")
@@ -411,14 +410,14 @@ impl Render for Acme {
                 let (tx, ty, tw) = (s.r.x0 + CARD_X, s.r.y0 + CARD_Y, s.r.dx() - 2 * CARD_X);
                 let th = if folded { tag_h - 2 * CARD_Y } else { tag_h - CARD_Y };
                 let (bx, bw, bh) = (s.body.x0 + CARD_X, s.body.dx() - 2 * CARD_X, s.body.dy() - CARD_Y);
-                // an input strip (DESIGN.md "Lenses"): a box afloat at the
-                // body's foot, rounded, apart from what is under it -- so
-                // it reads as a place to write -- as many lines as its text
-                // takes (two to six). What it floats over can always be
-                // scrolled clear of it: a text's last line goes to the top
-                // of its window, a page has room at its foot as tall as
-                // the box (`Webs::set_foot`), and a terminal, which cannot
-                // scroll past its last row, stops above it.
+                // an input strip (DESIGN.md "Lenses"): a box at the body's
+                // foot, rounded, apart from what is under it -- so it reads
+                // as a place to write -- as many lines as its text takes
+                // (one to six). Over a text it floats, the text's last line
+                // able to go to the top of its window; a terminal, which
+                // cannot scroll past its last row, and a page, a native
+                // view apex draws nothing over, stop above it, the box in
+                // a band of its own at the foot.
                 let float = match win.input.filter(|_| s.body.dy() > 0 && !strip) {
                     Some(ib) => {
                         let text = self.node.state.buffer(ib).map(|b| b.text.to_string()).unwrap_or_default();
@@ -437,14 +436,7 @@ impl Render for Acme {
                 // the room it takes at the body's foot, the margin under it
                 // and over it with it
                 let foot = float.map_or(0, |(h, _, _)| h + 2 * STRIP_MARGIN);
-                // where the box is in a page's view (in from its left, its
-                // right and its foot; how tall), for the page to draw its
-                // shadow round it: nothing of apex's is drawn over a page
-                let float_in_page = float.map(|(h, _, _)| {
-                    let inset = crate::web::PAGE_INSET;
-                    let m = STRIP_MARGIN as f32;
-                    crate::web::Float { left: m, right: m - inset, bottom: m - inset, height: h as f32, round: STRIP_RADIUS }
-                });
+                let banded = matches!(win.body, Body::Term(_) | Body::Page(_));
                 let float_el = float.map(|(h, lh, vpad)| {
                     let x = bx + text_element::LANE as i32 + STRIP_MARGIN;
                     let wd = bw - text_element::LANE as i32 - 2 * STRIP_MARGIN;
@@ -486,9 +478,6 @@ impl Render for Acme {
                         .border_1()
                         .border_color(gpui::rgb(t.body_border))
                         .shadow(vec![shadow])
-                        // over a page, its hole in the page's view: the box
-                        // exactly, corners and all, the page up to its edge
-                        .child(self.web_cut_round(px(STRIP_RADIUS)))
                         .child(
                             div()
                                 .absolute()
@@ -501,7 +490,7 @@ impl Render for Acme {
                         .child(div().absolute().right(px(STRIP_PAD as f32 - 3.)).bottom(px(send_bottom)).child(send));
                     at(x, y, wd, h, boxed.into_any_element()).cursor(hold(CursorStyle::IBeam))
                 });
-                let bh = if matches!(win.body, Body::Term(_)) { bh - foot } else { bh };
+                let bh = if banded { bh - foot } else { bh };
                 if win.body == Body::Page(apex_core::Source::Url) && !strip {
                     // a page's header: its handle, back and forward, and
                     // its address, in the tag's place
@@ -592,7 +581,6 @@ impl Render for Acme {
                                             move |bounds, window, cx| {
                                                 me2.update(cx, |acme, _| {
                                                     acme.web_place(w, bounds, window);
-                                                    acme.webs.set_foot(w, foot as u32, float_in_page);
                                                 });
                                             },
                                             |_, _, _, _| {},
@@ -613,6 +601,13 @@ impl Render for Acme {
                         at(bx, s.body.y0, bw, bh, body).cursor(hold(CursorStyle::Arrow)).child(lane(None, hold(CursorStyle::Arrow)))
                     };
                     area = area.child(body);
+                    // the band a terminal's or a page's box stands in: the
+                    // body's paper, the box afloat on it, the card's foot
+                    // corners its own
+                    if banded && foot > 0 {
+                        let band = div().size_full().bg(gpui::rgb(t.body_bg)).rounded_bl(px(text_element::CARD_RADIUS)).rounded_br(px(text_element::CARD_RADIUS));
+                        area = area.child(at(bx, s.body.y0 + bh, bw, foot, band.into_any_element()));
+                    }
                     if let Some(f) = float_el {
                         area = area.child(f);
                     }
@@ -761,15 +756,13 @@ impl Render for Acme {
         };
         let holes = self.overlay_bounds.clone();
         let cuts = self.web_cuts.clone();
-        let rounds = self.web_rounds.clone();
         let me3 = me.clone();
         let cutter = gpui::deferred(
             div().absolute().top(px(0.)).left(px(0.)).w(px(0.)).h(px(0.)).child(canvas(
                 move |_, _, cx| {
                     let holes: Vec<(Bounds<gpui::Pixels>, gpui::Pixels)> = holes.borrow().iter().chain(cuts.borrow().iter()).copied().collect();
-                    let rounds = rounds.borrow().clone();
                     me3.update(cx, |acme, _| {
-                        acme.webs.set_holes(&holes, &rounds);
+                        acme.webs.set_holes(&holes);
                         // the pages go quiet with the rest while the
                         // picker or the finder has the window
                         acme.webs.set_veil((acme.selector.is_some() || acme.finder.is_some() || acme.commands.is_some()).then(shell::veil));
