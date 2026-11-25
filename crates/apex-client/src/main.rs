@@ -422,26 +422,28 @@ impl Render for Acme {
                     Some(ib) => {
                         let text = self.node.state.buffer(ib).map(|b| b.text.to_string()).unwrap_or_default();
                         let lh = self.node.tiling.body_font_height(w).max(1);
-                        let inner = bw - text_element::LANE as i32 - 2 * STRIP_MARGIN - 2 * STRIP_PAD - SEND as i32 - STRIP_PAD;
+                        let inner = bw - text_element::LANE as i32 - 2 * STRIP_MARGIN - 2 * STRIP_PAD - SEND as i32;
                         let per = (inner / (lh / 2).max(1)).max(1) as usize;
                         let lines: usize = text.split('\n').map(|l| l.chars().count().div_ceil(per).max(1)).sum();
-                        // one line to six, and never lower than its button
-                        let h = (lines.clamp(STRIP_MIN, STRIP_MAX) as i32 * lh + 2 * STRIP_PAD).max(SEND as i32 + 2 * (STRIP_PAD - 2));
-                        (h + 2 * STRIP_MARGIN < bh - lh).then_some(h)
+                        // one line to six, room over and under them enough
+                        // for the button by the last
+                        let vpad = STRIP_PAD.max((SEND as i32 - lh) / 2 + 4);
+                        let h = lines.clamp(STRIP_MIN, STRIP_MAX) as i32 * lh + 2 * vpad;
+                        (h + 2 * STRIP_MARGIN < bh - lh).then_some((h, lh, vpad))
                     }
                     None => None,
                 };
                 // the room it takes at the body's foot, the margin under it
                 // and over it with it
-                let foot = float.map_or(0, |h| h + 2 * STRIP_MARGIN);
-                let float_el = float.map(|h| {
+                let foot = float.map_or(0, |(h, _, _)| h + 2 * STRIP_MARGIN);
+                let float_el = float.map(|(h, lh, vpad)| {
                     let x = bx + text_element::LANE as i32 + STRIP_MARGIN;
                     let wd = bw - text_element::LANE as i32 - 2 * STRIP_MARGIN;
                     let y = s.body.y0 + bh - STRIP_MARGIN - h;
                     let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.14), offset: gpui::point(px(0.), px(4.)), blur_radius: px(14.), spread_radius: px(0.), inset: false };
                     // the send button: what ⌘↩ in the box does, at its
-                    // right, by its last line; quiet while there is
-                    // nothing to send
+                    // right, its middle level with its last line's; quiet
+                    // while there is nothing to send
                     let empty = win.input.and_then(|b| self.node.state.buffer(b).ok()).is_none_or(|b| b.text.to_string().trim().is_empty());
                     let send = div()
                         .id(("send", w.0))
@@ -462,24 +464,31 @@ impl Render for Acme {
                                 cx.notify();
                             }),
                         );
+                    // (inside its border, a point each side: the text's
+                    // lines in the middle, the button by the last)
+                    let inset = (vpad - 1) as f32;
+                    let send_bottom = inset + lh as f32 / 2. - SEND / 2.;
                     let boxed = div()
                         .size_full()
-                        .flex()
-                        .flex_row()
-                        .items_end()
-                        .gap(px(STRIP_PAD as f32))
+                        .relative()
                         .rounded(px(STRIP_RADIUS))
                         .overflow_hidden()
                         .bg(gpui::rgb(t.body_bg))
                         .border_1()
                         .border_color(gpui::rgb(t.body_border))
                         .shadow(vec![shadow])
-                        .py(px(STRIP_PAD as f32 - 1.))
-                        .px(px(STRIP_PAD as f32))
                         // over a page, its hole in the page's view
                         .child(self.web_cut_by(px(STRIP_RADIUS)))
-                        .child(div().flex_1().h_full().child(TextElement { acme: me.clone(), view: ViewId::Input(w) }.into_any_element()))
-                        .child(div().flex_none().pb(px(1.)).child(send));
+                        .child(
+                            div()
+                                .absolute()
+                                .top(px(inset))
+                                .bottom(px(inset))
+                                .left(px(STRIP_PAD as f32 - 1.))
+                                .right(px(STRIP_PAD as f32 + SEND))
+                                .child(TextElement { acme: me.clone(), view: ViewId::Input(w) }.into_any_element()),
+                        )
+                        .child(div().absolute().right(px(STRIP_PAD as f32 - 3.)).bottom(px(send_bottom)).child(send));
                     at(x, y, wd, h, boxed.into_any_element()).cursor(hold(CursorStyle::IBeam))
                 });
                 let bh = if matches!(win.body, Body::Term(_)) { bh - foot } else { bh };
