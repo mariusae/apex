@@ -11,6 +11,7 @@
 /// thing on every connection, and a client of another build stops there.
 pub const BUILD_ID: &str = env!("APEX_BUILD_ID");
 
+pub mod agent;
 pub mod daemon;
 pub mod persist;
 pub mod find;
@@ -435,7 +436,7 @@ impl Server {
             .collect();
         for (id, w) in ready {
             let Some(p) = self.pending_terms.remove(&id) else { continue };
-            let mut env = self.env.clone();
+            let mut env = self.spawn_env();
             env.push(("winid".into(), w.0.to_string()));
             match TermHost::spawn(id, &p.dir, p.cols, p.rows, self.term_tx.clone(), &env, p.cmd.as_deref(), p.shell.as_deref(), p.scrollback, &p.prelude) {
                 Ok(mut host) => {
@@ -1334,7 +1335,7 @@ impl Server {
     /// what it dropped is unset; the shell's own bookkeeping is ignored.
     /// From anywhere but the profile, the base is what a command gets now.
     pub fn import_env(&mut self, vars: Vec<(String, String)>) {
-        let base = self.profile_base.take().unwrap_or_else(|| child_env(&self.env));
+        let base = self.profile_base.take().unwrap_or_else(|| child_env(&self.spawn_env()));
         for (k, v) in &vars {
             if SHELL_OWN.contains(&k.as_str()) {
                 continue;
@@ -2341,6 +2342,15 @@ impl Server {
     /// acme's environment for a command, plus this server's (`apexsession`).
     fn command_env(&self, view: &Node, ctx: ExecCtx) -> Vec<(String, String)> {
         let mut env = command_env(view, ctx);
+        env.extend(self.spawn_env());
+        env
+    }
+
+    /// What everything the session starts gets beyond the daemon's own
+    /// environment: the agent link (`agent`), then the session's
+    /// variables, which may set another.
+    fn spawn_env(&self) -> Vec<(String, String)> {
+        let mut env = agent::spawn_vars();
         env.extend(self.env.iter().cloned());
         env
     }
@@ -2430,7 +2440,7 @@ pub fn default_signals() -> std::io::Result<()> {
 pub fn shell_in_started(name: &str, ctx: ExecCtx, cmd: &str, dir: &Path, input: Option<String>, running: Option<std::sync::Arc<std::sync::Mutex<Vec<Running>>>>, env: &[(String, String)], started: Option<Box<dyn FnOnce(u32) + Send>>) -> (String, String, String, String, Option<u32>) {
     let mut command = Command::new(command_shell());
     // acme's runproc clears these before setting its own
-    for k in ["acmeaddr", "winid", "%", "samfile"] {
+    for k in ["acmeaddr", "winid", "%", "samfile", agent::BRIDGED] {
         command.env_remove(k);
     }
     for (k, v) in env {

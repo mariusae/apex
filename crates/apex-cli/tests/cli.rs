@@ -1768,3 +1768,65 @@ fn md_gives_headings_the_ids_github_does() {
         assert!(out.contains(h), "{h} in {out}");
     }
 }
+
+/// The ssh agent link (`apex_server::agent`): a daemon a bridge started
+/// gives its commands SSH_AUTH_SOCK as a link to the newest agent a
+/// bridge brought, and when that bridge goes, the link goes back to the
+/// one before -- under the same commands' environment.
+#[test]
+fn commands_get_the_newest_forwarded_agent_by_a_link() {
+    use std::os::unix::net::UnixListener;
+    let home = std::env::temp_dir().join(format!("apex-agent-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&home).unwrap();
+    let sock = home.join("d.sock");
+    let apex_in = |args: &[&str], agent: &std::path::Path| {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_apex"));
+        c.arg(format!("-socket={}", sock.display())).arg("-session=main").args(args).env("HOME", &home).env("SSH_AUTH_SOCK", agent);
+        c
+    };
+    // the daemon, as a bridge starts one: its own agent the first
+    // connection's, gone by now
+    let mut server = apex_in(&["server"], &home.join("gone.sock")).env("APEX_BRIDGED", "1").stderr(std::process::Stdio::null()).spawn().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while std::os::unix::net::UnixStream::connect(&sock).is_err() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let (a, b) = (home.join("a.sock"), home.join("b.sock"));
+    let (_la, _lb) = (UnixListener::bind(&a).unwrap(), UnixListener::bind(&b).unwrap());
+    let bridge = |agent: &std::path::Path| apex_in(&["attach", "-stdio"], agent).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::null()).spawn().unwrap();
+    let link = home.join(".apex/agent.sock");
+    let points_at = |want: &std::path::Path| {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while std::fs::read_link(&link).ok().as_deref() != Some(want) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(std::fs::read_link(&link).ok().as_deref(), Some(want));
+    };
+    let mut first = bridge(&a);
+    points_at(&a);
+    // a command's environment: the link, not the daemon's own agent
+    let out = home.join("env.out");
+    let mut c = Remote::connect_as(&sock, "main", "watcher", AttachmentKind::Tool).unwrap();
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Top, text: format!("env > {}", out.display()) }, Duration::from_secs(5)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let said = |out: &std::path::Path| std::fs::read_to_string(out).ok().and_then(|t| t.lines().find_map(|l| l.strip_prefix("SSH_AUTH_SOCK=").map(String::from)));
+    while said(&out).is_none() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(said(&out), Some(link.display().to_string()));
+    let env = std::fs::read_to_string(&out).unwrap();
+    assert!(!env.contains("APEX_BRIDGED"), "the daemon's mark is not passed on");
+    // a newer connection's agent, then that connection gone: back to a's
+    std::thread::sleep(Duration::from_millis(20));
+    let mut second = bridge(&b);
+    points_at(&b);
+    drop(second.stdin.take());
+    let _ = second.wait();
+    points_at(&a);
+    let _ = first.kill();
+    let _ = first.wait();
+    let _ = server.kill();
+    let _ = server.wait();
+    let _ = std::fs::remove_dir_all(&home);
+}

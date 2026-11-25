@@ -48,7 +48,9 @@ impl Pty {
             // apex is not its child's terminal: what the shell inherits
             // about a terminal is the pty's, and nothing of ours
             .env_remove("XDG_ACTIVATION_TOKEN")
-            .env_remove("DESKTOP_STARTUP_ID");
+            .env_remove("DESKTOP_STARTUP_ID")
+            // the daemon's mark, not theirs (`agent`)
+            .env_remove(crate::agent::BRIDGED);
         for (k, v) in &opts.env {
             cmd.env(k, v);
         }

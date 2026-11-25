@@ -557,6 +557,15 @@ windows put away out of the tiling, which is the core's
   by title, or by the window's name and the title (`lib parse`), a
   window first at equal scores. Ranked once a keystroke and only the
   rows in view drawn; a page not shown parsed once a version.
+- **The ssh agent survives its connection** (`apex_server::agent`, after
+  Manifold's): a daemon on a host gives its terminals and commands
+  SSH_AUTH_SOCK as a link, `~/.apex/agent.sock`, kept pointed at the
+  newest agent that answers -- one forwarded to an apex connection (each
+  `apex attach -stdio` notes its own, and takes it back as it ends), to
+  an ssh login of yours, or named by `apex env agent`. A connection
+  gone, the link goes to the next under the shells already running: no
+  dead agent in an old shell. A daemon no connection started keeps its
+  own agent (a Mac's); `apex env` says where the link points.
 - **B4 on a box minimizes** -- shift-B1 on a laptop, which is B4
   everywhere (`tiling::colminimize`, `rowminimize`): on a
   window's box (or handle), the window down to its tag where it stands,

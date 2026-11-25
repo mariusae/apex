@@ -413,7 +413,7 @@ when it detaches. Without -win it is about $winid, the window the command
 runs in. For scripts that want someone to look:
 
 \tmake test; apex notify" },
-    Cmd { name: "env", usage: "apex env [-import] [KEY=VALUE...]", short: "the session's environment", flags: &[switch("import", "this environment's changes become the session's")], run: env_cmd, long: "\
+    Cmd { name: "env", usage: "apex env [-import] [KEY=VALUE...] | apex env agent [SOCKET]", short: "the session's environment", flags: &[switch("import", "this environment's changes become the session's")], run: env_cmd, long: "\
 Env sets variables in the session's environment: what every terminal and
 command started from then on gets, beyond the daemon's own. With no
 arguments it prints the environment.
@@ -422,7 +422,19 @@ With -import, what env's own environment has changed, against what the
 session gives a command, is applied to the session's: variables set or
 changed are set there, and variables dropped are unset. The profile's
 exit hook runs this, so the profile's environment at its end is the
-session's, rc functions included (see apex help scripts)." },
+session's, rc functions included (see apex help scripts).
+
+The ssh agent: on a host, the daemon was started over one ssh connection
+and would give everything that connection's agent, which dies with it.
+Instead its terminals and commands get SSH_AUTH_SOCK as a link,
+~/.apex/agent.sock, kept pointed at the newest agent that answers: one
+forwarded to an apex connection (apex attach -stdio notes its own), to
+an ssh login of yours (sshd's /tmp/ssh-*/agent.*), or one named by apex
+env agent SOCKET (this shell's SSH_AUTH_SOCK when none is given). When
+the connection whose agent it is ends, the link goes to the next, under
+the shells already running. A daemon no connection started, whose own
+agent answers (a Mac's), keeps it. apex env says where the link points.
+SSH_AUTH_SOCK set in the session's environment overrides the link." },
     Cmd { name: "set", usage: "apex set [KEY VALUE]", short: "a setting", flags: &[], run: set, long: "\
 Set records a setting in the session: the session's own, or the attaching
 client's when run from its attach script (see apex help scripts), gone
@@ -961,6 +973,8 @@ fn server(ctx: &Ctx, _: &Parsed) -> R {
         let _ = std::fs::create_dir_all(d);
     }
     eprintln!("apex server: session {} on {}", ctx.session, ctx.socket.display());
+    // the host's ssh agent, or the link to the newest forwarded one
+    apex_server::agent::keep();
     Daemon::run(&ctx.socket, &ctx.session).map_err(|e| e.to_string())
 }
 
@@ -1262,9 +1276,24 @@ fn attach(ctx: &Ctx, p: &Parsed) -> R {
         None => target,
     };
     if p.is("stdio") {
-        // the bridge on a host: the daemon there may need starting
+        // the agent forwarded with this connection: the host's shells'
+        // while it is the newest (`apex_server::agent`)
+        let agent = std::env::var("SSH_AUTH_SOCK").ok().filter(|s| !s.is_empty());
+        if let Some(a) = &agent {
+            apex_server::agent::note(a, "forwarded to an apex connection", Some(std::process::id()));
+            apex_server::agent::update();
+        }
+        // the bridge on a host: the daemon there may need starting, with
+        // an environment that is this connection's, which will end
+        // SAFETY: no other thread yet
+        unsafe { std::env::set_var(apex_server::agent::BRIDGED, "1") };
         ensure_server(&ctx.socket, &ctx.session)?;
-        return bridge(&ctx.socket);
+        let r = bridge(&ctx.socket);
+        if agent.is_some() {
+            apex_server::agent::forget(std::process::id());
+            apex_server::agent::update();
+        }
+        return r;
     }
     // beside this apex itself, not the link to it it was run as
     // (/usr/local/bin/apex, which Install apex Command makes)
@@ -2079,6 +2108,21 @@ fn awd(_: &Ctx, p: &Parsed) -> R {
 /// The session's environment: what its terminals and commands get beyond
 /// the daemon's own. `KEY=VALUE` sets; nothing prints it.
 fn env_cmd(ctx: &Ctx, p: &Parsed) -> R {
+    // the agent: one named, the link to it moved now
+    if p.args.first().map(String::as_str) == Some("agent") {
+        let socket = match p.args.get(1) {
+            Some(s) => s.clone(),
+            None => std::env::var("SSH_AUTH_SOCK").ok().filter(|s| !s.is_empty()).ok_or("apex env agent SOCKET (this shell has no SSH_AUTH_SOCK)")?,
+        };
+        let socket = std::path::absolute(&socket).map_err(|e| e.to_string())?.display().to_string();
+        if !apex_server::agent::answers(Path::new(&socket)) {
+            return Err(format!("{socket}: no agent answers there"));
+        }
+        apex_server::agent::note(&socket, "named by apex env agent", None);
+        apex_server::agent::update();
+        println!("{}", apex_server::agent::status());
+        return Ok(());
+    }
     let mut c = tool(ctx)?;
     let set: Vec<(String, String)> = p
         .args
@@ -2098,6 +2142,10 @@ fn env_cmd(ctx: &Ctx, p: &Parsed) -> R {
     if show {
         for (k, v) in vars {
             println!("{k}={v}");
+        }
+        // the agent link, where this shell has it
+        if std::env::var_os("SSH_AUTH_SOCK").is_some_and(|s| std::path::PathBuf::from(s) == apex_server::agent::link()) {
+            println!("# SSH_AUTH_SOCK={}", apex_server::agent::status());
         }
     }
     Ok(())
