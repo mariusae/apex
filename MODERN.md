@@ -549,6 +549,14 @@ windows put away out of the tiling, which is the core's
   in its strip filters, ↩ going to the first match; Outline or ⌘↩ gives
   the window back. A tool like any other: `Tool::outline` reads any
   window's, `Tool::reveal` goes to an entry.
+- **⌘P goes to sections too** (`finder.rs`): every open window's
+  outline, from the same source as the scrollbar's and Outline's. With
+  nothing typed, the window the keys are in has its sections under it
+  and the list starts on the one it is showing: ⌘P ↑ ↩ is the section
+  before, ⌘P ↓ ↩ the one after. Typed, sections of every window match
+  by title, or by the window's name and the title (`lib parse`), a
+  window first at equal scores. Ranked once a keystroke and only the
+  rows in view drawn; a page not shown parsed once a version.
 - **B4 on a box minimizes** -- shift-B1 on a laptop, which is B4
   everywhere (`tiling::colminimize`, `rowminimize`): on a
   window's box (or handle), the window down to its tag where it stands,

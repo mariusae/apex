@@ -577,6 +577,10 @@ pub struct Acme {
     page_cursor_now: bool,
     /// ⌘P, when open.
     pub finder: Option<crate::finder::Finder>,
+    /// Pages' outlines as ⌘P parsed them from their HTML, by buffer, with
+    /// the version they were parsed at: a page not shown has no outline
+    /// from the page itself.
+    pub page_outlines: std::collections::HashMap<BufferId, (u64, std::rc::Rc<Vec<(u8, String)>>)>,
     /// The windows as of the last frame, to notice closings.
     pub last_windows: std::collections::BTreeMap<WindowId, String>,
     /// The session those windows were in: after a switch they are the
@@ -611,7 +615,7 @@ pub struct Acme {
     springing: bool,
     /// The window under the pointer, which has the keyboard while the app
     /// is in front (`active_window`).
-    win_under_pointer: Option<WindowId>,
+    pub(crate) win_under_pointer: Option<WindowId>,
     /// The notification the active window had when it became active, by
     /// the entry that raised it: it was there first, and stays.
     entered: Option<apex_core::Seq>,
@@ -1895,6 +1899,7 @@ impl Acme {
             pending_switch: None,
             page_cursor_now: false,
             finder: None,
+            page_outlines: std::collections::HashMap::new(),
             last_windows: std::collections::BTreeMap::new(),
             last_windows_of: None,
             menu: None,

@@ -1458,7 +1458,7 @@ impl Acme {
                 sel.settle();
             }
         } else if let Some(f) = self.finder.as_mut() {
-            f.cursor = 0;
+            f.changed();
         } else if self.quick.is_some() {
             self.quick_changed();
         }
