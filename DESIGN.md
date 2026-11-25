@@ -2688,7 +2688,7 @@ tag is drawn from the state every frame, so it follows a `cd` at once.
 
 ## Lenses
 
-*Proposed.* A lens is a window that stands in for another, its
+*As built (protocol 62), but for what is marked otherwise.* A lens is a window that stands in for another, its
 **base**, in the base's place: a file's preview, an agent's
 conversation over its terminal, the file `$EDITOR` edits over the
 terminal that ran it. It replaces the window stacks (`Layout::covers`,
@@ -2714,9 +2714,9 @@ lens does beyond that is its tool's.
 - **The place is the chain's.** Stash, move, grow, minimize act on the
   place and take the chain with them. Keys and clicks are the top's.
   A jump to any window in the chain (B3, Goto, a notification) shows
-  the place as it is, top lens and all, and tells the lens's owner
-  (`Revealed { base, at }`): Preview scrolls its page to the line, or
-  takes itself away if it would rather the text were seen.
+  the place as it is, top lens and all. *Not built:* telling the lens's
+  owner (`Revealed { base, at }`), so Preview could scroll its page to
+  the line, or take itself away if it would rather the text were seen.
 - **The status is the place's.** The handle shows the most pressing
   status in the chain: an agent done under its conversation is done.
 - **Not written down.** A dump leaves lenses out: a page lens is its
@@ -2781,10 +2781,16 @@ draws a page's headings now (`outline.rs`: ticks on the bar, the list
 the pointer brings out), from the page or from a tool.
 
 The lsp tool gives each file window it serves its symbols
-(`textDocument/documentSymbol`), kept up as the file changes; the agent
-tool gives its conversation lens its turns.
+(`textDocument/documentSymbol`), kept up as the file changes. As built
+an outline is a text's (`Buffer::outline`), its anchors offsets; a
+page's outline is its headings still, and the agent tool gives its
+conversation its turns by making each a heading, not by an outline of
+its own. A text's stops show where its scrollbar does (a text that
+fits its window has none).
 
 ### Order
+
+As built, one commit each (the input strip and the agent's lens two):
 
 1. `Lens` and its removal, replacing the stacks: the layout's model,
    going with the base and the owner, the place's status; `apex
