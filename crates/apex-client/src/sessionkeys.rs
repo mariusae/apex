@@ -133,6 +133,20 @@ impl Acme {
         }
     }
 
+    /// The system asked, often (`Acme::over`'s tick): ⌘ held alone long
+    /// enough shows the keys though gpui never heard it go down -- a page
+    /// had the keys, and the flags went to it.
+    pub fn command_poll(&mut self, window: &Window, cx: &mut Context<Self>) {
+        if self.numbers.is_some() || self.walk.is_some() || !window.is_window_active() {
+            return;
+        }
+        if crate::web::command_alone_for().is_some_and(|held| held >= NUMBERS_AFTER) {
+            self.command_down = None;
+            self.numbers = Some(Instant::now());
+            cx.notify();
+        }
+    }
+
     /// ⌘ let go where gpui did not hear it (a page had the keys, or
     /// another app): the keys put away, a walk ended as letting go does.
     pub fn command_released(&mut self, window: &mut Window, cx: &mut Context<Self>) {

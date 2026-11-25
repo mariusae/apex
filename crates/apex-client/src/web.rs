@@ -1777,6 +1777,43 @@ pub fn modifiers_down() -> (bool, bool) {
     (true, true)
 }
 
+/// How long ⌘ has been held alone, by the system's own account: no
+/// other modifier with it, and no key or button gone down since it did.
+/// For what gpui may not hear (a page has the keys, and AppKit gives it
+/// the flags), asked of the system as `modifiers_down` is.
+#[cfg(target_os = "macos")]
+pub fn command_alone_for() -> Option<std::time::Duration> {
+    use objc::{class, msg_send, sel, sel_impl};
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGEventSourceSecondsSinceLastEventType(state: i32, kind: u32) -> f64;
+    }
+    // SAFETY: a class method answering the current modifier flags
+    let flags: u64 = unsafe { msg_send![class!(NSEvent), modifierFlags] };
+    // the device-independent flags, caps lock aside: ⌘ and nothing else
+    const COMMAND: u64 = 1 << 20;
+    if flags & 0xFFFF_0000 & !(1 << 16) != COMMAND {
+        return None;
+    }
+    // the HID system's state: what the keyboard and mouse did, wherever
+    const HID: i32 = 1;
+    // CGEventType: flags changed, a key down, the mouse's buttons down
+    const FLAGS: u32 = 12;
+    const DOWNS: [u32; 4] = [10, 1, 3, 25];
+    // SAFETY: a pure query of the event source's clock
+    let since = |kind| unsafe { CGEventSourceSecondsSinceLastEventType(HID, kind) };
+    let held = since(FLAGS);
+    if DOWNS.into_iter().any(|k| since(k) < held) {
+        return None;
+    }
+    Some(std::time::Duration::from_secs_f64(held.max(0.)))
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn command_alone_for() -> Option<std::time::Duration> {
+    None
+}
+
 /// AppKit's own title bar container, shown or not. In full screen AppKit
 /// slides it down with the menu bar when the pointer reaches the top, an
 /// empty bar over our strip; hidden, our strip is what comes.

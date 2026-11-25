@@ -1736,6 +1736,8 @@ impl Acme {
                                 }
                                 if !cmd && (acme.numbers.is_some() || acme.walk.is_some() || acme.command_down.is_some()) {
                                     acme.command_released(window, cx);
+                                } else if cmd {
+                                    acme.command_poll(window, cx);
                                 }
                                 if acme.caret_tick() {
                                     cx.notify();
