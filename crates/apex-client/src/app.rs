@@ -2501,8 +2501,8 @@ impl Acme {
                 // movetodel: onto the next window's Del icon, so a click
                 // closes that one too -- as the last frame drew it
                 let del = crate::text_element::icon_index("Del");
-                let stacked = crate::text_element::icon_index(crate::text_element::DEL_STACKED);
-                self.layouts.get(&ViewId::Tag(w)).and_then(|tl| tl.atom_bounds(Atom::Verb(del)).or_else(|| tl.atom_bounds(Atom::Verb(stacked)))).map(|b| b.center())
+                let lensed = [crate::text_element::DEL_TO_TERM, crate::text_element::DEL_TO_PAGE].map(crate::text_element::icon_index);
+                self.layouts.get(&ViewId::Tag(w)).and_then(|tl| tl.atom_bounds(Atom::Verb(del)).or_else(|| lensed.iter().find_map(|i| tl.atom_bounds(Atom::Verb(*i))))).map(|b| b.center())
             }
             Pending::Warp(Warp::Closed { next: None, .. }) => None,
             Pending::Warp(Warp::Sel(v)) => {
@@ -3107,8 +3107,18 @@ impl Acme {
     pub fn tag_head(&self, w: WindowId) -> Head {
         let n = &self.node;
         let kind = n.window_kind(w);
-        // a lens: its Del takes it away only, and says so
-        let verbs: Vec<&str> = n.window_verbs(w).into_iter().map(|v| if v == "Del" && n.state.layout.base_of(w).is_some() { crate::text_element::DEL_STACKED } else { v }).collect();
+        // a lens: its Del takes it away only, back to what is under it, and
+        // its icon says what that is
+        let under = n.state.layout.base_of(w).and_then(|b| n.state.window(b).ok()).map(|b| matches!(b.body, Body::Term(_)));
+        let verbs: Vec<&str> = n
+            .window_verbs(w)
+            .into_iter()
+            .map(|v| match (v, under) {
+                ("Del", Some(true)) => crate::text_element::DEL_TO_TERM,
+                ("Del", Some(false)) => crate::text_element::DEL_TO_PAGE,
+                _ => v,
+            })
+            .collect();
         // and the tools' words for it, which the user cannot erase
         let words = apex_core::plumb::tag_words(&n.state.meta.rules, &n.window_path(w), kind, Some(w), n.window_owner(w));
         let label = n.window_label(w).or_else(|| match kind {

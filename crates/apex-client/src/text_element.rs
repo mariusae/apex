@@ -132,9 +132,11 @@ pub const VERB_ICONS: &[(&str, &str)] = &[
     ("Send", r#"<path d="M21 3L10 14M21 3l-7 18-4-7-7-4z"/>"#),
     ("Back", r#"<path d="M15 6l-6 6 6 6"/>"#),
     ("Fwd", r#"<path d="M9 6l6 6-6 6"/>"#),
-    // Del on a lens: the × on the top card of two, the corner of the one
-    // under it showing -- it takes the lens away only
-    (DEL_STACKED, r#"<path d="M10 10l8 8M18 10l-8 8"/><path d="M5.5 14.5V7a1.5 1.5 0 0 1 1.5-1.5h7.5"/>"#),
+    // Del on a lens: back to what is under it -- what that is (a
+    // terminal's prompt, a page) with a return arrow; it takes the lens
+    // away only
+    (DEL_TO_TERM, r#"<rect x="3" y="4" width="15" height="12" rx="2"/><path d="M6.5 8l2.5 2-2.5 2M11 12h3.5"/><path d="M21 12v5a2 2 0 0 1-2 2h-8M13.5 16.5L11 19l2.5 2.5"/>"#),
+    (DEL_TO_PAGE, r#"<path d="M5 3.5h7l4 4V13"/><path d="M5 3.5v13h4"/><path d="M12 3.5v4h4"/><path d="M8 9h4M8 12h2"/><path d="M21 12v5a2 2 0 0 1-2 2h-8M13.5 16.5L11 19l2.5 2.5"/>"#),
     // the session's directory itself, `./` drawn: a middle dot, and a
     // slash a little apart from it
     (HERE, r#"<circle cx="7.4" cy="12" r="2" fill="black" stroke="none"/><path d="M11 19.5L17 4.5"/>"#),
@@ -157,14 +159,16 @@ pub const VERB_ICONS: &[(&str, &str)] = &[
 const NARROW_CELL: char = '\u{2007}';
 /// The session's directory's icon's name in `VERB_ICONS`.
 pub const HERE: &str = "./";
-/// Del on a lens (`state::Lens`): its own icon, the command still Del
+/// Del on a lens (`state::Lens`): back to what is under it, a terminal or
+/// a page of text, its icon saying which; the command still Del
 /// (`verb_command`).
-pub const DEL_STACKED: &str = "Del/stacked";
+pub const DEL_TO_TERM: &str = "Del/to-term";
+pub const DEL_TO_PAGE: &str = "Del/to-page";
 
 /// The command an icon in the tag runs: its name, but for a variant's.
 pub fn verb_command(i: usize) -> &'static str {
     match VERB_ICONS[i].0 {
-        DEL_STACKED => "Del",
+        DEL_TO_TERM | DEL_TO_PAGE => "Del",
         v => v,
     }
 }

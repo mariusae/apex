@@ -489,7 +489,8 @@ windows put away out of the tiling, which is the core's
   and still running, and comes back in the place when the lens goes --
   wherever it has been moved or stashed meanwhile -- or when editor
   does: a lens goes with the attachment that made it, and with its
-  base. Its Del is drawn as an × on the top card of two (it takes the
+  base. Its Del is drawn as what is under it -- a terminal's prompt, a
+  page -- with a return arrow (it takes the
   lens away only). Going to a window under a lens -- Look, the
   plumber, the finder, a notification taken -- shows the place as it
   is, the lens on top, and the place's handle says the most pressing
