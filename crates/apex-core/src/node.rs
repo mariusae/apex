@@ -2124,7 +2124,7 @@ impl Node {
         }
         match t.split_whitespace().next().unwrap_or("") {
             "Cut" | "Paste" | "Snarf" | "Undo" | "Redo" | "Look" | "Edit" | "Newcol" | "Delcol" | "Del" | "Delete" | "Zerox"
-            | "Stash" | "Font" | "Sort" | "Exit" | "Tab" | "Indent" | "ID" | "Send" => Handler::Leader,
+            | "Stash" | "Font" | "Sort" | "Exit" | "Tab" | "Indent" | "ID" | "Send" | "View" => Handler::Leader,
             "New" if t.split_whitespace().nth(1).is_none() => Handler::Leader,
             _ => Handler::Server,
         }
@@ -2317,6 +2317,11 @@ impl Node {
                 let w = win.ok_or_else(|| CoreError::Missing("Stash needs a window".into()))?;
                 self.stash_window(log, w)?;
             }
+            // ⌘↩: a window's other way of being seen -- a file's preview,
+            // an agent's conversation. apex has none of its own: the tools
+            // that make one claim the word where they do (DESIGN.md
+            // "Lenses"), and where none does, nothing happens
+            "View" => {}
             "Tab" => {
                 let w = win.ok_or_else(|| CoreError::Missing("Tab needs a window".into()))?;
                 match arg.and_then(|a| a.parse::<u32>().ok()) {

@@ -181,6 +181,7 @@ impl Render for Acme {
             // a UI hack, on purpose: the keys just say the verbs, which a
             // tool answers
             .on_action(cx.listener(|this, _: &shell::NavBack, window, cx| this.menu_command("Back", window, cx)))
+            .on_action(cx.listener(|this, _: &shell::View, window, cx| this.menu_command("View", window, cx)))
             .on_action(cx.listener(|this, _: &shell::NavFwd, window, cx| this.menu_command("Fwd", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Reconnect, window, cx| {
                 this.ask_reconnect(window, cx);

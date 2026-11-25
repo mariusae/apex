@@ -645,6 +645,8 @@ pub struct Acme {
     /// Links asked of their pages' owners, by the question's id: the
     /// page, and where the link was going.
     pub page_asks: HashMap<u64, (WindowId, String)>,
+    /// The source line each page last said is at its top (`Scrolled`).
+    pub page_lines: HashMap<WindowId, u32>,
     /// A remote daemon is being restarted for this window: the page
     /// says so, with nothing to press meanwhile.
     pub restarting: bool,
@@ -1859,6 +1861,7 @@ impl Acme {
             fence_flash: None,
             standing_card: false,
             page_asks: HashMap::new(),
+            page_lines: HashMap::new(),
             restarting: false,
             choosing: false,
             term_sel: None,
@@ -4546,7 +4549,15 @@ impl Acme {
                 // a page with diagrams to draw: mermaid for it
                 WebEvent::Mermaid => self.webs.give_mermaid(w),
                 // where the page is scrolled, for its scrollbar
-                WebEvent::Scroll { top, height, view } => self.webs.set_scroll(w, top, height, view),
+                WebEvent::Scroll { top, height, view, line } => {
+                    self.webs.set_scroll(w, top, height, view);
+                    // the line at its top, to its owner as it changes (a
+                    // preview, to put its file there as its lens goes)
+                    if let Some(line) = line.filter(|l| self.page_lines.get(&w) != Some(l)) {
+                        self.page_lines.insert(w, line);
+                        self.tell_owner(w, PageEvent::Scrolled { line });
+                    }
+                }
                 // its outline, for the scrollbar
                 WebEvent::Toc(text) => self.webs.set_toc(w, &text),
                 // the page's cursor: set now, if the pointer is on that page

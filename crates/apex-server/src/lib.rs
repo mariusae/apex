@@ -1464,6 +1464,9 @@ impl Server {
         };
         for rule in [
             tool("Preview", Some(PREVIEWED), Some(WinKind::File), false, "preview"),
+            // ⌘↩ on such a file: its preview a lens on it (a claim on the
+            // word, so scoped to the files and kind Preview's are)
+            tool("View", Some(PREVIEWED), Some(WinKind::File), true, "preview"),
             tool("Web", None, None, true, "web"),
             tool("Newweb", None, None, true, "web"),
         ] {

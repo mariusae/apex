@@ -37,7 +37,7 @@ use std::time::{Duration, Instant};
 use apex_core::*;
 use apex_server::proto::{Answer, ClientMsg, NavAnswer, Request, ServerMsg};
 use apex_server::remote::Remote;
-use apex_server::Proposal;
+use apex_server::{LensBody, Proposal};
 
 const TIMEOUT: Duration = Duration::from_secs(10);
 /// How long the source must be quiet before a render.
@@ -55,6 +55,18 @@ pub fn run(socket: &Path, session: &str, file: &str) -> Result<(), String> {
 /// alone, at `line` (the link's place in it), the jump recorded from
 /// that page to this one.
 pub fn run_at(socket: &Path, session: &str, file: &str, line: Option<usize>, via: Option<WindowId>) -> Result<(), String> {
+    run_with(socket, session, file, line, via, None)
+}
+
+/// ⌘↩ (`View`) on window `base`, on the file: the file's preview a lens
+/// on that window (DESIGN.md "Lenses"), showing where it shows, until
+/// `View` on the page takes it away again -- the window then put at the
+/// page's top.
+pub fn run_lens(socket: &Path, session: &str, file: &str, base: WindowId) -> Result<(), String> {
+    run_with(socket, session, file, None, None, Some(base))
+}
+
+fn run_with(socket: &Path, session: &str, file: &str, line: Option<usize>, via: Option<WindowId>, lens: Option<WindowId>) -> Result<(), String> {
     let file = std::path::absolute(file).map_err(|e| format!("{file}: {e}"))?.display().to_string();
     if debug() {
         eprintln!("preview: {file}");
@@ -67,7 +79,7 @@ pub fn run_at(socket: &Path, session: &str, file: &str, line: Option<usize>, via
     let Some(converter) = converters::converter(&remote.node.state.meta, &ext) else {
         return Err(format!("Preview: no converter for .{ext} files: apex set Preview.{ext} CMD (a command reading the file on stdin, writing HTML)"));
     };
-    let mut t = Tool { remote, socket: socket.to_path_buf(), session: session.to_string(), file, line, via, converter, source: None, tied: false, disk: None, page: None, dirty: true, last_edit: Instant::now(), rendered: String::new(), followed: None, linked: Vec::new() };
+    let mut t = Tool { remote, socket: socket.to_path_buf(), session: session.to_string(), file, line, via, converter, source: None, tied: false, disk: None, page: None, dirty: true, last_edit: Instant::now(), rendered: String::new(), followed: None, linked: Vec::new(), lens, top: None };
     t.start()?;
     let r = t.main_loop();
     // the previews its links opened go on: this one is not done till they are
@@ -104,6 +116,10 @@ struct Tool {
     followed: Option<u32>,
     /// The previews the page's links opened, on threads of their own.
     linked: Vec<std::thread::JoinHandle<()>>,
+    /// The window the page is a lens on, when it is one (`View`).
+    lens: Option<WindowId>,
+    /// The source line at the page's top, as the client last said.
+    top: Option<u32>,
 }
 
 impl Tool {
@@ -165,8 +181,9 @@ impl Tool {
     /// The source (opened if need be), the page (found or made), the
     /// first render.
     fn start(&mut self) -> Result<(), String> {
-        // a preview someone else keeps: show it and be done
-        if let Some(w) = self.preview_window() {
+        // a preview someone else keeps: show it and be done (a lens is a
+        // preview of its own, on its window)
+        if let Some(w) = self.preview_window().filter(|_| self.lens.is_none()) {
             if self.remote.node.window_live(w) {
                 let loc = Loc { session: None, name: w.0.to_string(), pos: Pos::Keep };
                 let _ = self.propose(self.goto(loc), TIMEOUT);
@@ -176,7 +193,10 @@ impl Tool {
         // made from the file's window: that window, opened when it is not;
         // a link's preview is the file's alone, from its window if one is
         // open, else from the file
-        if self.via.is_none() {
+        if let Some(base) = self.lens {
+            self.tied = true;
+            self.take_source(base)?;
+        } else if self.via.is_none() {
             let src = match self.window_named(&self.file) {
                 Some(w) => w,
                 None => {
@@ -201,8 +221,14 @@ impl Tool {
         let ci = near.and_then(|w| self.remote.node.column_of(w).ok()).and_then(|c| cols.iter().position(|x| x.id == c)).unwrap_or(0);
         let col = if self.source.is_some() { cols.get(ci + 1).or(cols.get(ci)) } else { cols.get(ci) };
         let col = col.map(|c| c.id).ok_or("no column")?;
-        let page = match self.preview_window() {
+        let me = self.remote.attachment();
+        let page = match self.preview_window().filter(|_| self.lens.is_none()) {
             Some(w) => w,
+            None if self.lens.is_some() => {
+                let base = self.lens.unwrap();
+                let page = NewPage { content: NewContent::Html { name: self.file.clone(), text: String::new() }, via: Via::Client, base: String::new(), label: None };
+                self.propose(Proposal::Lens { base, by: me, body: LensBody::Page(page) }, TIMEOUT)?.ok_or("no preview window")?
+            }
             // the client's: what the page fetches on the web, the client
             // fetches; the file's directory, and file:// links, the host's
             None => {
@@ -216,11 +242,12 @@ impl Tool {
         }
         self.page = Some((page, page_buf));
         self.rendered = self.remote.node.state.buffer(page_buf).map(|b| b.text.to_string()).unwrap_or_default();
-        let me = self.remote.attachment();
         let _ = self.propose(Proposal::Live { window: page, by: Some(me) }, TIMEOUT);
         // the page ours, and where its links go ours to say
         let _ = self.propose(Proposal::Own { window: page, by: Some(me) }, TIMEOUT);
         self.remote.link.answers_navigation = true;
+        // where the page is scrolled to, said as it changes
+        self.remote.link.wants_window_events = true;
         // Source in its tag, first, unless it is there already (a page
         // taken up again, a tag the user has written)
         if let Ok(tag) = self.remote.node.state.window(page).map(|x| x.tag) {
@@ -233,11 +260,20 @@ impl Tool {
         }
         // and Back and Fwd in it, the session's stack, from the page; and
         // Source, its file
-        for verb in ["Back", "Fwd", "Source"] {
+        let verbs: &[&str] = if self.lens.is_some() { &["Back", "Fwd", "Source", "View"] } else { &["Back", "Fwd", "Source"] };
+        for &verb in verbs {
             let rule = PlumbRule { start: None, verb: verb.into(), owner: None, unlisted: false, tag: false, text: None, file: None, kind: None, isfile: None, isdir: None, action: RuleAction::Tool("preview-file".into()), win: Some(page), to: None };
             let _ = self.remote.rule_add(rule, 0, true, TIMEOUT);
         }
         self.render_or_say();
+        if self.lens.is_some() {
+            // where the window was showing: the page there, the caret's
+            // line taken as followed, not where to go
+            if let Some(line) = self.origin_line() {
+                let _ = self.propose(Proposal::PageScroll { window: page, scroll: Some(Scroll::Line(line)) }, TIMEOUT);
+            }
+            self.followed = self.caret_line();
+        }
         if let Some(from) = self.via {
             // the jump, from the page the link was in to this one, shown
             let loc = Loc { session: None, name: page.0.to_string(), pos: Pos::Keep };
@@ -258,6 +294,28 @@ impl Tool {
         self.source = Some((src, buf));
         self.disk = None;
         self.dirty = true;
+        Ok(())
+    }
+
+    /// The line at the top of the source window (1-based).
+    fn origin_line(&self) -> Option<u32> {
+        let (src, src_buf) = self.source?;
+        let b = self.remote.node.state.buffer(src_buf).ok()?;
+        let origin = b.views.get(&ViewId::Body(src))?.origin;
+        Some(b.text.line_of(origin.min(b.text.len())) as u32 + 1)
+    }
+
+    /// `View` on the page this preview's lens is: the window under it put
+    /// at the page's top (else the caret's line), and the lens taken away.
+    fn unlens(&mut self) -> Result<(), String> {
+        let (Some(base), Some((page, _))) = (self.lens, self.page) else { return Err("not a lens".into()) };
+        if let Some((src, src_buf)) = self.source.filter(|(w, _)| *w == base) {
+            if let Some(line) = self.top.or(self.followed) {
+                let at = self.remote.node.state.buffer(src_buf).map(|b| b.text.line_start((line as usize).saturating_sub(1).min(b.text.line_count().saturating_sub(1)))).unwrap_or(0);
+                self.propose(Proposal::Origin { view: ViewId::Body(src), at }, TIMEOUT)?;
+            }
+        }
+        self.propose(Proposal::Exec { ctx: ExecCtx::Window(page), text: "Delete".into() }, TIMEOUT)?;
         Ok(())
     }
 
@@ -298,6 +356,17 @@ impl Tool {
                 let dir = Path::new(&file).parent().map(|d| d.display().to_string());
                 self.remote.send(&ClientMsg::Plumb { ctx: p.ctx, text: file, dir, edit_only: false, dry: false, at: None, sel: None, alt: None, reverse: false, verb: None });
                 self.remote.plumb_ack(p.id, true);
+                continue;
+            }
+            if p.verb == "View" {
+                // ours: the lens this preview is (its rule is on our page)
+                let ok = self.page.is_some_and(|(page, _)| from == Some(page));
+                if ok {
+                    if let Err(e) = self.unlens() {
+                        let _ = self.propose(Proposal::Errors { dir: Some(p.dir.clone()), text: format!("View: {e}\n") }, TIMEOUT);
+                    }
+                }
+                self.remote.plumb_ack(p.id, ok);
                 continue;
             }
             if p.verb != "Back" && p.verb != "Fwd" {
@@ -391,6 +460,11 @@ impl Tool {
             }
             if self.dirty && self.last_edit.elapsed() >= SETTLE {
                 self.render_or_say();
+            }
+            for (w, e) in std::mem::take(&mut self.remote.link.window_events) {
+                if let (true, apex_server::proto::WindowEvent::Scrolled { line }) = (Some(w) == self.page.map(|(p, _)| p), e) {
+                    self.top = Some(line);
+                }
             }
             self.answer_links();
             self.answer_verbs();
@@ -535,9 +609,15 @@ pub fn run_resident(socket: &Path, session: &str) -> Result<(), String> {
                 }
                 let _ = t.answer(&p, true);
                 let (socket, session, open) = (socket.to_path_buf(), session.to_string(), open.clone());
+                // ⌘↩: the preview a lens on the window it was asked in
+                let lens = p.window.filter(|_| p.verb == "View");
                 open.fetch_add(1, Ordering::SeqCst);
                 std::thread::spawn(move || {
-                    if let Err(e) = run(&socket, &session, &file) {
+                    let r = match lens {
+                        Some(base) => run_lens(&socket, &session, &file, base),
+                        None => run(&socket, &session, &file),
+                    };
+                    if let Err(e) = r {
                         if e != "shown" {
                             eprintln!("preview: {file}: {e}");
                         }

@@ -20,7 +20,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::Acme;
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWin, NewTerm, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, Find, FindNext, FindPrevious, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleBlink, ToggleSmoothCaret, ToggleLayoutAnimations, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, FontHco, FontInter, FontGeist, FontStyrene, FontLucida, FontBigger, FontSmaller, FontActual, PaletteAlabaster, PaletteXcode, PaletteClassic, PaletteAcme, PaletteGitHub, PaletteNova, PaletteRsms, StashWindow, ShowOverview, RestartServer, Commands, OpenPath]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWin, NewTerm, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, Find, FindNext, FindPrevious, NavBack, NavFwd, View, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleBlink, ToggleSmoothCaret, ToggleLayoutAnimations, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, FontHco, FontInter, FontGeist, FontStyrene, FontLucida, FontBigger, FontSmaller, FontActual, PaletteAlabaster, PaletteXcode, PaletteClassic, PaletteAcme, PaletteGitHub, PaletteNova, PaletteRsms, StashWindow, ShowOverview, RestartServer, Commands, OpenPath]);
 
 /// View ▸ Theme ▸ a palette chosen: kept, and everything in its colours
 /// again, as a change of appearance does.
@@ -159,6 +159,7 @@ pub fn menus() -> Vec<Menu> {
                 MenuItem::action("Next Notification", NextNotification),
                 MenuItem::action("Back", NavBack),
                 MenuItem::action("Forward", NavFwd),
+                MenuItem::action("View", View),
                 MenuItem::action("Reconnect", Reconnect),
                 MenuItem::separator(),
                 MenuItem::action("Enter Full Screen", ToggleFullScreen),
@@ -310,6 +311,9 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-shift-p", Commands, None),
         KeyBinding::new("cmd-[", NavBack, None),
         KeyBinding::new("cmd-]", NavFwd, None),
+        // a window's other way of being seen, its tool's (DESIGN.md
+        // "Lenses"): the word View, run in the window under the pointer
+        KeyBinding::new("cmd-enter", View, None),
         KeyBinding::new("cmd-ctrl-f", ToggleFullScreen, None),
         KeyBinding::new("cmd-z", Undo, None),
         KeyBinding::new("cmd-shift-z", Redo, None),

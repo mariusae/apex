@@ -1103,6 +1103,53 @@ fn a_previews_links_open_previews_or_plumb_the_file() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// ⌘↩ (`View`) on a file Preview converts: its preview a lens on the
+/// file's window, where the window was showing; `View` on the page takes
+/// the lens away, the window at the page's top.
+#[test]
+fn view_makes_a_preview_the_files_lens_and_view_again_gives_the_file_back() {
+    let sock = daemon();
+    let dir = std::env::temp_dir().join(format!("apex-cli-view-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("long.md");
+    let text: String = (1..=60).map(|i| format!("para {i}\n\n")).collect();
+    std::fs::write(&file, &text).unwrap();
+    let path = file.display().to_string();
+    ok(&sock, &["open", &path]);
+    let mut c = Remote::connect_as(&sock, "main", "watcher", AttachmentKind::Tool).unwrap();
+    let w = c.node.window_of(&path, WinKind::File).expect("the file open");
+    let line_at = |r: &Remote, line: usize| r.node.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|b| r.node.state.buffer(b).ok()).map(|b| b.text.line_start(line - 1)).unwrap();
+    let origin = |r: &Remote| r.node.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|b| r.node.state.buffer(b).ok()).and_then(|b| b.views.get(&ViewId::Body(w)).map(|v| v.origin)).unwrap();
+    // the window showing from line 21
+    let at = line_at(&c, 21);
+    c.propose(apex_server::Proposal::Origin { view: ViewId::Body(w), at }, Duration::from_secs(5)).unwrap();
+    // View, with no tool attached: the rule starts Preview, which makes
+    // the page a lens on the window, scrolled where the window was
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "View".into() }, Duration::from_secs(5)).unwrap();
+    let lensed = |r: &Remote| r.node.state.layout.lens_of(w).filter(|p| r.node.window_kind(*p) == WinKind::Page && r.node.state.window(*p).is_ok_and(|x| x.scroll.is_some()));
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while Instant::now() < deadline && lensed(&c).is_none() {
+        let _ = c.step(Duration::from_millis(50));
+    }
+    let page = lensed(&c).expect("the preview a lens on the file's window");
+    assert!(c.node.state.layout.place_of(w).is_none(), "the file under its preview");
+    assert_eq!(c.node.state.window(page).unwrap().scroll, Some(apex_core::Scroll::Line(21)));
+    // the page scrolled, as a client says (to its owner, the preview)
+    c.link.window_event(page, apex_server::proto::WindowEvent::Scrolled { line: 41 });
+    std::thread::sleep(Duration::from_millis(300));
+    // View on the page: the lens gone, the window back, at the page's top
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(page), text: "View".into() }, Duration::from_secs(5)).unwrap();
+    let want = line_at(&c, 41);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline && (c.node.state.window(page).is_ok() || c.node.state.layout.place_of(w).is_none() || origin(&c) != want) {
+        let _ = c.step(Duration::from_millis(50));
+    }
+    assert!(c.node.state.window(page).is_err(), "the lens gone");
+    assert!(c.node.state.layout.place_of(w).is_some(), "the window back in its place");
+    assert_eq!(origin(&c), want, "at the line the page had at its top");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn preview_is_a_live_pipe_through_a_converter() {
     let sock = daemon();

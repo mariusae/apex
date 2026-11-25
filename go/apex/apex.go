@@ -721,14 +721,16 @@ var (
 func Redirect(url string) NavAnswer { return NavAnswer{kind: "redirect", url: url} }
 
 // A PageEvent is something that happened in a page the tool owns. What
-// is "navigated" (URL), "loading" (Started), "title" (Title) or
-// "message" (Message: what the page's script sent, as JSON).
+// is "navigated" (URL), "loading" (Started), "title" (Title),
+// "message" (Message: what the page's script sent, as JSON) or
+// "scrolled" (Line: the source line of the mark at a buffer page's top).
 type PageEvent struct {
 	What    string          `json:"what"`
 	URL     string          `json:"url"`
 	Started bool            `json:"started"`
 	Title   string          `json:"title"`
 	Message json.RawMessage `json:"message"`
+	Line    int             `json:"line"`
 }
 
 // A Request asks for something the tool serves: what a page at

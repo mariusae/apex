@@ -1641,8 +1641,13 @@ impl Daemon {
                 self.propose(name, pid, proposal);
             }
             PlumbStep::AskTool { tool, rule, ctx, verb, text, dir, groups, at, sel, swept, word } => {
-                // the tool attached under that name, in this session
-                let found = self.conns.iter().find(|(_, c)| c.session == Some(sid) && c.attachment.is_some_and(|a| s.view.state.meta.attachments.get(&a).is_some_and(|x| x.name == tool))).map(|(id, _)| *id);
+                // the tool attached under that name, in this session: the
+                // rule's own attachment when it is that tool (one of several
+                // of a name, each with rules on windows of its own -- a
+                // preview's page), else any
+                let named = |a: AttachmentId| s.view.state.meta.attachments.get(&a).is_some_and(|x| x.name == tool);
+                let owner = s.view.state.meta.rules.get(&rule).map(|r| r.attachment).filter(|&a| named(a));
+                let found = self.conns.iter().find(|(_, c)| c.session == Some(sid) && owner.is_some() && c.attachment == owner).or_else(|| self.conns.iter().find(|(_, c)| c.session == Some(sid) && c.attachment.is_some_and(named))).map(|(id, _)| *id);
                 // B3 is a search and wants to be quick; a verb is work the
                 // user asked for by name, and a tool may do it (an agent, a
                 // formatter) before it answers

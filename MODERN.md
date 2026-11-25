@@ -491,6 +491,15 @@ windows put away out of the tiling, which is the core's
   is, the lens on top, and the place's handle says the most pressing
   status and any notification in it. A lens on a window with one goes
   on the top; closing one closes the lenses over it.
+- **⌘↩ is View**: the word `View`, run in the window under the
+  pointer as B2 there would, its meaning its tools' -- apex has none of
+  its own, and where no tool claims it nothing happens. Preview claims
+  it on the files it converts (the session's default rule starts it):
+  the file's preview a lens on its window, scrolled to where the window
+  was showing, kept live as the text changes; ⌘↩ on the page takes the
+  lens away, the window put at the line the page had at its top (the
+  client tells a page's owner that line as it scrolls,
+  `WindowEvent::Scrolled`; `Proposal::Origin` puts a window there).
 - **B4 on a box minimizes** -- shift-B1 on a laptop, which is B4
   everywhere (`tiling::colminimize`, `rowminimize`): on a
   window's box (or handle), the window down to its tag where it stands,

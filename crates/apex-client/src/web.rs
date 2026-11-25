@@ -62,7 +62,9 @@ pub enum WebEvent {
     /// Where the page is scrolled, as the scrollbar beside it shows it:
     /// how far down (`top`), how long the page is, and how much shows,
     /// in CSS pixels.
-    Scroll { top: f64, height: f64, view: f64 },
+    /// Where the page is scrolled, and the source line of the last
+    /// `data-line` mark at or above its top, if it has marks.
+    Scroll { top: f64, height: f64, view: f64, line: Option<u32> },
     /// The page's outline, as `TOC_SCRIPT` says it.
     Toc(String),
 }
@@ -585,7 +587,16 @@ const SCROLL_SCRIPT: &str = r#"(function () {
   function say() {
     asked = false;
     const e = document.scrollingElement || document.documentElement;
-    const now = Math.round(e.scrollTop) + ',' + Math.round(e.scrollHeight) + ',' + Math.round(e.clientHeight);
+    // the last source line's mark (a converter's data-line) at or above
+    // the top: where the page's owner would put its file to show the same
+    let line = -1;
+    const marks = document.querySelectorAll('[data-line]');
+    for (let i = 0; i < marks.length; i++) {
+      if (marks[i].getBoundingClientRect().top > 1) break;
+      line = +marks[i].getAttribute('data-line');
+    }
+    if (line < 0 && marks.length) line = +marks[0].getAttribute('data-line');
+    const now = Math.round(e.scrollTop) + ',' + Math.round(e.scrollHeight) + ',' + Math.round(e.clientHeight) + ',' + line;
     if (now !== last) { last = now; try { window.ipc.postMessage('scroll:' + now); } catch (x) {} }
   }
   function soon() { if (!asked) { asked = true; requestAnimationFrame(say); } }
@@ -1093,8 +1104,9 @@ impl Webs {
                     }
                 } else if let Some(rest) = req.body().strip_prefix("scroll:") {
                     let n: Vec<f64> = rest.split(',').filter_map(|x| x.parse().ok()).collect();
-                    if let [top, height, view] = n[..] {
-                        let _ = tx4.send((w, WebEvent::Scroll { top, height, view }));
+                    if let [top, height, view, ref rest @ ..] = n[..] {
+                        let line = rest.first().filter(|l| **l >= 0.0).map(|l| *l as u32);
+                        let _ = tx4.send((w, WebEvent::Scroll { top, height, view, line }));
                         if let Some(k) = &wake4 {
                             k();
                         }

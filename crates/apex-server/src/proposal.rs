@@ -114,6 +114,9 @@ pub enum Proposal {
     /// alone; a tool keeping a changed line in sight wants this, not
     /// `Goto`.
     Show { view: ViewId, at: usize },
+    /// The text at `at` the first a view shows (its origin, acme's
+    /// `org`): where a tool puts a window back as its lens was showing it.
+    Origin { view: ViewId, at: usize },
     /// A tool owns this window (`by` its attachment), or no longer does
     /// (`None`): it made it and writes it, so it is no file. Which tool
     /// that is, by name, is the attachment's, said where it is applied.
@@ -507,6 +510,14 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
         Proposal::Notice { window } => {
             node.notice(log, window)?;
             Ok(None)
+        }
+        Proposal::Origin { view, at } => {
+            let b = node.view_buffer(view)?;
+            let t = &node.state.buffer(b)?.text;
+            // at a line's start, as an origin always is
+            let at = t.line_start(t.line_of(at.min(t.len())));
+            node.set_origin(log, view, at)?;
+            Ok(view.window())
         }
         Proposal::Show { view, at } => {
             let b = node.view_buffer(view)?;
