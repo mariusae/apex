@@ -126,10 +126,9 @@ impl Acme {
             let height = 44. + 16. * shown.lines().count().max(1) as f32;
             let bottom = l.r.y1 as f32 - below;
             below += height + 6.;
-            let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.22), offset: gpui::point(px(0.), px(4.)), blur_radius: px(14.), spread_radius: px(0.), inset: false };
             let name = match crate::sidebar::names(&self.node, w) { (what, at) if at.is_empty() => what, (what, at) => format!("{what}  {at}") };
             let at = self.toasts_at.clone();
-            let card = div()
+            let card = crate::shell::popover()
                 .id(("toast", i))
                 .child(canvas(move |b, _, _| at.borrow_mut().push(b), |_, _, _, _| {}).absolute().top(px(0.)).left(px(0.)).size_full())
                 .absolute()
@@ -140,12 +139,6 @@ impl Acme {
                 .flex_col()
                 .gap(px(4.))
                 .p(px(10.))
-                .rounded(px(9.))
-                .bg(rgb(t.panel_bg))
-                .border_1()
-                .border_color(rgb(t.panel_border))
-                .shadow(vec![shadow])
-                .font_family(crate::fonts::ui())
                 .child(self.overlay_mark())
                 .child(
                     div()

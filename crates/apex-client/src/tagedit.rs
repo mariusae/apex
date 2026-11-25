@@ -49,17 +49,17 @@ const MIN_ROWS: usize = 3;
 fn row_h() -> f32 {
     f32::from(crate::text_element::tag_line_height()).max(20.)
 }
-const NOTE_H: f32 = 18.;
-/// The picker less its rows: padding, the line between windows and
-/// entries, the "more", the foot, the gaps.
-const PICKER_REST: f32 = 8. + 5. + NOTE_H + NOTE_H + 4. * 2.;
+use crate::shell::{FOOT_H, HAIRLINE, NOTE_H, POPOVER_PAD};
+/// The picker less its rows: hairlines and padding, the line between
+/// windows and entries, the "more", the foot.
+const PICKER_REST: f32 = 2. * HAIRLINE + 2. * POPOVER_PAD + (HAIRLINE + 8.) + NOTE_H + FOOT_H;
 const PICKER_W: f32 = 420.;
 /// The narrowest it goes to keep its names under the path: past this it
 /// moves left instead.
 const PICKER_MIN_W: f32 = 220.;
 /// How far in from the picker's edge a row's name starts: its border,
 /// its padding, the row's.
-const TEXT_IN: f32 = 1. + 4. + 8.;
+const TEXT_IN: f32 = crate::shell::POPOVER_TEXT_IN;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Part {
@@ -574,35 +574,21 @@ impl Acme {
             out.push(deferred(anchored().position(point(e.at.left() - px(5.), e.at.top())).child(field)).with_priority(2).into_any_element());
         }
         if let Some(p) = &self.picker {
-            let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.2), offset: gpui::point(px(0.), px(4.)), blur_radius: px(14.), spread_radius: px(0.), inset: false };
             let picks = p.picks();
             let cursor = p.cursor.min(picks.len().saturating_sub(1));
             let rows = p.rows;
             let first = cursor.saturating_sub(rows - 1).min(picks.len().saturating_sub(rows));
             let mut list = div().flex().flex_col();
-            let note = |text: String| div().flex_none().h(px(row_h())).flex().items_center().px(px(8.)).text_color(rgb(t.panel_dim)).child(text);
             let windows = picks.iter().filter(|c| matches!(c, Choice::Window(..))).count();
             for (i, choice) in picks.iter().enumerate().skip(first).take(rows) {
                 let picked = i == cursor;
                 // a line between the windows and the entries
                 if i == windows && windows > 0 {
-                    list = list.child(div().flex_none().mx(px(8.)).my(px(2.)).h(px(1.)).bg(rgb(t.panel_border)));
+                    list = list.child(crate::shell::divider());
                 }
                 let dim = |d: gpui::Stateful<gpui::Div>| d.when(!picked, |d| d.text_color(rgb(t.panel_dim)));
-                let row = div()
-                    .id(("pick", i))
-                    .flex_none()
-                    .h(px(row_h()))
-                    .items_center()
-                    .px(px(8.))
-                    .rounded(px(4.))
-                    .flex()
-                    .flex_row()
-                    .gap(px(1.))
-                    .cursor_default()
-                    .relative()
-                    .pl(px(10.));
-                let mut row = crate::shell::chosen(row, picked, crate::shell::Act::Look, 5.);
+                // a tag's line high: its names line up with the path's
+                let mut row = crate::shell::popover_row(div().id(("pick", i)), picked, crate::shell::Act::Look).h(px(row_h()));
                 match choice {
                     Choice::Window(_, title, kind) => {
                         row = row.child(div().flex_1().min_w_0().truncate().child(title.clone())).child(dim(div().id(("kind", i)).flex_none().pl(px(8.)).text_size(px(11.))).child(*kind));
@@ -638,23 +624,20 @@ impl Acme {
                 ));
             }
             if picks.len() > first + rows {
-                list = list.child(div().flex_none().h(px(NOTE_H)).px(px(8.)).text_size(px(11.)).text_color(rgb(t.panel_dim)).child(format!("{} more", picks.len() - first - rows)));
+                list = list.child(crate::shell::note(format!("{} more", picks.len() - first - rows)));
             }
             match &p.names {
-                None => list = list.child(note("…".into())),
-                Some(Err(err)) => list = list.child(note(err.clone())),
-                Some(Ok(_)) if picks.is_empty() => list = list.child(note("Nothing matches".into())),
+                None => list = list.child(crate::shell::empty("Looking…").h(px(row_h()))),
+                Some(Err(err)) => list = list.child(crate::shell::empty(err.clone()).h(px(row_h()))),
+                Some(Ok(_)) if picks.is_empty() => list = list.child(crate::shell::empty(crate::shell::NOTHING).h(px(row_h()))),
                 Some(Ok(_)) => {}
             }
-            let foot = if p.warned { "Unsaved: ⌥↩ again to replace it" } else { "↩ open  ⌥↩ here  → in  ← up" };
-            let panel = div()
+            // what it says, warned: one more ⌥↩ replaces an unsaved window
+            let warn = p.warned.then(|| div().text_color(rgb(t.accent)).child("Unsaved: ⌥↩ again to replace it").into_any_element());
+            let panel = crate::shell::popover()
                 .id("path-picker")
-                .p(px(4.))
-                .rounded(px(7.))
-                .bg(rgb(t.panel_bg))
-                .border_1()
-                .border_color(rgb(t.panel_border))
-                .shadow(vec![shadow])
+                .pt(px(POPOVER_PAD))
+                .overflow_hidden()
                 // the tag's face, at its size and weight: a name below is
                 // set as it would be in the path above it
                 .font_family(fs.font.family.clone())
@@ -662,10 +645,9 @@ impl Acme {
                 .text_size(fs.size)
                 .flex()
                 .flex_col()
-                .gap(px(2.))
                 .child(self.overlay_mark())
-                .child(list)
-                .child(div().flex_none().h(px(NOTE_H)).px(px(8.)).text_size(px(11.)).text_color(rgb(if p.warned { t.accent } else { t.panel_dim })).child(foot))
+                .child(div().px(px(POPOVER_PAD)).pb(px(POPOVER_PAD)).child(list))
+                .child(crate::shell::foot(warn, "↩ open  ⌥↩ here  → in  ← up"))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
             // its rows' names under what is typed in the tag, as that moves
             // (a folder gone into, or up out of); as far left as the
@@ -678,7 +660,7 @@ impl Acme {
             let width = (right - 8. - want).clamp(PICKER_MIN_W, PICKER_W);
             let left = want.min(right - 8. - width).max(8.);
             let panel = panel.w(px(width));
-            out.push(deferred(anchored().position(point(px(left), p.at.y)).child(panel)).with_priority(2).into_any_element());
+            out.push(deferred(anchored().position(point(px(left), p.at.y)).child(crate::shell::fade_in("path-picker", panel))).with_priority(2).into_any_element());
         }
         out
     }

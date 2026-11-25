@@ -469,18 +469,13 @@ impl Acme {
         let t = crate::theme::theme();
         let dim = |s: String| div().text_color(rgb(t.panel_dim)).child(s);
         let meta = &self.node.state.meta;
-        let mut card = div()
+        let mut card = crate::shell::popover()
             .id("standing-card")
             .absolute()
             .top(px(crate::title_h() - 4.))
             .left(px(0.))
             .w(px(320.))
             .p(px(10.))
-            .rounded(px(9.))
-            .bg(rgb(t.panel_bg))
-            .border_1()
-            .border_color(rgb(t.panel_border))
-            .shadow(vec![gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.18), offset: gpui::point(px(0.), px(6.)), blur_radius: px(18.), spread_radius: px(0.), inset: false }])
             .flex()
             .flex_col()
             .gap(px(4.))
@@ -542,7 +537,7 @@ impl Acme {
                     ),
             );
         }
-        Some(gpui::deferred(card.child(row)).with_priority(2).into_any_element())
+        Some(gpui::deferred(crate::shell::fade_in("standing-card", card.child(row))).with_priority(2).into_any_element())
     }
 
     /// The page shown while there is no link: under what it says, when

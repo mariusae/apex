@@ -710,8 +710,9 @@ pub fn pjw(h: f32, ink: u32) -> impl IntoElement {
 /// Manifold's command palette, which ⌘T's picker and the finder are
 /// drawn as: `panel` centred across the window, its top 30% of the way
 /// down, over a light scrim (`veil`).
-pub fn palette_place(panel: impl IntoElement) -> gpui::Div {
-    div().absolute().top(px(0.)).left(px(0.)).size_full().bg(gpui::rgba(veil())).flex().flex_col().items_center().child(div().flex_none().h(gpui::relative(0.3))).child(panel)
+/// Faded in, scrim and all, as every overlay comes in (`fade_in`).
+pub fn palette_place(panel: impl IntoElement) -> gpui::AnimationElement<gpui::Div> {
+    fade_in("palette", div().absolute().top(px(0.)).left(px(0.)).size_full().bg(gpui::rgba(veil())).flex().flex_col().items_center().child(div().flex_none().h(gpui::relative(0.3))).child(panel))
 }
 
 /// The palette's card, as Manifold's: 560 wide (less on a narrow
@@ -724,7 +725,7 @@ pub fn palette_panel() -> gpui::Div {
         .w(px(560.))
         .max_w(gpui::relative(0.92))
         .bg(rgb(t.panel_bg))
-        .border(px(0.5))
+        .border(px(HAIRLINE))
         .border_color(rgb(t.panel_border))
         .rounded(px(12.))
         .shadow(vec![shadow])
@@ -733,6 +734,120 @@ pub fn palette_panel() -> gpui::Div {
         .overflow_hidden()
         .font_family(crate::fonts::ui())
 }
+
+/// Every overlay's hairline: the palette's and the popovers' alike.
+pub const HAIRLINE: f32 = 0.5;
+
+/// What is anchored to a thing -- the B4 menu, the session menu, the
+/// pickers under a path, ^F's list, the outline by a scrollbar, the
+/// cards -- is a popover: one height below the palette, one chrome.
+pub const POPOVER_R: f32 = 9.;
+/// Its padding round the rows.
+pub const POPOVER_PAD: f32 = 4.;
+/// A popover's row: as the B4 menu's, the text the palette rows' size.
+pub const POPOVER_ROW_H: f32 = 26.;
+pub const POPOVER_ROW_R: f32 = 6.;
+/// How far in from a popover row's top and bottom its chosen bar is:
+/// the bar as long as the palette's.
+pub const BAR_INSET: f32 = 5.;
+pub const POPOVER_TEXT: f32 = 13.5;
+/// From a popover's edge to its rows' words: the hairline, the padding,
+/// the row's inset (`popover_row`), for a list set under the text it
+/// lists.
+pub const POPOVER_TEXT_IN: f32 = HAIRLINE + POPOVER_PAD + 12.;
+/// The quieter lines under the rows: "3 more", a foot of keys.
+pub const NOTE_H: f32 = 18.;
+pub const NOTE_TEXT: f32 = 11.;
+/// A foot's height, its hairline over it.
+pub const FOOT_H: f32 = 22.;
+
+/// The popovers' shadow: nearer than the palette's, which floats over a
+/// scrim.
+pub fn popover_shadow() -> gpui::BoxShadow {
+    gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.18), offset: gpui::point(px(0.), px(6.)), blur_radius: px(18.), spread_radius: px(0.), inset: false }
+}
+
+/// A popover's chrome: the panel's ground and ink, the hairline, the
+/// corners and the shadow, in the interface's face at the rows' size.
+/// Its padding is the caller's (`POPOVER_PAD` for a list).
+pub fn popover() -> gpui::Div {
+    let t = crate::theme::theme();
+    div()
+        .bg(rgb(t.panel_bg))
+        .border(px(HAIRLINE))
+        .border_color(rgb(t.panel_border))
+        .rounded(px(POPOVER_R))
+        .shadow(vec![popover_shadow()])
+        .font_family(crate::fonts::ui())
+        .text_size(px(POPOVER_TEXT))
+        .text_color(rgb(t.panel_text))
+}
+
+/// A popover's row, chosen or not (`chosen`): `POPOVER_ROW_H` high,
+/// rounded, its words in from the bar.
+pub fn popover_row<E: gpui::Styled + gpui::ParentElement + gpui::InteractiveElement + gpui::prelude::FluentBuilder>(row: E, picked: bool, act: Act) -> E {
+    let row = row.relative().flex_none().h(px(POPOVER_ROW_H)).pl(px(12.)).pr(px(8.)).rounded(px(POPOVER_ROW_R)).flex().flex_row().items_center().cursor_default();
+    chosen(row, picked, act, BAR_INSET)
+}
+
+/// A quiet line under a list's rows ("3 more", "Nothing matches").
+pub fn note(text: impl Into<gpui::SharedString>) -> gpui::Div {
+    let t = crate::theme::theme();
+    div().flex_none().h(px(NOTE_H)).flex().items_center().px(px(12.)).font_family(crate::fonts::ui()).font_weight(crate::fonts::weight(gpui::FontWeight::NORMAL)).text_size(px(NOTE_TEXT)).text_color(rgb(t.panel_dim)).child(text.into())
+}
+
+/// What a list says when nothing is in it: a row's height, quiet.
+pub fn empty(text: impl Into<gpui::SharedString>) -> gpui::Div {
+    let t = crate::theme::theme();
+    div().flex_none().h(px(POPOVER_ROW_H)).flex().items_center().px(px(12.)).text_color(rgb(t.panel_dim)).child(text.into())
+}
+
+/// One phrase for a list emptied by what is typed.
+pub const NOTHING: &str = "Nothing matches";
+
+/// A list's foot, the palette's and the popovers' alike: a hairline
+/// over it, what it says at the left (a count, a warning) and its keys
+/// at the right, in the order they are offered.
+pub fn foot(left: Option<gpui::AnyElement>, keys: &str) -> gpui::Div {
+    let t = crate::theme::theme();
+    div()
+        .flex_none()
+        .h(px(FOOT_H))
+        .px(px(12.))
+        .flex()
+        .flex_row()
+        .items_center()
+        .justify_between()
+        .gap(px(12.))
+        .border_t(px(HAIRLINE))
+        .border_color(rgb(t.panel_border))
+        .font_family(crate::fonts::ui())
+        .font_weight(crate::fonts::weight(gpui::FontWeight::NORMAL))
+        .text_size(px(NOTE_TEXT))
+        .text_color(rgb(t.panel_dim))
+        .child(div().min_w_0().truncate().children(left))
+        .child(div().flex_none().child(keys.to_string()))
+}
+
+/// A line between a list's parts.
+pub fn divider() -> gpui::Div {
+    let t = crate::theme::theme();
+    div().flex_none().h(px(HAIRLINE)).mx(px(8.)).my(px(4.)).bg(rgb(t.panel_border))
+}
+
+/// How long an overlay takes to come in: the B4 menu's.
+pub const FADE_IN: std::time::Duration = std::time::Duration::from_millis(90);
+
+/// An overlay faded in as it appears (each time it does: gpui keeps the
+/// animation's clock only while the element is drawn), as the B4 menu is.
+pub fn fade_in<E: gpui::Styled + IntoElement + 'static>(id: impl Into<gpui::ElementId>, el: E) -> gpui::AnimationElement<E> {
+    use gpui::AnimationExt;
+    el.with_animation(id, gpui::Animation::new(FADE_IN), |el, t| el.opacity(t))
+}
+
+/// The mark for the one a list is already at -- the session shown, the
+/// heading being read, the tab the keys are in -- in the quiet ink.
+pub const HERE: &str = "✓";
 
 const GLASS: &[u8] = include_bytes!("../assets/glass.svg");
 
@@ -774,6 +889,20 @@ pub fn chosen<E: gpui::Styled + gpui::ParentElement + gpui::InteractiveElement +
     row.text_color(rgb(if picked { ink } else { t.panel_text }))
         .when(picked, |d| d.bg(rgb(wash)).child(div().absolute().left(px(3.)).top(px(inset)).bottom(px(inset)).w(px(2.5)).rounded(px(1.25)).bg(rgb(bar))))
         .when(!picked, |d| d.hover(|s| s.bg(rgb(t.panel_hover))))
+}
+
+/// A row chosen by the pointer alone (a list with no keys, the session
+/// menu, the outline by a scrollbar): `act`'s wash, ink and bar while
+/// the pointer is on it, as `chosen` draws the chosen row of a list
+/// with keys. `group` names the row for its bar to follow.
+pub fn chosen_under_pointer<E: gpui::Styled + gpui::ParentElement + gpui::InteractiveElement>(row: E, act: Act, inset: f32, group: &'static str) -> E {
+    let t = crate::theme::theme();
+    let (wash, ink) = t.sweep(act == Act::Exec);
+    let bar = if act == Act::Exec { t.exec_hl } else { t.look_hl };
+    row.group(group)
+        .text_color(rgb(t.panel_text))
+        .hover(move |s| s.bg(rgb(wash)).text_color(rgb(ink)))
+        .child(div().absolute().left(px(3.)).top(px(inset)).bottom(px(inset)).w(px(2.5)).rounded(px(1.25)).bg(rgb(bar)).opacity(0.).group_hover(group, |s| s.opacity(1.)))
 }
 
 /// A palette row: 34 high and rounded 7, the icon's column, the title
@@ -1757,7 +1886,6 @@ impl Acme {
     pub fn selector_panel(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
         let sel = self.selector.as_ref()?;
         let rows = sel.rows();
-        let t = crate::theme::theme();
         let hint = if let Some(u) = &sel.renaming {
             format!("New name for {}…", u.session)
         } else {
@@ -1773,7 +1901,7 @@ impl Acme {
             let r = row.clone();
             let mut el = palette_row(picked, Act::Look)
                 .id(("picker-row", i))
-                .child(div().flex_none().w(px(16.)).flex().justify_center().text_size(px(13.)).text_color(dim).child(row.glyph()))
+                .child(div().flex_none().w(px(16.)).flex().justify_center().text_size(px(12.)).text_color(dim).child(row.glyph()))
                 .child(div().flex_none().overflow_hidden().text_ellipsis().whitespace_nowrap().child(row.title()))
                 .when_some(row.where_(), |d, w| d.child(div().flex_none().text_size(px(12.)).text_color(dim).child(w)))
                 // what picking it does, in the secondary words after the
@@ -1795,8 +1923,8 @@ impl Acme {
             list = list.child(el);
         }
         if rows.is_empty() && sel.connect.is_none() {
-            let what = if sel.renaming.is_some() { "Type a name" } else { "Nothing matches" };
-            list = list.child(div().px(px(10.)).py(px(6.)).text_size(px(13.)).font_family(crate::fonts::ui()).text_color(rgb(t.panel_dim)).child(what));
+            let what = if sel.renaming.is_some() { "Type a name" } else { NOTHING };
+            list = list.child(empty(what));
         }
         let mut panel = palette_panel()
             .child(self.overlay_mark())

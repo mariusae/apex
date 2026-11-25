@@ -1353,23 +1353,16 @@ fn menu_element(m: &menu::Menu, mark: gpui::AnyElement, opacity: f32, blink_off:
     use gpui::{div, px, rgb};
     let t = theme::theme();
     let fs = menu::face();
-    // the item under the pointer in B2's colours: running is what choosing does
-    let (sweep_bg, sweep_ink) = t.sweep(true);
     let r = m.menur;
     // children are placed from the menu's corner, inside its hairline
-    const EDGE: i32 = 1;
-    let mut el = div()
+    const EDGE: f32 = crate::shell::HAIRLINE;
+    let mut el = crate::shell::popover()
         .absolute()
         .left(px(r.x0 as f32))
         .top(px(r.y0 as f32))
         .w(px(r.dx() as f32))
         .h(px(r.dy() as f32))
         .opacity(opacity)
-        .bg(rgb(t.panel_bg))
-        .border(px(EDGE as f32))
-        .border_color(rgb(t.panel_border))
-        .rounded(px(9.))
-        .shadow(vec![gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.18), offset: gpui::point(px(0.), px(6.)), blur_radius: px(18.), spread_radius: px(0.), inset: false }])
         .font(fs.font.clone())
         .text_size(fs.size)
         .child(mark);
@@ -1380,21 +1373,18 @@ fn menu_element(m: &menu::Menu, mark: gpui::AnyElement, opacity: f32, blink_off:
         let hl = i == m.lasti && !blink_off;
         let row = div()
             .absolute()
-            .left(px((ir.x0 - r.x0 - EDGE) as f32))
-            .top(px((ir.y0 - r.y0 - EDGE) as f32))
+            .left(px((ir.x0 - r.x0) as f32 - EDGE))
+            .top(px((ir.y0 - r.y0) as f32 - EDGE))
             .w(px(ir.dx() as f32))
             .h(px(ir.dy() as f32))
-            .rounded(px(6.))
+            .rounded(px(crate::shell::POPOVER_ROW_R))
             .flex()
             .items_center()
             .justify_center()
-            .text_color(rgb(if hl { sweep_ink } else { t.panel_text }))
-            .when(hl, |d| {
-                d.bg(rgb(sweep_bg))
-                    // and a bar at its left, B2's
-                    .child(div().absolute().left(px(3.)).top(px(5.)).bottom(px(5.)).w(px(2.5)).rounded(px(1.25)).bg(rgb(t.exec_hl)))
-            })
             .child(text);
+        // the item under the pointer in B2's colours, as every list's
+        // chosen row: running is what choosing does
+        let row = if hl { crate::shell::chosen(row, true, crate::shell::Act::Exec, crate::shell::BAR_INSET) } else { row.text_color(rgb(t.panel_text)) };
         el = el.child(row);
     }
     if m.scrolling {
@@ -1403,8 +1393,8 @@ fn menu_element(m: &menu::Menu, mark: gpui::AnyElement, opacity: f32, blink_off:
         el = el.child(
             div()
                 .absolute()
-                .left(px((sr.x0 - r.x0 - EDGE) as f32 + 3.5))
-                .top(px((th.y0 - r.y0 - EDGE) as f32))
+                .left(px((sr.x0 - r.x0) as f32 - EDGE + 3.5))
+                .top(px((th.y0 - r.y0) as f32 - EDGE))
                 .w(px(5.))
                 .h(px(th.dy() as f32))
                 .rounded(px(2.5))

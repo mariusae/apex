@@ -23,7 +23,7 @@ pub const CWD_LISTING: usize = usize::MAX - 1;
 
 /// The most rows it shows at once.
 const ROWS: usize = 12;
-const ROW_H: f32 = 24.;
+const ROW_H: f32 = crate::shell::POPOVER_ROW_H;
 const PICKER_W: f32 = 320.;
 
 pub struct CwdPicker {
@@ -294,24 +294,11 @@ impl Acme {
         let rows = (((bottom - f32::from(p.at.y) - 80.) / ROW_H).floor().max(3.) as usize).min(ROWS);
         let cursor = p.cursor.min(picks.len().saturating_sub(1));
         let first = cursor.saturating_sub(rows - 1).min(picks.len().saturating_sub(rows));
-        let note = |s: String| div().flex_none().h(px(ROW_H)).flex().items_center().px(px(8.)).text_color(rgb(t.panel_dim)).child(s);
         let mut list = div().flex().flex_col();
         for (i, pick) in picks.iter().enumerate().skip(first).take(rows) {
             let picked = i == cursor;
             let dim = move |d: gpui::Stateful<gpui::Div>| d.when(!picked, |d| d.text_color(rgb(t.panel_dim)));
-            let row = div()
-                .id(("cwd-pick", i))
-                .flex_none()
-                .h(px(ROW_H))
-                .px(px(8.))
-                .rounded(px(4.))
-                .flex()
-                .flex_row()
-                .items_center()
-                .cursor_default()
-                .relative()
-                .pl(px(10.));
-            let mut row = crate::shell::chosen(row, picked, crate::shell::Act::Look, 5.);
+            let mut row = crate::shell::popover_row(div().id(("cwd-pick", i)), picked, crate::shell::Act::Look);
             match pick {
                 None => {
                     row = row.child(div().flex_none().child("./")).child(dim(div().id(("cwd-here", i)).flex_none().pl(px(8.)).text_size(px(11.))).child("this folder"));
@@ -347,36 +334,28 @@ impl Acme {
             ));
         }
         if picks.len() > first + rows {
-            list = list.child(div().flex_none().h(px(18.)).px(px(8.)).text_size(px(11.)).text_color(rgb(t.panel_dim)).child(format!("{} more", picks.len() - first - rows)));
+            list = list.child(crate::shell::note(format!("{} more", picks.len() - first - rows)));
         }
         match &p.names {
-            None => list = list.child(note("…".into())),
-            Some(Err(e)) => list = list.child(note(e.clone())),
-            Some(Ok(_)) if picks.is_empty() => list = list.child(note("No folder matches".into())),
+            None => list = list.child(crate::shell::empty("Looking…")),
+            Some(Err(e)) => list = list.child(crate::shell::empty(e.clone())),
+            Some(Ok(_)) if picks.is_empty() => list = list.child(crate::shell::empty(crate::shell::NOTHING)),
             Some(Ok(_)) => {}
         }
-        let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.2), offset: gpui::point(px(0.), px(4.)), blur_radius: px(14.), spread_radius: px(0.), inset: false };
-        let panel = div()
+        let panel = crate::shell::popover()
             .id("cwd-picker")
             .w(px(PICKER_W))
-            .p(px(4.))
-            .rounded(px(7.))
-            .bg(rgb(t.panel_bg))
-            .border_1()
-            .border_color(rgb(t.panel_border))
-            .shadow(vec![shadow])
-            .font_family(crate::fonts::ui())
-            .text_size(px(13.))
+            .pt(px(crate::shell::POPOVER_PAD))
             .flex()
             .flex_col()
-            .gap(px(2.))
+            .overflow_hidden()
             .child(self.overlay_mark())
-            .child(list)
-            .child(div().flex_none().h(px(18.)).px(px(8.)).text_size(px(11.)).text_color(rgb(t.panel_dim)).child("↩ cd  → in  ← up"))
+            .child(div().px(px(crate::shell::POPOVER_PAD)).pb(px(crate::shell::POPOVER_PAD)).child(list))
+            .child(crate::shell::foot(None, "↩ cd  → in  ← up"))
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
         let right = self.node.state.layout.r.x1 as f32 + self.left();
         let left = f32::from(p.at.x).min(right - PICKER_W - 8.).max(8.);
-        Some(deferred(anchored().position(point(px(left), p.at.y)).child(panel)).with_priority(2).into_any_element())
+        Some(deferred(anchored().position(point(px(left), p.at.y)).child(crate::shell::fade_in("cwd-picker", panel))).with_priority(2).into_any_element())
     }
 }
 

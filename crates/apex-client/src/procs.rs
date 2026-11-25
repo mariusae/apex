@@ -41,19 +41,11 @@ impl Acme {
             ExecCtx::Top => "from the session's tag".into(),
         };
         let dim = |s: String| div().text_color(rgb(t.panel_dim)).child(s);
-        let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.2), offset: gpui::point(px(0.), px(4.)), blur_radius: px(14.), spread_radius: px(0.), inset: false };
-        let card = div()
+        let card = crate::shell::popover()
             .max_w(px(520.))
             .px(px(10.))
             .py(px(8.))
-            .rounded(px(8.))
-            .bg(rgb(t.panel_bg))
-            .border_1()
-            .border_color(rgb(t.panel_border))
-            .shadow(vec![shadow])
-            .font_family(crate::fonts::ui())
             .text_size(px(12.))
-            .text_color(rgb(t.panel_text))
             .flex()
             .flex_col()
             .gap(px(3.))
@@ -62,7 +54,7 @@ impl Acme {
             .child(div().font_family(crate::text_element::font_for(true).font.family.clone()).child(p.cmd.clone()))
             .child(dim(format!("pid {}  ·  {}", p.pid, crate::sidebar::shown(&p.dir, &self.node.state.meta.cwd))))
             .child(dim(format!("started {}  ·  {from}", apex_server::when(p.started))));
-        Some(deferred(anchored().position(point(at.left(), at.bottom() + px(4.))).child(card)).with_priority(3).into_any_element())
+        Some(deferred(anchored().position(point(at.left(), at.bottom() + px(4.))).child(crate::shell::fade_in("proc-card", card))).with_priority(3).into_any_element())
     }
 
     /// The session's tag's head: a chevron from what is before it in the

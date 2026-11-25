@@ -16,13 +16,13 @@ use apex_core::tiling::Rect;
 use apex_core::WindowId;
 
 /// A row's height.
-pub const ROW_H: i32 = 26;
+pub const ROW_H: i32 = crate::shell::POPOVER_ROW_H as i32;
 #[cfg(test)]
 pub const IH: i32 = ROW_H;
 /// Above the first row and below the last.
-pub const PAD_Y: i32 = 4;
+pub const PAD_Y: i32 = crate::shell::POPOVER_PAD as i32;
 /// The rows, in from the menu's sides.
-pub const INSET: i32 = 4;
+pub const INSET: i32 = crate::shell::POPOVER_PAD as i32;
 /// From the menu's edge to the widest item's text: the row's inset and
 /// its room each side of the words.
 pub const MARGIN: i32 = INSET + 14;
@@ -57,7 +57,7 @@ pub fn face() -> crate::text_element::FontSpec {
     let mut fs = crate::text_element::font_for(false);
     fs.font = gpui::font(crate::fonts::ui());
     fs.font.weight = crate::fonts::weight(gpui::FontWeight::NORMAL);
-    fs.size = gpui::px(13.5);
+    fs.size = gpui::px(crate::shell::POPOVER_TEXT);
     fs
 }
 

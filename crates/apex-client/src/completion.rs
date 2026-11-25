@@ -232,28 +232,20 @@ impl Acme {
         let (at, lh) = c.anchor?;
         let t = crate::theme::theme();
         let mono = self.node.state.window(c.view.window()?).is_ok_and(|w| w.mono);
-        let font = crate::text_element::font_for(mono).font.family.clone();
-        let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.2), offset: gpui::point(px(0.), px(4.)), blur_radius: px(14.), spread_radius: px(0.), inset: false };
-        // under the name's line, or over it where the window has no room
-        // below (at the window's foot): `anchored` turns it about the
-        // line's top, and keeps it inside the window
-        let place = |panel: gpui::Div| deferred(anchored().position(point(at.x - px(6.), at.y - px(2.))).offset(point(px(0.), lh + px(4.))).child(panel)).with_priority(2).into_any_element();
-        let panel = div()
-            .min_w(px(160.))
-            .max_w(px(420.))
-            .p(px(4.))
-            .rounded(px(7.))
-            .bg(rgb(t.panel_bg))
-            .border_1()
-            .border_color(rgb(t.panel_border))
-            .shadow(vec![shadow])
-            .font_family(font)
-            .text_size(px(13.))
-            .flex()
-            .flex_col()
-            .child(self.overlay_mark());
+        // the window's own face at its own size: a name below reads as it
+        // will when taken, in the text above
+        let fs = crate::text_element::font_for(mono);
+        use crate::shell::{POPOVER_PAD, POPOVER_TEXT_IN};
+        // the names' first letters under the fragment's, the popover's
+        // chrome and a row's inset to the left of them; under the name's
+        // line, or over it where the window has no room below (at the
+        // window's foot): `anchored` turns it about the line's top, and
+        // keeps it inside the window
+        let left = px(POPOVER_TEXT_IN);
+        let place = |panel: gpui::Div| deferred(anchored().position(point(at.x - left, at.y - px(2.))).offset(point(px(0.), lh + px(4.))).child(crate::shell::fade_in("completion", panel))).with_priority(2).into_any_element();
+        let panel = crate::shell::popover().min_w(px(160.)).max_w(px(420.)).p(px(POPOVER_PAD)).font_family(fs.font.family.clone()).text_size(fs.size).flex().flex_col().child(self.overlay_mark());
         if c.none.is_some() {
-            return Some(place(panel.child(div().px(px(8.)).py(px(3.)).text_color(rgb(t.panel_dim)).child("No matches"))));
+            return Some(place(panel.child(crate::shell::empty(crate::shell::NOTHING))));
         }
         let (typed, _) = self.completion_typed()?;
         let matching = c.matching(&typed);
@@ -264,17 +256,9 @@ impl Acme {
         for (i, (name, dir)) in matching.iter().enumerate().skip(first).take(ROWS) {
             let picked = i == cursor;
             let (view, start, name2, dir2) = (c.view, c.start, name.clone(), *dir);
-            let row = div()
-                .id(("completion", i))
-                .px(px(8.))
-                .py(px(2.))
-                .rounded(px(4.))
-                .flex()
-                .flex_row()
-                .gap(px(1.))
-                .cursor_default()
-                .relative()
-                .pl(px(10.))
+            // a row a line of the text and some air
+            let row = crate::shell::popover_row(div().id(("completion", i)), picked, crate::shell::Act::Look).h(fs.line_height + px(6.));
+            let row = row
                 // what is typed already, then the rest
                 .child(div().flex_none().when(!picked, |d| d.text_color(rgb(t.panel_dim))).child(typed.clone()))
                 .child(div().flex_none().child(name.chars().skip(typed.chars().count()).collect::<String>()))
@@ -289,10 +273,10 @@ impl Acme {
                         cx.stop_propagation();
                     }),
                 );
-            panel = panel.child(crate::shell::chosen(row, picked, crate::shell::Act::Look, 3.));
+            panel = panel.child(row);
         }
         if matching.len() > ROWS {
-            panel = panel.child(div().px(px(8.)).text_size(px(11.)).text_color(rgb(t.panel_dim)).child(format!("{} more", matching.len() - ROWS)));
+            panel = panel.child(crate::shell::note(format!("{} more", matching.len() - ROWS)));
         }
         Some(place(panel))
     }
