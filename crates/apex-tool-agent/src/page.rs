@@ -25,14 +25,15 @@ pub fn markdown(asked: &str, said: &str) -> String {
 }
 
 /// How a conversation looks, as Manifold's does: what you asked in a
-/// bubble at the right, in the code face; what the agent did on the way
+/// bubble at the right, in the page's face (what it quotes as code in
+/// the code face); what the agent did on the way
 /// folded to a line that opens; what it said in between quieter; its
 /// answer as the page's own text; what it is doing now beside dots.
 const STYLE: &str = r#"<style>
 .ax-turn { margin: 0 0 2.2em; }
 .ax-turn + .ax-turn { padding-top: 0.6em; }
 h4.ax-mark { height: 0; margin: 0; padding: 0; overflow: hidden; opacity: 0; }
-pre.ax-prompt { font-family: var(--apex-mono, Menlo, monospace); font-size: 12px; line-height: 1.45;
+pre.ax-prompt { font: inherit; line-height: 1.45;
   white-space: pre-wrap; word-wrap: break-word; width: fit-content; max-width: 82%; box-sizing: border-box;
   margin: 0 0 1.1em auto; background: var(--apex-code-bg); border: none; border-radius: 14px; padding: 0.55em 0.9em; }
 p.ax-event, details.ax-steps, p.ax-standing, p.ax-earlier { font-family: var(--apex-mono, Menlo, monospace);
@@ -51,6 +52,8 @@ details.ax-steps li.ax-failed { text-decoration: line-through; }
 .ax-dots i:nth-child(2) { animation-delay: 0.2s; } .ax-dots i:nth-child(3) { animation-delay: 0.4s; }
 @keyframes ax-dot { 0% { opacity: 0.35; } 17% { opacity: 1; } 45%, 100% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .ax-dots i { animation: none; opacity: 0.7; } }
+pre.ax-prompt code { font-family: var(--apex-mono, Menlo, monospace); font-size: 0.92em; background: none; padding: 0; }
+pre.ax-prompt code.ax-block { display: block; margin: 0.3em 0; }
 </style>
 
 "#;
@@ -128,7 +131,7 @@ fn page(turns: &[Turn], a: &crate::agent::Agent) -> String {
             out.push_str(&format!("<h4 class=\"ax-mark\">{}</h4>\n\n", escape(&title(asked))));
             match notification(asked) {
                 Some(note) => out.push_str(&format!("<p class=\"ax-event\">{}</p>\n\n", escape(&note))),
-                None => out.push_str(&format!("<pre class=\"ax-prompt\">{}</pre>\n\n", escape(asked.trim()))),
+                None => out.push_str(&format!("<pre class=\"ax-prompt\">{}</pre>\n\n", prompt_html(asked.trim()))),
             }
         }
         // what it did on the way (up to its last call), and its answer
@@ -183,6 +186,43 @@ fn along(parts: &[Part]) -> String {
         }
     }
     flush(&mut run, &mut out);
+    out
+}
+
+/// What was asked, as typed, for its bubble: the text as it is, line
+/// for line, and what it quotes as code -- a `span`, a fenced block --
+/// in the code face. (A `pre`, so that a blank line in it does not end
+/// it as markdown's HTML block.)
+fn prompt_html(text: &str) -> String {
+    let mut out = String::new();
+    let mut parts = text.split("```").enumerate().peekable();
+    while let Some((i, part)) = parts.next() {
+        if i % 2 == 1 && parts.peek().is_some() {
+            // a fenced block: its first line, the language, left out
+            let body = part.split_once('\n').map_or(part, |(first, rest)| if first.trim().contains(' ') { part } else { rest });
+            out.push_str(&format!("<code class=\"ax-block\">{}</code>", escape(body.trim_end_matches('\n'))));
+            continue;
+        }
+        if i % 2 == 1 {
+            out.push_str("```");
+        }
+        // `spans` in what is between
+        let mut inline = part.split('`').enumerate().peekable();
+        while let Some((j, bit)) = inline.next() {
+            if j % 2 == 1 && inline.peek().is_some() && !bit.is_empty() && !bit.contains('\n') {
+                out.push_str(&format!("<code>{}</code>", escape(bit)));
+            } else if j % 2 == 1 {
+                // no span: its backticks as typed
+                out.push('`');
+                out.push_str(&escape(bit));
+                if inline.peek().is_some() {
+                    out.push('`');
+                }
+            } else {
+                out.push_str(&escape(bit));
+            }
+        }
+    }
     out
 }
 
@@ -370,5 +410,14 @@ mod tests {
         let e = filter("echo bad >&2; exit 3", "", Path::new("/")).unwrap_err();
         assert_eq!(e, "bad");
         assert_eq!(escape("<a & b>"), "&lt;a &amp; b&gt;");
+    }
+
+    #[test]
+    fn a_prompt_is_its_text_its_code_in_the_code_face() {
+        assert_eq!(prompt_html("fix `make` <now>"), "fix <code>make</code> &lt;now&gt;");
+        assert_eq!(prompt_html("run\n```sh\nmake test\n```\nthen"), "run\n<code class=\"ax-block\">make test</code>\nthen");
+        // a lone backtick, or one across lines, is only a backtick
+        assert_eq!(prompt_html("a ` b"), "a ` b");
+        assert_eq!(prompt_html("a `b\nc` d"), "a `b\nc` d");
     }
 }

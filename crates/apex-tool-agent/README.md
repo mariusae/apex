@@ -233,7 +233,8 @@ from the session's transcript, the file its hooks name (Muse's found
 by its session), so a session resumed (`--resume`, `/resume`) shows
 the whole of it, what came before the hooks said anything too. It is
 drawn as Manifold draws an agent's: a turn a section, what was asked
-in a bubble at the right in the code face -- what was typed while it
+in a bubble at the right, in the page's face with what it quotes as
+code in the code face -- what was typed while it
 worked (steering, a prompt queued) too, as the terminal shows it; what
 the agent did on the way, each run of tool calls folded to a line
 ("Read 3 files · ran 2 commands") that opens to their titles, a failed
