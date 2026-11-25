@@ -132,10 +132,8 @@ pub const VERB_ICONS: &[(&str, &str)] = &[
     ("Send", r#"<path d="M21 3L10 14M21 3l-7 18-4-7-7-4z"/>"#),
     ("Back", r#"<path d="M15 6l-6 6 6 6"/>"#),
     ("Fwd", r#"<path d="M9 6l6 6-6 6"/>"#),
-    // a window over another: the two change places -- one arrow up, one
-    // down, side by side
-    // Del on a window over another: the × on the top card of two, the
-    // corner of the one under it showing -- it closes this one only
+    // Del on a lens: the × on the top card of two, the corner of the one
+    // under it showing -- it takes the lens away only
     (DEL_STACKED, r#"<path d="M10 10l8 8M18 10l-8 8"/><path d="M5.5 14.5V7a1.5 1.5 0 0 1 1.5-1.5h7.5"/>"#),
     // the session's directory itself, `./` drawn: a middle dot, and a
     // slash a little apart from it
