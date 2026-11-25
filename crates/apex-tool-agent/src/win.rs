@@ -1226,13 +1226,18 @@ impl Pane {
         let Some(l) = self.lenses.get(&w) else { return Ok(false) };
         let (base, key) = (l.base, l.session.clone());
         if rule == l.view {
+            // what is in the strip now, and only that, kept for the next
             let draft = self.t.input(w).unwrap_or_default();
-            if !draft.trim().is_empty() {
+            if draft.trim().is_empty() {
+                self.drafts.remove(&key);
+            } else {
                 self.drafts.insert(key, draft);
             }
             self.t.delete(w)?;
         } else if rule == l.send {
             let text = self.t.take_input(w)?;
+            // sent: no draft left of it
+            self.drafts.remove(&key);
             let text = text.trim_end();
             if !text.is_empty() {
                 // pasted, then Enter: a prompt of several lines is one
@@ -1313,9 +1318,15 @@ impl Pane {
                 Some(t) if !t.items.is_empty() => page::told(&t.items, &a),
                 _ => page::conversation(&a),
             };
+            // the draft is what the strip holds, nothing when it is empty
             let session = l.session.clone();
-            if let Some(draft) = self.t.input(w).filter(|d| !d.trim().is_empty()) {
-                self.drafts.insert(session, draft);
+            match self.t.input(w).filter(|d| !d.trim().is_empty()) {
+                Some(draft) => {
+                    self.drafts.insert(session, draft);
+                }
+                None => {
+                    self.drafts.remove(&session);
+                }
             }
             if self.lenses.get(&w).is_some_and(|l| l.md == md) {
                 continue;

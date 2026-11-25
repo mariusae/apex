@@ -720,12 +720,12 @@ fn view_in_an_agents_terminal_is_its_conversation_with_a_prompt_under_it() {
     let lens = view(&mut c);
     assert!(c.node.state.layout.place_of(tw).is_none(), "the terminal under it");
     let deadline = Instant::now() + Duration::from_secs(5);
-    while !(text_of(&c, lens).contains("> what is in hosts?") && text_of(&c, lens).contains("It names localhost.")) && Instant::now() < deadline {
+    while !(text_of(&c, lens).contains("ax-prompt\">what is in hosts?</pre>") && text_of(&c, lens).contains("It names localhost.")) && Instant::now() < deadline {
         let _ = c.step(Duration::from_millis(20));
     }
-    assert!(text_of(&c, lens).contains("> what is in hosts?") && text_of(&c, lens).contains("It names localhost."), "{}", text_of(&c, lens));
-    // each turn a heading: the page's outline is its turns
-    assert!(text_of(&c, lens).contains("### what is in hosts?"), "{}", text_of(&c, lens));
+    assert!(text_of(&c, lens).contains("ax-prompt\">what is in hosts?</pre>") && text_of(&c, lens).contains("It names localhost."), "{}", text_of(&c, lens));
+    // each turn marked for the page's outline: its turns
+    assert!(text_of(&c, lens).contains("<h4 class=\"ax-mark\">what is in hosts?</h4>"), "{}", text_of(&c, lens));
     // a prompt written in the strip and sent: typed into the terminal,
     // the strip empty
     let strip = |c: &Remote| c.node.state.window(lens).ok().and_then(|w| w.input).and_then(|b| c.node.state.buffer(b).ok()).map(|b| (b.id, b.version, b.text.to_string()));
@@ -740,6 +740,19 @@ fn view_in_an_agents_terminal_is_its_conversation_with_a_prompt_under_it() {
     }
     assert!(screen(&c).lines().any(|l| l.trim() == "hello-lens"), "the prompt typed and entered: {}", screen(&c));
     assert_eq!(strip(&c).map(|s| s.2).as_deref(), Some(""));
+    // sent, it is no draft: View, View, and the strip is empty
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(lens), text: "View".into() }, Duration::from_secs(5)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while (c.node.state.window(lens).is_ok() || c.node.state.layout.place_of(tw).is_none()) && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    let lens = view(&mut c);
+    let strip = |c: &Remote| c.node.state.window(lens).ok().and_then(|w| w.input).and_then(|b| c.node.state.buffer(b).ok()).map(|b| (b.id, b.version, b.text.to_string()));
+    assert_eq!(strip(&c).map(|s| s.2).as_deref(), Some(""), "a prompt sent came back as a draft");
     // a draft left in the strip, and View: the terminal back
     let (ib, version, _) = strip(&c).unwrap();
     c.propose(apex_server::Proposal::ReplaceRange { select: false, dir: None, buffer: ib, version, q0: 0, q1: 0, text: "half a thought".into() }, Duration::from_secs(5)).unwrap();
@@ -814,7 +827,7 @@ fn a_resumed_sessions_lens_is_its_whole_transcript() {
         let _ = c.step(Duration::from_millis(20));
     }
     let text = text_of(&c, lens);
-    assert!(text.contains("### the old question") && text.contains("> the old question") && text.contains("- `Bash: ls old`") && text.contains("the old answer"), "{text}");
+    assert!(text.contains("ax-mark\">the old question</h4>") && text.contains("ax-prompt\">the old question</pre>") && text.contains("<summary>Ran a command</summary>") && text.contains("<li>Bash: ls old</li>") && text.contains("the old answer"), "{text}");
     // the terminal resumes another session: the lens is that one's
     std::thread::sleep(Duration::from_millis(20));
     event::append(&logs, &Event { kind: Some("resume".into()), ..ev("2222bbbb-0000", &two, "SessionStart") }).unwrap();
@@ -828,11 +841,15 @@ fn a_resumed_sessions_lens_is_its_whole_transcript() {
     let mut f = std::fs::OpenOptions::new().append(true).open(&two).unwrap();
     use std::io::Write;
     writeln!(f, "{{\"type\":\"user\",\"message\":{{\"role\":\"user\",\"content\":\"and then?\"}}}}").unwrap();
+    // and what is typed while it works (steering) is a prompt too, as the
+    // terminal shows it; another agent's message is not
+    writeln!(f, "{{\"type\":\"attachment\",\"attachment\":{{\"type\":\"queued_command\",\"prompt\":\"no, the other one\",\"commandMode\":\"prompt\",\"origin\":{{\"kind\":\"human\"}}}}}}").unwrap();
+    writeln!(f, "{{\"type\":\"attachment\",\"attachment\":{{\"type\":\"queued_command\",\"prompt\":\"from a peer\",\"commandMode\":\"prompt\",\"origin\":{{\"kind\":\"peer\"}}}}}}").unwrap();
     event::append(&logs, &Event { text: Some("and then?".into()), ..ev("2222bbbb-0000", &two, "UserPromptSubmit") }).unwrap();
     let deadline = Instant::now() + Duration::from_secs(8);
-    while !has(&c, "### and then?") && Instant::now() < deadline {
+    while !has(&c, "ax-prompt\">no, the other one</pre>") && Instant::now() < deadline {
         let _ = c.step(Duration::from_millis(20));
     }
-    assert!(has(&c, "### and then?"), "{}", text_of(&c, lens));
+    assert!(has(&c, "ax-prompt\">and then?</pre>") && has(&c, "ax-prompt\">no, the other one</pre>") && !has(&c, "from a peer"), "{}", text_of(&c, lens));
     let _ = std::fs::remove_dir_all(&tmp);
 }

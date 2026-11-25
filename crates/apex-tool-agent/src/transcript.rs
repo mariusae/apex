@@ -512,6 +512,37 @@ impl Parser for Claude {
                     }
                 }
             }
+            // what is typed while it works (steering, a prompt queued) is an
+            // attachment, delivered into the turn going: the user's words as
+            // any prompt's; a background task's word that it finished, said
+            // in a line; another agent's message, not the user's, left out
+            Some("attachment") => {
+                let a = v.get("attachment");
+                if a.and_then(|a| a.get("type")).and_then(Value::as_str) != Some("queued_command") {
+                    return out;
+                }
+                let a = a.unwrap();
+                let origin = a.get("origin").and_then(|o| o.get("kind")).and_then(Value::as_str);
+                let mode = a.get("commandMode").and_then(Value::as_str);
+                let text = match a.get("prompt") {
+                    Some(Value::String(s)) => s.clone(),
+                    Some(Value::Array(blocks)) => blocks.iter().filter_map(|b| b.get("text").and_then(Value::as_str)).collect::<Vec<_>>().join("\n"),
+                    _ => String::new(),
+                };
+                if origin == Some("human") && mode == Some("prompt") {
+                    if let Some(t) = user_text(&text) {
+                        out.push(Item::User(t));
+                    }
+                } else if mode == Some("task-notification") {
+                    let tag = |name: &str| {
+                        let a = text.find(&format!("<{name}>"))? + name.len() + 2;
+                        let b = text[a..].find(&format!("</{name}>"))? + a;
+                        Some(text[a..b].trim().to_string()).filter(|s| !s.is_empty())
+                    };
+                    let note = tag("summary").unwrap_or_else(|| format!("a background task {}", tag("status").unwrap_or_else(|| "finished".into())));
+                    out.push(Item::Note(note));
+                }
+            }
             Some("system") if v.get("subtype").and_then(Value::as_str) == Some("api_error") => {
                 let e = v.get("error");
                 let what = e.and_then(|e| e.get("formatted").or_else(|| e.get("message"))).and_then(Value::as_str).unwrap_or("API error");
