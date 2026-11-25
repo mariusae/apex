@@ -140,6 +140,7 @@ impl Render for Acme {
         self.sync_notes();
         self.sync_pulls();
         self.web_cuts.borrow_mut().clear();
+        self.web_rounds.borrow_mut().clear();
         self.toasts_at.borrow_mut().clear();
         let root = div()
             .id("apex")
@@ -436,6 +437,14 @@ impl Render for Acme {
                 // the room it takes at the body's foot, the margin under it
                 // and over it with it
                 let foot = float.map_or(0, |(h, _, _)| h + 2 * STRIP_MARGIN);
+                // where the box is in a page's view (in from its left, its
+                // right and its foot; how tall), for the page to draw its
+                // shadow round it: nothing of apex's is drawn over a page
+                let float_in_page = float.map(|(h, _, _)| {
+                    let inset = crate::web::PAGE_INSET;
+                    let m = STRIP_MARGIN as f32;
+                    crate::web::Float { left: m, right: m - inset, bottom: m - inset, height: h as f32, round: STRIP_RADIUS }
+                });
                 let float_el = float.map(|(h, lh, vpad)| {
                     let x = bx + text_element::LANE as i32 + STRIP_MARGIN;
                     let wd = bw - text_element::LANE as i32 - 2 * STRIP_MARGIN;
@@ -477,8 +486,9 @@ impl Render for Acme {
                         .border_1()
                         .border_color(gpui::rgb(t.body_border))
                         .shadow(vec![shadow])
-                        // over a page, its hole in the page's view
-                        .child(self.web_cut_by(px(STRIP_RADIUS)))
+                        // over a page, its hole in the page's view: the box
+                        // exactly, corners and all, the page up to its edge
+                        .child(self.web_cut_round(px(STRIP_RADIUS)))
                         .child(
                             div()
                                 .absolute()
@@ -581,7 +591,7 @@ impl Render for Acme {
                                             move |bounds, window, cx| {
                                                 me2.update(cx, |acme, _| {
                                                     acme.web_place(w, bounds, window);
-                                                    acme.webs.set_foot(w, foot as u32);
+                                                    acme.webs.set_foot(w, foot as u32, float_in_page);
                                                 });
                                             },
                                             |_, _, _, _| {},
@@ -750,13 +760,15 @@ impl Render for Acme {
         };
         let holes = self.overlay_bounds.clone();
         let cuts = self.web_cuts.clone();
+        let rounds = self.web_rounds.clone();
         let me3 = me.clone();
         let cutter = gpui::deferred(
             div().absolute().top(px(0.)).left(px(0.)).w(px(0.)).h(px(0.)).child(canvas(
                 move |_, _, cx| {
                     let holes: Vec<(Bounds<gpui::Pixels>, gpui::Pixels)> = holes.borrow().iter().chain(cuts.borrow().iter()).copied().collect();
+                    let rounds = rounds.borrow().clone();
                     me3.update(cx, |acme, _| {
-                        acme.webs.set_holes(&holes);
+                        acme.webs.set_holes(&holes, &rounds);
                         // the pages go quiet with the rest while the
                         // picker or the finder has the window
                         acme.webs.set_veil((acme.selector.is_some() || acme.finder.is_some() || acme.commands.is_some()).then(shell::veil));

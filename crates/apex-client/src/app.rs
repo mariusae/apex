@@ -440,6 +440,9 @@ pub struct Acme {
     /// the caret and the wheel: the outline of where a dragged window
     /// would land.
     pub web_cuts: std::rc::Rc<std::cell::RefCell<Vec<(gpui::Bounds<Pixels>, Pixels)>>>,
+    /// Holes of their own shape: rounded rectangles, each an element's
+    /// bounds exactly and its corners' round (`web_cut_round`).
+    pub web_rounds: std::rc::Rc<std::cell::RefCell<Vec<(gpui::Bounds<Pixels>, Pixels)>>>,
     /// ctrl-tab, control still held: the walk through the sessions.
     pub switcher: Option<crate::switcher::Switcher>,
     /// A session sliding in (ctrl-tab), and the overview up (⌘⇧\).
@@ -1172,6 +1175,20 @@ impl Acme {
 
     /// A hole in the web views where this element lands (`web_cuts`),
     /// `margin` past it, which is no overlay.
+    /// A hole in the web views the shape of this element: its bounds
+    /// exactly, its corners `round` (`web_rounds`).
+    pub fn web_cut_round(&self, round: Pixels) -> gpui::AnyElement {
+        use gpui::prelude::*;
+        let rc = self.web_rounds.clone();
+        gpui::div()
+            .absolute()
+            .top(px(0.))
+            .left(px(0.))
+            .size_full()
+            .child(gpui::canvas(move |b, _, _| rc.borrow_mut().push((b, round)), |_, _, _, _| {}).size_full())
+            .into_any_element()
+    }
+
     pub fn web_cut_by(&self, margin: Pixels) -> gpui::AnyElement {
         use gpui::prelude::*;
         let rc = self.web_cuts.clone();
@@ -1807,6 +1824,7 @@ impl Acme {
             look_cache: Default::default(),
             pulled: Default::default(),
             web_cuts: Default::default(),
+            web_rounds: Default::default(),
             switcher: None,
             switch_slide: None,
             overview: None,
