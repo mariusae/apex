@@ -501,7 +501,7 @@ windows put away out of the tiling, which is the core's
   client tells a page's owner that line as it scrolls,
   `WindowEvent::Scrolled`; `Proposal::Origin` puts a window there).
 - **An input strip** (`Window::input`): a window's second text, a
-  tool's, at its body's foot, as tall as its text (six lines at most):
+  tool's, at its body's foot, as tall as its text (two lines to six):
   apex text, replicated, a draft in every UI. ⌘↩ in it is Send, the
   word its tool claims there to take the text (`take_input`).
 - **An agent's conversation is its terminal's lens**: ⌘↩ in a terminal

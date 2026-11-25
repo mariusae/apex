@@ -66,6 +66,11 @@ use text_element::TextElement;
 /// between cards where acme drew its borders.
 const CARD_X: i32 = 3;
 const CARD_Y: i32 = 1;
+/// How many lines an input strip is tall (`Window::input`): two at the
+/// least, so there is room to write before anything is written, and as
+/// many as its text takes up to six.
+const STRIP_MIN: usize = 2;
+const STRIP_MAX: usize = 6;
 
 impl Render for Acme {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -399,7 +404,7 @@ impl Render for Acme {
                 let th = if folded { tag_h - 2 * CARD_Y } else { tag_h - CARD_Y };
                 let (bx, bw, bh) = (s.body.x0 + CARD_X, s.body.dx() - 2 * CARD_X, s.body.dy() - CARD_Y);
                 // an input strip (DESIGN.md "Lenses"): at the body's foot,
-                // as many lines as its text takes (a few at most), the body
+                // as many lines as its text takes (two to six), the body
                 // the rest; a hairline between
                 let strip_h = match win.input.filter(|_| s.body.dy() > 0 && !strip) {
                     Some(ib) => {
@@ -407,7 +412,9 @@ impl Render for Acme {
                         let lh = self.node.tiling.body_font_height(w).max(1);
                         let per = ((bw - text_element::LANE as i32) / (lh / 2).max(1)).max(1) as usize;
                         let lines: usize = text.split('\n').map(|l| l.chars().count().div_ceil(per).max(1)).sum();
-                        let h = lines.clamp(1, 6) as i32 * lh + lh / 2;
+                        // two lines at the least, room to write in
+                        // before there is anything written; six at most
+                        let h = lines.clamp(STRIP_MIN, STRIP_MAX) as i32 * lh + lh / 2;
                         (h < bh - lh).then_some(h)
                     }
                     None => None,
