@@ -2213,11 +2213,18 @@ impl Acme {
         true
     }
 
-    /// A click or a key in a window: its notification, if any, dismissed.
+    /// A click or a key in a window: its notification, if any, dismissed
+    /// -- and, a lens on the top of its chain, those of the windows under
+    /// it, whose its handle shows: an agent done under its conversation is
+    /// attended to there.
     fn attend(&mut self, w: WindowId) {
         // worked in in the stash's preview: first among its cards after
         self.touch_stashed(w);
-        if self.dismiss(w) {
+        let mut any = false;
+        for x in self.handle_of(w) {
+            any |= self.dismiss(x);
+        }
+        if any {
             self.after();
         }
     }
@@ -4546,7 +4553,12 @@ impl Acme {
                     }
                     self.tell_owner(w, PageEvent::Loading { started: on });
                 }
-                WebEvent::Down => self.toasts.clear(),
+                // a click in a page: the toasts go, and the window is
+                // attended to, as a click in a text is
+                WebEvent::Down => {
+                    self.toasts.clear();
+                    self.attend(w);
+                }
                 // a code block's copy handle: into the snarf buffer, and
                 // the clipboard with it
                 WebEvent::Copy(text) => {
