@@ -146,7 +146,18 @@ windows put away out of the tiling, which is the core's
   as the B4 menu's does (`shell::chosen`): B2's faint wash, ink and a bar
   at its left where it runs a command (⌘⇧P), B3's where it goes to a
   place or opens a thing (⌘P, ⌘O, the picker, the folder and path
-  pickers, ^F's list, the session menu).
+  pickers, ^F's list, the session menu, the outline by a scrollbar);
+  in a list with no keys, the row under the pointer. Where a list
+  already is (the session shown, the heading being read, ⌘P's tab) is
+  a ✓ in the quiet ink. What is anchored to a thing -- the B4 menu, the
+  session menu, the pickers, ^F's list, the outline, the cards -- is a
+  popover, one chrome for all (`shell::popover`): rounded 9, the
+  palette's half-pixel hairline, one nearer shadow, rows 26 high at the
+  palette's 13.5 (the path picker's and ^F's in the face of the text
+  they list, ^F's a line of it high); a foot, where a list has one, is
+  under a hairline with its keys at the right; a list emptied by a
+  query says "Nothing matches". Every overlay fades in over 90 ms, as
+  the B4 menu always has.
 - **Maximizing** (`tiling::colfull`, `colmaximize` and their kin, the
   core's). B3 on a window's box is acme's again: the window grown to
   the whole column, keeping its place in it, the others hidden behind
@@ -594,7 +605,7 @@ windows put away out of the tiling, which is the core's
   menuhit's ways: up while the button is held, run on release over an
   item, the last choice remembered and opened under the pointer (which
   lands on it), a part and a lane past 25 items. It looks like the
-  app's other menus: a panel, its rows centred in the interface's face;
+  app's other menus (a popover), its rows centred in the interface's face;
   the item under the pointer in B2's colours -- a faint wash, its text,
   a bar at the row's left -- since choosing one is running it; no mark
   on the remembered one, which is where the menu opens; the lane down

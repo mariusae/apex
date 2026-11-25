@@ -211,7 +211,12 @@ impl Acme {
                     ),
             );
         }
-        let panel = crate::shell::palette_panel().child(self.overlay_mark()).child(field).when(!matches.is_empty(), |d| d.child(list));
+        // nothing matching: return runs what was typed, as B2 would
+        if matches.is_empty() {
+            let what = if c.filter.trim().is_empty() { crate::shell::NOTHING.to_string() } else { format!("{}: ↩ runs it as typed", crate::shell::NOTHING) };
+            list = list.child(crate::shell::empty(what));
+        }
+        let panel = crate::shell::palette_panel().child(self.overlay_mark()).child(field).child(list);
         Some(deferred(crate::shell::palette_place(panel)).with_priority(2).into_any_element())
     }
 }

@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use gpui::prelude::*;
-use gpui::{deferred, div, px, rgb, AnyElement, Context, MouseButton};
+use gpui::{deferred, div, px, AnyElement, Context, MouseButton};
 
 use apex_core::{Loc, Pos};
 use apex_server::proto::{ClientMsg, ServerMsg};
@@ -242,10 +242,9 @@ impl Acme {
     /// The panel, when up.
     pub fn quick_panel(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let q = self.quick.as_ref()?;
-        let t = crate::theme::theme();
         let hint = format!("Open in {}", crate::sidebar::shown(&q.root, "").trim_end_matches('/'));
         let field = crate::shell::palette_field(crate::field::field_view(&q.filter, crate::tagedit::caret_on(q.caret_since), &hint, true));
-        let mut list = div().flex().flex_col().px(px(6.)).pb(px(2.));
+        let mut list = div().flex().flex_col().px(px(6.)).pb(px(6.));
         let first = q.cursor.saturating_sub(ROWS - 1).min(q.items.len().saturating_sub(ROWS));
         for (i, (rel, is_dir)) in q.items.iter().enumerate().skip(first).take(ROWS) {
             let picked = i == q.cursor;
@@ -258,7 +257,7 @@ impl Acme {
             let row = crate::shell::palette_row(picked, crate::shell::Act::Look)
                 .id(("quick", i))
                 .cursor_default()
-                .child(div().flex_none().w(px(16.)).flex().justify_center().text_size(px(11.)).text_color(dim).child(if *is_dir { "▸" } else { "·" }))
+                .child(div().flex_none().w(px(16.)).flex().justify_center().text_size(px(12.)).text_color(dim).child(if *is_dir { "▸" } else { "·" }))
                 .child(div().flex_none().max_w(gpui::relative(0.6)).overflow_hidden().text_ellipsis().whitespace_nowrap().child(name))
                 .child(div().flex_1().min_w_0().whitespace_nowrap().overflow_hidden().text_ellipsis().text_size(px(12.)).text_color(dim).child(dir))
                 .on_mouse_down(
@@ -270,15 +269,14 @@ impl Acme {
                 );
             list = list.child(row);
         }
-        let dimc = rgb(t.panel_dim);
         if q.items.is_empty() {
             let why = match (&q.error, q.done, q.filter.trim().is_empty()) {
                 (Some(e), _, _) => e.clone(),
                 (None, false, _) => "Looking…".into(),
                 (None, true, true) => "Nothing here".into(),
-                (None, true, false) => "Nothing matches".into(),
+                (None, true, false) => crate::shell::NOTHING.into(),
             };
-            list = list.child(div().px(px(10.)).py(px(8.)).text_size(px(13.)).text_color(dimc).child(why));
+            list = list.child(crate::shell::empty(why));
         }
         // how far the walk has got, and how many match
         let status = {
@@ -290,27 +288,14 @@ impl Acme {
                 format!("{} matching · {walked}{capped}", count(q.matched))
             }
         };
-        let foot = div()
-            .flex_none()
-            .h(px(28.))
-            .px(px(16.))
-            .flex()
-            .flex_row()
-            .items_center()
-            .justify_between()
-            .text_size(px(11.))
-            .text_color(dimc)
-            .border_t_1()
-            .border_color(rgb(t.panel_border))
-            .child(div().min_w_0().truncate().child(status))
-            .child(div().flex_none().child("↩ open"));
+        let foot = crate::shell::foot(Some(status.into_any_element()), "↩ open");
         let panel = crate::shell::palette_panel()
             .child(self.overlay_mark())
             .child(field)
             .child(list)
             .child(foot)
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
-        Some(deferred(crate::shell::palette_place(panel)).with_priority(1).into_any_element())
+        Some(deferred(crate::shell::palette_place(panel)).with_priority(2).into_any_element())
     }
 }
 
