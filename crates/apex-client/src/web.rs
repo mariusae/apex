@@ -1631,6 +1631,9 @@ if (best) {{
             apex_core::Scroll::Fraction(f) => {
                 let _ = h.view.evaluate_script(&format!("(function(){{const e = document.scrollingElement || document.documentElement; e.scrollTo(0, {f} * e.scrollHeight);}})();"));
             }
+            apex_core::Scroll::Outline(i) => {
+                let _ = h.view.evaluate_script(&format!("window.__apexTocGo && window.__apexTocGo({i});"));
+            }
         }
     }
 

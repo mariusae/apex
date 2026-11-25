@@ -208,6 +208,9 @@ pub enum LensBody {
     File { name: String, kind: WinKind, text: String, hash: String, select_line: Option<usize> },
     /// A page (a preview, a conversation), as `OpenPage` opens one.
     Page(apex_core::NewPage),
+    /// Text of the tool's, in a scratch buffer called `name`: nothing
+    /// for Del to ask about (an outline, a list to choose from).
+    Scratch { name: String, text: String },
 }
 
 /// Apply a proposal through the leader. Returns the window it opened or
@@ -246,6 +249,10 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
                     Ok(Some(w))
                 }
                 LensBody::Page(page) => Ok(Some(node.lens_page(log, base, page, by)?)),
+                LensBody::Scratch { name, text } => {
+                    let b = node.create_buffer_as(log, &name, &text, None, WinKind::File, true)?;
+                    Ok(Some(node.lens_text(log, base, b, by)?))
+                }
             }
         }
         Proposal::Outline { buffer, by, items } => {

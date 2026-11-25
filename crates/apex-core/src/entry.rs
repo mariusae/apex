@@ -110,6 +110,9 @@ pub enum Scroll {
     Line(u32),
     /// This fraction of the way down.
     Fraction(f32),
+    /// To the page's nth outline entry (`apex_server::outline`, the
+    /// client's `TOC_SCRIPT`): where an outline's entry is revealed.
+    Outline(u32),
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
