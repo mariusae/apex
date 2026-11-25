@@ -88,12 +88,14 @@ pub enum ViewId {
     Body(WindowId),
     ColTag(ColumnId),
     Top,
+    /// A window's input strip (`Window::input`): text its tool takes.
+    Input(WindowId),
 }
 
 impl ViewId {
     pub fn window(&self) -> Option<WindowId> {
         match self {
-            ViewId::Tag(w) | ViewId::Body(w) => Some(*w),
+            ViewId::Tag(w) | ViewId::Body(w) | ViewId::Input(w) => Some(*w),
             _ => None,
         }
     }
@@ -106,6 +108,7 @@ impl fmt::Display for ViewId {
             ViewId::Body(w) => write!(f, "{w}/body"),
             ViewId::ColTag(c) => write!(f, "{c}/tag"),
             ViewId::Top => write!(f, "top"),
+            ViewId::Input(w) => write!(f, "{w}/input"),
         }
     }
 }

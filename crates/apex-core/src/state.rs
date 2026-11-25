@@ -97,6 +97,12 @@ pub struct Window {
     /// fetches anew when the count moves), and a buffer page's scroll.
     pub reload: u64,
     pub scroll: Option<Scroll>,
+    /// An input strip (`WindowOp::Input`): a buffer of text the user
+    /// writes and the window's tool takes when it is sent -- a prompt, a
+    /// line for a REPL -- drawn under the body. Replicated, as any text
+    /// is: a draft is in every UI.
+    #[serde(default)]
+    pub input: Option<BufferId>,
 }
 
 /// A window's status (`WindowOp::ProgramStatus`), as the Program Status
@@ -686,7 +692,7 @@ impl State {
                 }
                 self.windows.insert(
                     id,
-                    Window { id, tag: *tag, body: *body, mono: false, tabstop: 4, autoindent: true, tagexpand: true, execs: BTreeMap::new(), owner: None, owner_name: None, note: None, live: None, diagnostic: false, draft: false, path: path.clone(), label: label.clone(), status: None, via: via.clone(), base: base.clone(), reload: 0, scroll: None },
+                    Window { id, tag: *tag, body: *body, mono: false, tabstop: 4, autoindent: true, tagexpand: true, execs: BTreeMap::new(), owner: None, owner_name: None, note: None, live: None, diagnostic: false, draft: false, path: path.clone(), label: label.clone(), status: None, via: via.clone(), base: base.clone(), reload: 0, scroll: None, input: None },
                 );
             }
             WindowOp::Path { path } => self.window_mut(id)?.path = path.clone(),
@@ -707,6 +713,7 @@ impl State {
             WindowOp::Live { by } => self.window_mut(id)?.live = *by,
             WindowOp::Diagnostic { on } => self.window_mut(id)?.diagnostic = *on,
             WindowOp::Draft { on } => self.window_mut(id)?.draft = *on,
+            WindowOp::Input { buffer } => self.window_mut(id)?.input = *buffer,
             WindowOp::Exec(x) => {
                 self.window_mut(id)?.execs.insert(seq, ExecRecord::new(x));
             }
@@ -993,7 +1000,7 @@ impl State {
             // who owns it, keeps it live; whether it is diagnostic:
             // replicated, so compared (its status above)
             h.update(&postcard::to_stdvec(&(w.owner, w.live, w.diagnostic, w.draft)).unwrap_or_default());
-            h.update(&postcard::to_stdvec(&(&w.owner_name, &w.note)).unwrap_or_default());
+            h.update(&postcard::to_stdvec(&(&w.owner_name, &w.note, w.input)).unwrap_or_default());
             for (seq, e) in &w.execs {
                 h.update(&seq.to_le_bytes());
                 h.update(e.text.as_bytes());

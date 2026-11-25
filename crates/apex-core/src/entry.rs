@@ -263,6 +263,9 @@ pub enum WindowOp {
     /// tool's window they write in), unsaved while it is dirty -- its
     /// handle says so and Del asks -- though no Put saves it.
     Draft { on: bool },
+    /// The window's input strip (`Window::input`): a buffer its owner
+    /// takes the text of when it is sent, drawn under the body; or none.
+    Input { buffer: Option<BufferId> },
     /// B2 (or the CLI) executed something in this window.
     Exec(ExecOp),
     Status { exec: Seq, status: ExecStatusOp },

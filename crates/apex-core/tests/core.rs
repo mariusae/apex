@@ -1117,3 +1117,28 @@ fn a_pages_state_is_in_the_log() {
     assert_eq!(WinKind::parse("preview"), Some(WinKind::Page));
     assert_eq!(WinKind::parse("web"), Some(WinKind::Page));
 }
+
+#[test]
+fn an_input_strip_is_text_of_its_own_and_goes_with_its_window() {
+    let (mut log, mut node, col) = session();
+    let w = node.new_window(&mut log, col, "/tmp/conv", "the conversation\n").unwrap();
+    let b = node.set_input(&mut log, w, Some("draft")).unwrap().expect("a strip");
+    assert_eq!(node.view_buffer(ViewId::Input(w)).unwrap(), b);
+    assert_eq!(node.selection(ViewId::Input(w)).unwrap(), (5, 5), "the caret at the draft's end");
+    // typed into as any text is, the body left as it was
+    node.insert(&mut log, ViewId::Input(w), " more").unwrap();
+    assert_eq!(node.state.buffer(b).unwrap().text.to_string(), "draft more");
+    assert_eq!(node.state.buffer(node.state.window(w).unwrap().body_buffer().unwrap()).unwrap().text.to_string(), "the conversation\n");
+    // replicated
+    let r = follower(&log);
+    assert_eq!(r.state.window(w).unwrap().input, Some(b));
+    assert_eq!(r.state.buffer(b).unwrap().text.to_string(), "draft more");
+    // taken away: its buffer gone
+    node.set_input(&mut log, w, None).unwrap();
+    assert!(node.state.window(w).unwrap().input.is_none() && node.state.buffer(b).is_err());
+    // and with its window
+    let b2 = node.set_input(&mut log, w, Some("")).unwrap().unwrap();
+    node.delete_window(&mut log, w).unwrap();
+    assert!(node.state.buffer(b2).is_err());
+    assert_eq!(f_hash(&log), node.state.hash());
+}

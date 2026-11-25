@@ -26,6 +26,9 @@ pub enum Proposal {
     Lens { base: WindowId, by: AttachmentId, body: LensBody },
     /// The lenses `by` made gone with it (it detached).
     LensesGone { by: AttachmentId },
+    /// Window `window`'s input strip made, with `text` in it, or taken
+    /// away (`None`): text the user writes there, for its tool.
+    Input { window: WindowId, text: Option<String> },
     /// A window on a new, empty buffer at this path (`New path`): a
     /// file's, or scratch (a tool's window, a transcript), with a label
     /// beside the path.
@@ -241,6 +244,11 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
                 }
                 LensBody::Page(page) => Ok(Some(node.lens_page(log, base, page, by)?)),
             }
+        }
+        Proposal::Input { window, text } => {
+            node.catch_up(log)?;
+            node.set_input(log, window, text.as_deref())?;
+            Ok(Some(window))
         }
         Proposal::LensesGone { by } => {
             node.catch_up(log)?;

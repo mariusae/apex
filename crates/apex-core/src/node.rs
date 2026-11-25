@@ -1369,6 +1369,10 @@ impl Node {
             let top = self.state.layout.top_of(o);
             self.delete_window(log, top)?;
         }
+        // its input strip with it
+        if self.state.window(window)?.input.is_some() {
+            self.set_input(log, window, None)?;
+        }
         let w = self.state.window(window)?.clone();
         self.append(log, Shard::Buffer(w.tag), Op::Buffer(BufferOp::ViewDel { view: ViewId::Tag(window) }))?;
         if let Some(b) = w.body_buffer() {
@@ -1424,7 +1428,26 @@ impl Node {
                 self.state.layout.column(c).map(|c| c.tag).ok_or_else(|| CoreError::Missing(format!("column {c}")))
             }
             ViewId::Top => self.state.layout.top.ok_or_else(|| CoreError::Missing("no top row".into())),
+            ViewId::Input(w) => self.state.window(w)?.input.ok_or_else(|| CoreError::Missing(format!("window {w} has no input strip"))),
         }
+    }
+
+    /// Window `w`'s input strip (`Window::input`) made, with `text` in it,
+    /// or taken away (`None`). Made again, it is a new one.
+    pub fn set_input(&mut self, log: &mut Log, w: WindowId, text: Option<&str>) -> Result<Option<BufferId>> {
+        let win = self.state.window(w)?.clone();
+        if let Some(b) = win.input {
+            self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::ViewDel { view: ViewId::Input(w) }))?;
+            self.append(log, Shard::Window(w), Op::Window(WindowOp::Input { buffer: None }))?;
+            self.delete_shard(log, Shard::Buffer(b))?;
+        }
+        let Some(text) = text else { return Ok(None) };
+        let b = self.create_buffer_as(log, "", text, None, WinKind::File, true)?;
+        self.append(log, Shard::Window(w), Op::Window(WindowOp::Input { buffer: Some(b) }))?;
+        self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Input(w) }))?;
+        let end = text.chars().count();
+        self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::Select { view: ViewId::Input(w), q0: end, q1: end }))?;
+        Ok(Some(b))
     }
 
     pub fn selection(&self, view: ViewId) -> Result<(usize, usize)> {

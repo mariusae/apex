@@ -236,6 +236,27 @@ impl Bridge {
                 let html = v["html"].as_str().unwrap_or("");
                 Ok(json!({ "window": self.tool.new_page(path, v["label"].as_str(), html).map_err(e)?.0 }))
             }
+            "lens" => {
+                // a page that is a lens on window `base`
+                let base = v["base"].as_u64().map(WindowId).ok_or("base: a window id")?;
+                let path = v["path"].as_str().ok_or("path")?;
+                let html = v["html"].as_str().unwrap_or("");
+                Ok(json!({ "window": self.tool.lens_page(base, path, v["label"].as_str(), html).map_err(e)?.0 }))
+            }
+            "input" => {
+                // the strip made with "text" in it, or taken away (null)
+                self.tool.set_input(window(v)?, v["text"].as_str()).map_err(e)?;
+                Ok(json!({}))
+            }
+            "take_input" => Ok(json!({ "text": self.tool.take_input(window(v)?).map_err(e)? })),
+            "term_send" => {
+                self.tool.term_send(window(v)?, v["text"].as_str().ok_or("text")?).map_err(e)?;
+                Ok(json!({}))
+            }
+            "term_key" => {
+                self.tool.term_key(window(v)?, v["key"].as_str().ok_or("key")?, v["text"].as_str()).map_err(e)?;
+                Ok(json!({}))
+            }
             "diff" => {
                 let text = v["text"].as_str().ok_or("text")?;
                 let dir = v["dir"].as_str().unwrap_or("");

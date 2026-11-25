@@ -670,3 +670,45 @@ fn a_word_is_put_in_the_top_row_once() {
     assert!(!tool.top_word("Agents").unwrap(), "there already");
     assert_eq!(tool.top().unwrap(), after);
 }
+
+/// A lens a tool makes on a window, with an input strip: the strip's
+/// text the user's to write and the tool's to take, and a draft put
+/// back as the strip is made again; the lens gone with the tool.
+#[test]
+fn a_tools_lens_has_an_input_strip_and_goes_with_the_tool() {
+    let sock = daemon();
+    let mut t = Tool::attach_to(&sock, "main", "lenser").unwrap();
+    let base = t.new_scratch("/tmp/lensed", None).unwrap();
+    let lens = t.lens_page(base, "/tmp/lensed", Some("conversation"), "<p>hi</p>").unwrap();
+    let mut ui = Remote::connect_as(&sock, "main", "ui", AttachmentKind::Tool).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while ui.node.state.layout.lens_of(base) != Some(lens) && Instant::now() < deadline {
+        let _ = ui.step(Duration::from_millis(20));
+    }
+    assert_eq!(ui.node.state.layout.lens_of(base), Some(lens));
+    // a strip, a draft in it, written to as the user would
+    t.set_input(lens, Some("half")).unwrap();
+    assert_eq!(t.input(lens).as_deref(), Some("half"));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while ui.node.state.window(lens).ok().and_then(|w| w.input).is_none() && Instant::now() < deadline {
+        let _ = ui.step(Duration::from_millis(20));
+    }
+    let ib = ui.node.state.window(lens).unwrap().input.expect("the strip, replicated");
+    let version = ui.node.state.buffer(ib).unwrap().version;
+    ui.propose(apex_server::Proposal::ReplaceRange { select: false, dir: None, buffer: ib, version, q0: 4, q1: 4, text: " a prompt".into() }, Duration::from_secs(5)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while t.input(lens).as_deref() != Some("half a prompt") && Instant::now() < deadline {
+        let _ = t.next_event(Some(Duration::from_millis(20)));
+    }
+    // taken: the strip empty
+    assert_eq!(t.take_input(lens).unwrap(), "half a prompt");
+    assert_eq!(t.input(lens).as_deref(), Some(""));
+    // the tool gone: its lens with it, the window back
+    drop(t);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while (ui.node.state.window(lens).is_ok() || ui.node.state.layout.slot(base).is_none()) && Instant::now() < deadline {
+        let _ = ui.step(Duration::from_millis(20));
+    }
+    assert!(ui.node.state.window(lens).is_err() && ui.node.state.buffer(ib).is_err());
+    assert!(ui.node.state.layout.slot(base).is_some());
+}

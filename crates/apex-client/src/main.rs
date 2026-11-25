@@ -181,7 +181,7 @@ impl Render for Acme {
             // a UI hack, on purpose: the keys just say the verbs, which a
             // tool answers
             .on_action(cx.listener(|this, _: &shell::NavBack, window, cx| this.menu_command("Back", window, cx)))
-            .on_action(cx.listener(|this, _: &shell::View, window, cx| this.menu_command("View", window, cx)))
+            .on_action(cx.listener(|this, _: &shell::View, window, cx| this.view_key(window, cx)))
             .on_action(cx.listener(|this, _: &shell::NavFwd, window, cx| this.menu_command("Fwd", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Reconnect, window, cx| {
                 this.ask_reconnect(window, cx);
@@ -398,6 +398,28 @@ impl Render for Acme {
                 let (tx, ty, tw) = (s.r.x0 + CARD_X, s.r.y0 + CARD_Y, s.r.dx() - 2 * CARD_X);
                 let th = if folded { tag_h - 2 * CARD_Y } else { tag_h - CARD_Y };
                 let (bx, bw, bh) = (s.body.x0 + CARD_X, s.body.dx() - 2 * CARD_X, s.body.dy() - CARD_Y);
+                // an input strip (DESIGN.md "Lenses"): at the body's foot,
+                // as many lines as its text takes (a few at most), the body
+                // the rest; a hairline between
+                let strip_h = match win.input.filter(|_| s.body.dy() > 0 && !strip) {
+                    Some(ib) => {
+                        let text = self.node.state.buffer(ib).map(|b| b.text.to_string()).unwrap_or_default();
+                        let lh = self.node.tiling.body_font_height(w).max(1);
+                        let per = ((bw - text_element::LANE as i32) / (lh / 2).max(1)).max(1) as usize;
+                        let lines: usize = text.split('\n').map(|l| l.chars().count().div_ceil(per).max(1)).sum();
+                        let h = lines.clamp(1, 6) as i32 * lh + lh / 2;
+                        (h < bh - lh).then_some(h)
+                    }
+                    None => None,
+                };
+                let bh = match strip_h {
+                    Some(h) => {
+                        area = area.child(at(bx, s.body.y0 + bh - h - 1, bw, 1, div().size_full().bg(gpui::rgb(t.body_border)).into_any_element()));
+                        area = area.child(at(bx, s.body.y0 + bh - h, bw, h, TextElement { acme: me.clone(), view: ViewId::Input(w) }.into_any_element()).cursor(hold(CursorStyle::IBeam)).child(lane(None, hold(CursorStyle::Arrow))));
+                        bh - h - 1
+                    }
+                    None => bh,
+                };
                 if win.body == Body::Page(apex_core::Source::Url) && !strip {
                     // a page's header: its handle, back and forward, and
                     // its address, in the tag's place

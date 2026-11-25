@@ -447,6 +447,52 @@ func (w *Window) Read() (string, error) {
 	return r.Text, nil
 }
 
+// Lens makes a page of html a lens on the window (DESIGN.md "Lenses"):
+// in its place, the window under it, until the lens is deleted, the
+// window goes, or the tool does.
+func (w *Window) Lens(path, label, html string) (*Window, error) {
+	args := map[string]any{"base": w.ID, "path": path, "html": html}
+	if label != "" {
+		args["label"] = label
+	}
+	var r struct {
+		Window int `json:"window"`
+	}
+	if err := w.t.call("lens", args, &r); err != nil {
+		return nil, err
+	}
+	return &Window{ID: r.Window, t: w.t}, nil
+}
+
+// SetInput gives the window an input strip with text in it, the caret
+// at its end: text the user writes there and sends (Send, ⌘↩ in the
+// strip) for the tool to take.
+func (w *Window) SetInput(text string) error {
+	return w.t.call("input", map[string]any{"window": w.ID, "text": text}, nil)
+}
+
+// NoInput takes the window's input strip away.
+func (w *Window) NoInput() error {
+	return w.t.call("input", map[string]any{"window": w.ID, "text": nil}, nil)
+}
+
+// TakeInput takes the text in the window's input strip, leaving it empty.
+func (w *Window) TakeInput() (string, error) {
+	var r struct {
+		Text string `json:"text"`
+	}
+	if err := w.t.call("take_input", map[string]any{"window": w.ID}, &r); err != nil {
+		return "", err
+	}
+	return r.Text, nil
+}
+
+// TermSend types text into the window's terminal as a paste; a final
+// newline is the Enter key.
+func (w *Window) TermSend(text string) error {
+	return w.t.call("term_send", map[string]any{"window": w.ID, "text": text}, nil)
+}
+
 // A Change is one range of several replaced at once (Edits).
 type Change struct {
 	Q0   int    `json:"q0"`

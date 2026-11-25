@@ -751,6 +751,76 @@ impl Tool {
         Ok(w)
     }
 
+    /// A page of `html` as a lens on window `base` (DESIGN.md "Lenses"):
+    /// in its place, `base` under it, until the lens is deleted, `base`
+    /// goes, or this tool does. Ours, as `new_page`'s is.
+    pub fn lens_page(&mut self, base: WindowId, path: &str, label: Option<&str>, html: &str) -> Result<WindowId> {
+        let me = self.remote.attachment();
+        let page = apex_core::NewPage { content: apex_core::NewContent::Html { name: path.to_string(), text: html.to_string() }, via: apex_core::Via::Host, base: String::new(), label: label.map(str::to_string) };
+        let w = self.propose(Proposal::Lens { base, by: me, body: apex_server::LensBody::Page(page) })?.ok_or("no lens made")?;
+        self.remember(w);
+        Ok(w)
+    }
+
+    /// Give window `w` an input strip with `text` in it (a draft put
+    /// back), the caret at its end, or take it away (`None`). Text the
+    /// user writes there is the tool's to take (`take_input`), when the
+    /// user sends it (`Send`, ⌘↩ in the strip).
+    pub fn set_input(&mut self, w: WindowId, text: Option<&str>) -> Result<()> {
+        self.propose(Proposal::Input { window: w, text: text.map(str::to_string) })?;
+        Ok(())
+    }
+
+    /// What is in window `w`'s input strip, if it has one.
+    pub fn input(&self, w: WindowId) -> Option<String> {
+        let b = self.remote.node.state.window(w).ok()?.input?;
+        self.remote.node.state.buffer(b).ok().map(|b| b.text.to_string())
+    }
+
+    /// The text in window `w`'s input strip, taken: the strip left empty.
+    /// An error, and the text left, when the user typed meanwhile.
+    pub fn take_input(&mut self, w: WindowId) -> Result<String> {
+        let b = self.remote.node.state.window(w).ok().and_then(|x| x.input).ok_or("no input strip")?;
+        let buf = self.remote.node.state.buffer(b).map_err(|e| e.to_string())?;
+        let (text, len, version) = (buf.text.to_string(), buf.text.len(), buf.version);
+        if len > 0 {
+            self.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0: 0, q1: len, text: String::new() })?;
+        }
+        Ok(text)
+    }
+
+    /// Type `text` into window `w`'s terminal, as a paste (bracketed,
+    /// where the program asks for it); a final newline is the Enter key.
+    pub fn term_send(&mut self, w: WindowId, text: &str) -> Result<()> {
+        let t = self.term_of(w)?;
+        let (text, enter) = match text.strip_suffix('\n').or_else(|| text.strip_suffix('\r')) {
+            Some(t) => (t, true),
+            None => (text, false),
+        };
+        if !text.is_empty() {
+            self.remote.send(&ClientMsg::TermPaste { term: t, text: text.to_string() });
+        }
+        if enter {
+            self.term_key(w, "enter", Some("\r"))?;
+        }
+        Ok(())
+    }
+
+    /// Press a key in window `w`'s terminal: its name (`enter`,
+    /// `escape`, `c` with control...) and the text it types.
+    pub fn term_key(&mut self, w: WindowId, key: &str, text: Option<&str>) -> Result<()> {
+        let t = self.term_of(w)?;
+        self.remote.send(&ClientMsg::TermKey { term: t, key: apex_server::TermKey { key: key.to_string(), text: text.map(str::to_string), shift: false, control: false, alt: false } });
+        Ok(())
+    }
+
+    fn term_of(&self, w: WindowId) -> Result<TermId> {
+        match self.window_body(w) {
+            Some(apex_core::Body::Term(t)) => Ok(t),
+            _ => Err(Error(format!("window {} is not a terminal", w.0))),
+        }
+    }
+
     /// What window `w`'s body is: text, a terminal, a page (and whose
     /// document: a buffer's, or at an address).
     pub fn window_body(&self, w: WindowId) -> Option<apex_core::Body> {

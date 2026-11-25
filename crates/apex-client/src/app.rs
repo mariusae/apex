@@ -44,7 +44,8 @@ impl Kind {
             ViewId::Top => Kind::Top,
             ViewId::ColTag(_) => Kind::ColTag,
             ViewId::Tag(_) => Kind::WinTag,
-            ViewId::Body(_) => Kind::Body,
+            // an input strip is text as a body is (DESIGN.md "Lenses")
+            ViewId::Body(_) | ViewId::Input(_) => Kind::Body,
         }
     }
 }
@@ -2705,7 +2706,7 @@ impl Acme {
     fn column_of_view(&self, v: ViewId) -> Option<ColumnId> {
         match v {
             ViewId::ColTag(c) => Some(c),
-            ViewId::Tag(w) | ViewId::Body(w) => self.node.state.layout.column_of(w),
+            ViewId::Tag(w) | ViewId::Body(w) | ViewId::Input(w) => self.node.state.layout.column_of(w),
             ViewId::Top => None,
         }
     }
@@ -3001,7 +3002,7 @@ impl Acme {
         let column = match view {
             ViewId::ColTag(c) => layout.column(c),
             // a stashed window (in the stash's preview) is in none
-            ViewId::Tag(w) | ViewId::Body(w) => layout.place_of(w).map(|(ci, _)| &layout.cols[ci]),
+            ViewId::Tag(w) | ViewId::Body(w) | ViewId::Input(w) => layout.place_of(w).map(|(ci, _)| &layout.cols[ci]),
             ViewId::Top => None,
         };
         if column.is_some_and(|c| tiling::is_strip(c.r)) {
@@ -3223,7 +3224,7 @@ impl Acme {
 
     fn ctx_of(&self, view: ViewId) -> ExecCtx {
         match view {
-            ViewId::Tag(w) | ViewId::Body(w) => ExecCtx::Window(w),
+            ViewId::Tag(w) | ViewId::Body(w) | ViewId::Input(w) => ExecCtx::Window(w),
             ViewId::ColTag(c) => ExecCtx::Column(c),
             ViewId::Top => ExecCtx::Top,
         }
@@ -5170,6 +5171,18 @@ impl Acme {
             Some((Target::Term(w, _), _)) | Some((Target::Web(w), _)) => Some(w),
             None => self.node.seltext.and_then(|s| s.window()),
         }
+    }
+
+    /// ⌘↩: `View` in the window under the pointer (DESIGN.md "Lenses");
+    /// in a window's input strip, `Send` -- the strip's text its tool's.
+    pub fn view_key(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let pos = self.pointer(window);
+        if let Some((Target::View(ViewId::Input(w)), _)) = self.locate(pos) {
+            self.execute(ExecCtx::Window(w), "Send", cx);
+            cx.notify();
+            return;
+        }
+        self.menu_command("View", window, cx);
     }
 
     /// A menu item that is an acme command: `Put`, `Del`, `New`, `Edit ,`
