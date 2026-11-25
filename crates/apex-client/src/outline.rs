@@ -248,6 +248,10 @@ impl Acme {
         let t = crate::theme::theme();
         let at = self.outline.panel_at.clone();
         let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.16), offset: point(px(0.), px(8.)), blur_radius: px(28.), spread_radius: px(0.), inset: false };
+        // a first level is a title over what is under it, bold, only
+        // when there is something under it: a flat list (an agent's
+        // turns, a terminal's commands) is all of a kind, none bold
+        let nested = toc.heads.iter().any(|h| h.level > 1);
         let rows = toc.heads.iter().enumerate().map(|(i, h)| {
             let here = current == Some(i);
             div()
@@ -264,7 +268,7 @@ impl Acme {
                 .text_ellipsis()
                 .cursor_pointer()
                 .text_color(rgb(if here { t.accent } else { t.panel_text }))
-                .when(h.level == 1 || here, |d| d.font_weight(crate::fonts::weight(gpui::FontWeight::SEMIBOLD)))
+                .when((h.level == 1 && nested) || here, |d| d.font_weight(crate::fonts::weight(gpui::FontWeight::SEMIBOLD)))
                 .hover(|d| d.bg(rgb(t.tag_bg)))
                 .gap(px(10.))
                 .child(div().flex_1().min_w_0().overflow_hidden().text_ellipsis().child(title(h)))

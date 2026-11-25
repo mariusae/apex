@@ -881,19 +881,23 @@ impl Webs {
                     (x1 > x0 && y1 > y0).then(|| (f64::from(f32::from(x0 - vb.origin.x)), f64::from(f32::from(y0 - vb.origin.y)), f64::from(f32::from(x1 - x0)), f64::from(f32::from(y1 - y0)), round))
                 })
                 .collect();
-            if local == h.holes {
-                continue;
-            }
-            h.holes = local.clone();
             let wk = h.view.webview();
             let view = &*wk as *const _ as *mut Object;
             // SAFETY: the WKWebView is alive while its host is; CoreAnimation
             // and CoreGraphics calls on the main thread.
             unsafe {
+                // the holes as they were, and the mask still on the layer:
+                // nothing to do. A layer not there yet (a page just made)
+                // has none: they are cut once it is, not taken as cut
                 let layer: *mut Object = msg_send![view, layer];
                 if layer.is_null() {
                     continue;
                 }
+                let mask: *mut Object = msg_send![layer, mask];
+                if local == h.holes && (local.is_empty() || !mask.is_null()) {
+                    continue;
+                }
+                h.holes = local.clone();
                 if local.is_empty() {
                     let nil: *mut Object = std::ptr::null_mut();
                     let _: () = msg_send![layer, setMask: nil];
