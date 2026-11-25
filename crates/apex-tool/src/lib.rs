@@ -78,6 +78,8 @@ use apex_server::Proposal;
 
 pub use apex_core::entry::{AttachmentKind, Scroll, WinKind};
 pub use apex_core::buffer::OutlineItem;
+/// A window's outline's entries, and where each is (`Tool::outline`).
+pub use apex_server::outline::{At as OutlineAt, Entry as OutlineEntry};
 pub use apex_core::ids::{RuleId, WindowId};
 pub use apex_core::status::{Kind, State};
 
@@ -771,6 +773,59 @@ impl Tool {
         let b = self.body_of(w)?;
         let by = self.remote.attachment();
         self.propose(Proposal::Outline { buffer: b, by, items })?;
+        Ok(())
+    }
+
+    /// A text lens of the tool's on window `base` (DESIGN.md "Lenses"):
+    /// `text` in a scratch buffer called `path`, in `base`'s place until
+    /// the lens is deleted, `base` goes, or this tool does. Ours, as
+    /// `new_window`'s is; `replace` rewrites it.
+    pub fn lens_text(&mut self, base: WindowId, path: &str, text: &str) -> Result<WindowId> {
+        let me = self.remote.attachment();
+        let w = self.propose(Proposal::Lens { base, by: me, body: apex_server::LensBody::Scratch { name: path.to_string(), text: text.to_string() } })?.ok_or("no lens made")?;
+        self.remember(w);
+        Ok(w)
+    }
+
+    /// Window `w`'s outline, whatever its body, as the scrollbar shows
+    /// it (`apex_server::outline`): the outline a tool gave its text, a
+    /// terminal's commands, a page's headings or marked elements. Each
+    /// entry says where it is, for `reveal`; `None` when it has none.
+    pub fn outline(&self, w: WindowId) -> Option<Vec<OutlineEntry>> {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+        apex_server::outline::of(&self.remote.node, w, now)
+    }
+
+    /// Which of window `w`'s outline's `entries` it is showing: the last
+    /// at or before the top of its view. `None` for a page, whose scroll
+    /// only its clients know.
+    pub fn outline_current(&self, w: WindowId, entries: &[OutlineEntry]) -> Option<usize> {
+        apex_server::outline::current(&self.remote.node, w, entries)
+    }
+
+    /// Window `w` shown at `at`, one of its outline's entries, on every
+    /// client: a text with the entry's line at the top and dot there, a
+    /// terminal scrolled to the command's prompt, a page to the entry.
+    pub fn reveal(&mut self, w: WindowId, at: OutlineAt) -> Result<()> {
+        match (self.window_body(w), at) {
+            (Some(apex_core::Body::Text(b)), OutlineAt::Text(a)) => {
+                let (a, start) = self.remote.node.state.buffer(b).map(|buf| {
+                    let a = a.min(buf.text.len());
+                    (a, buf.text.line_start(buf.text.line_of(a)))
+                }).map_err(|e| Error(e.to_string()))?;
+                self.propose(Proposal::Origin { view: ViewId::Body(w), at: start })?;
+                self.propose(Proposal::Select { view: ViewId::Body(w), q0: a, q1: a })?;
+            }
+            (Some(apex_core::Body::Term(t)), OutlineAt::Term(line)) => {
+                let top = self.remote.node.state.terms.get(&t).map(|x| x.top).unwrap_or(0);
+                self.remote.send(&ClientMsg::TermScroll { term: t, delta: line as i64 - top as i64, at: None });
+            }
+            (Some(apex_core::Body::Page(_)), OutlineAt::Page(i)) => {
+                self.propose(Proposal::PageScroll { window: w, scroll: Some(Scroll::Outline(i)) })?;
+            }
+            (None, _) => return Err(Error(format!("no window {}", w.0))),
+            _ => return Err("not where that window's outline is".into()),
+        }
         Ok(())
     }
 

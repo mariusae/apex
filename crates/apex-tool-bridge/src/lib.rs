@@ -243,6 +243,35 @@ impl Bridge {
                 let html = v["html"].as_str().unwrap_or("");
                 Ok(json!({ "window": self.tool.lens_page(base, path, v["label"].as_str(), html).map_err(e)?.0 }))
             }
+            "lens_text" => {
+                // a scratch text, at "path", that is a lens on window `base`
+                let base = v["base"].as_u64().map(WindowId).ok_or("base: a window id")?;
+                let path = v["path"].as_str().ok_or("path")?;
+                Ok(json!({ "window": self.tool.lens_text(base, path, v["text"].as_str().unwrap_or("")).map_err(e)?.0 }))
+            }
+            "outline_of" => {
+                // the window's outline, whatever its body: {entries, current}
+                let w = window(v)?;
+                let Some(entries) = self.tool.outline(w) else { return Ok(json!({ "entries": null })) };
+                let current = self.tool.outline_current(w, &entries);
+                let entries: Vec<Value> = entries.iter().map(|x| json!({ "level": x.level, "title": x.title, "detail": x.detail, "failed": x.failed, "at": at_json(x.at) })).collect();
+                Ok(json!({ "entries": entries, "current": current }))
+            }
+            "reveal" => {
+                // the window shown at an outline entry's "at"
+                let at = &v["at"];
+                let at = if let Some(n) = at["text"].as_u64() {
+                    apex_tool::OutlineAt::Text(n as usize)
+                } else if let Some(n) = at["term"].as_u64() {
+                    apex_tool::OutlineAt::Term(n)
+                } else if let Some(n) = at["page"].as_u64() {
+                    apex_tool::OutlineAt::Page(n as u32)
+                } else {
+                    return Err("at: {text|term|page: n}".into());
+                };
+                self.tool.reveal(window(v)?, at).map_err(e)?;
+                Ok(json!({}))
+            }
             "input" => {
                 // the strip made with "text" in it, or taken away (null)
                 self.tool.set_input(window(v)?, v["text"].as_str()).map_err(e)?;
@@ -539,6 +568,16 @@ fn base64_decode(s: &str) -> Option<Vec<u8>> {
         }
     }
     Some(out)
+}
+
+/// Where an outline's entry is, as the bridge says it: `{"text": n}`,
+/// `{"term": n}`, `{"page": n}`.
+fn at_json(at: apex_tool::OutlineAt) -> Value {
+    match at {
+        apex_tool::OutlineAt::Text(n) => json!({ "text": n }),
+        apex_tool::OutlineAt::Term(n) => json!({ "term": n }),
+        apex_tool::OutlineAt::Page(n) => json!({ "page": n }),
+    }
 }
 
 #[cfg(test)]

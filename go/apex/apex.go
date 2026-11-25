@@ -495,6 +495,63 @@ func (w *Window) SetOutline(items []OutlineItem) error {
 	return w.t.call("outline", map[string]any{"window": w.ID, "items": v}, nil)
 }
 
+// LensText makes text of the tool's, a scratch buffer at path, a lens on
+// the window: in its place until the lens is deleted, the window goes, or
+// the tool does. Replace rewrites it.
+func (w *Window) LensText(path, text string) (*Window, error) {
+	var r struct {
+		Window int `json:"window"`
+	}
+	if err := w.t.call("lens_text", map[string]any{"base": w.ID, "path": path, "text": text}, &r); err != nil {
+		return nil, err
+	}
+	return &Window{ID: r.Window, t: w.t}, nil
+}
+
+// An OutlineAt is where an outline's entry is, in its window's terms:
+// one of a place in the text, a history line of the terminal, or the
+// page's nth entry.
+type OutlineAt struct {
+	Text *int `json:"text,omitempty"`
+	Term *int `json:"term,omitempty"`
+	Page *int `json:"page,omitempty"`
+}
+
+// An OutlineEntry is one of a window's outline's entries, whatever its
+// body: a symbol a tool gave a text, a terminal's command (Detail its
+// when and how long, Failed if it did), a page's heading.
+type OutlineEntry struct {
+	Level  int       `json:"level"`
+	Title  string    `json:"title"`
+	Detail string    `json:"detail,omitempty"`
+	Failed bool      `json:"failed"`
+	At     OutlineAt `json:"at"`
+}
+
+// Outline is the window's outline, as its scrollbar shows it, and the
+// index of the entry it is showing (-1 when unknown: a page's); nil
+// when it has none.
+func (w *Window) Outline() ([]OutlineEntry, int, error) {
+	var r struct {
+		Entries []OutlineEntry `json:"entries"`
+		Current *int           `json:"current"`
+	}
+	if err := w.t.call("outline_of", map[string]any{"window": w.ID}, &r); err != nil {
+		return nil, -1, err
+	}
+	cur := -1
+	if r.Current != nil {
+		cur = *r.Current
+	}
+	return r.Entries, cur, nil
+}
+
+// Reveal shows the window at one of its outline's entries, on every
+// client.
+func (w *Window) Reveal(at OutlineAt) error {
+	return w.t.call("reveal", map[string]any{"window": w.ID, "at": at}, nil)
+}
+
 // TakeInput takes the text in the window's input strip, leaving it empty.
 func (w *Window) TakeInput() (string, error) {
 	var r struct {

@@ -675,7 +675,9 @@ impl Node {
         if !matches!(win.body, Body::Page(Source::Buffer(_))) {
             return Err(CoreError::Missing(format!("window {w}: not a buffer page")));
         }
-        if win.scroll != scroll {
+        // an outline's entry is gone to however often it is asked for;
+        // anywhere else, once each time it is somewhere new
+        if win.scroll != scroll || matches!(scroll, Some(Scroll::Outline(_))) {
             self.append(log, Shard::Window(w), Op::Window(WindowOp::PageScroll { scroll }))?;
         }
         Ok(())

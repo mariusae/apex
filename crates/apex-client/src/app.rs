@@ -4438,7 +4438,7 @@ impl Acme {
                 // scrolled where the log says (a preview following its
                 // file's caret: the preview tool proposes it)
                 if let Some(s) = win.scroll {
-                    self.webs.follow(w, s);
+                    self.webs.follow(w, s, win.scrolls);
                 }
             }
             _ => {

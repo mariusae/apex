@@ -446,7 +446,7 @@ pub struct WebHost {
     html: Option<(u64, String)>,
     /// Where the page was last scrolled to, as the log said
     /// (`Window::scroll`).
-    followed: Option<apex_core::Scroll>,
+    followed: Option<(apex_core::Scroll, u64)>,
     /// The window's reload count when the page was last loaded: a count
     /// that moves is a reload asked for (`Window::reload`).
     reloads: Option<u64>,
@@ -1614,14 +1614,15 @@ if (best) {{
     }
 
     /// Window `w`'s page scrolled as the log says (`Window::scroll`): to
-    /// a source line's marker, or a fraction of the way down; once each
-    /// time it says somewhere new.
-    pub fn follow(&mut self, w: WindowId, scroll: apex_core::Scroll) {
+    /// a source line's marker, a fraction of the way down, an outline's
+    /// entry; once each time it says somewhere new, or is scrolled again
+    /// (`count`, `Window::scrolls`).
+    pub fn follow(&mut self, w: WindowId, scroll: apex_core::Scroll, count: u64) {
         let Some(h) = self.hosts.get_mut(&w) else { return };
-        if h.followed == Some(scroll) {
+        if h.followed == Some((scroll, count)) {
             return;
         }
-        h.followed = Some(scroll);
+        h.followed = Some((scroll, count));
         match scroll {
             apex_core::Scroll::Line(line) => Self::follow_line(h, line),
             // all the way down: to its end, and kept there as it grows

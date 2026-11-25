@@ -97,6 +97,11 @@ pub struct Window {
     /// fetches anew when the count moves), and a buffer page's scroll.
     pub reload: u64,
     pub scroll: Option<Scroll>,
+    /// How many times a buffer page was scrolled (`WindowOp::PageScroll`):
+    /// a client scrolls it again when this moves, though `scroll` is
+    /// what it was (an outline's entry revealed twice).
+    #[serde(default)]
+    pub scrolls: u64,
     /// An input strip (`WindowOp::Input`): a buffer of text the user
     /// writes and the window's tool takes when it is sent -- a prompt, a
     /// line for a REPL -- drawn under the body. Replicated, as any text
@@ -702,12 +707,16 @@ impl State {
                 }
                 self.windows.insert(
                     id,
-                    Window { id, tag: *tag, body: *body, mono: false, tabstop: 4, autoindent: true, tagexpand: true, execs: BTreeMap::new(), owner: None, owner_name: None, note: None, live: None, diagnostic: false, draft: false, path: path.clone(), label: label.clone(), status: None, via: via.clone(), base: base.clone(), reload: 0, scroll: None, input: None },
+                    Window { id, tag: *tag, body: *body, mono: false, tabstop: 4, autoindent: true, tagexpand: true, execs: BTreeMap::new(), owner: None, owner_name: None, note: None, live: None, diagnostic: false, draft: false, path: path.clone(), label: label.clone(), status: None, via: via.clone(), base: base.clone(), reload: 0, scroll: None, scrolls: 0, input: None },
                 );
             }
             WindowOp::Path { path } => self.window_mut(id)?.path = path.clone(),
             WindowOp::Reload => self.window_mut(id)?.reload += 1,
-            WindowOp::PageScroll { scroll } => self.window_mut(id)?.scroll = *scroll,
+            WindowOp::PageScroll { scroll } => {
+                let win = self.window_mut(id)?;
+                win.scroll = *scroll;
+                win.scrolls += 1;
+            }
             WindowOp::Label { label } => self.window_mut(id)?.label = label.clone(),
             WindowOp::ProgramStatus { status } => self.window_mut(id)?.status = status.clone(),
             WindowOp::Font { mono } => self.window_mut(id)?.mono = *mono,
