@@ -2685,3 +2685,110 @@ is still the whole path's, so a click on `src/` lists where it really is
 and the path's picker goes up past the directory into whole paths. The
 tag is drawn from the state every frame, so it follows a `cd` at once.
 
+
+## Lenses
+
+*Proposed.* A lens is a window that stands in for another, its
+**base**, in the base's place: a file's preview, an agent's
+conversation over its terminal, the file `$EDITOR` edits over the
+terminal that ran it. It replaces the window stacks (`Layout::covers`,
+`cover_window`, `swap_window`, `raise_window`, the `Swap` builtin,
+`ClientMsg::EditOver`, `OpenWindow{cover}`). A stack could be
+reordered; a lens can only be made and taken away, and everything a
+lens does beyond that is its tool's.
+
+- **Made and removed, nothing else.** `Proposal::Lens { base, body }`
+  makes a window on `body` (a buffer, or a page) as `base`'s lens.
+  Deleting the lens removes it, and the base shows again. There is no
+  swap, raise or reorder.
+- **A chain, grown and shrunk at its top.** A lens on a window that
+  already has one goes on the top lens; its base is the lens under it.
+  `$EDITOR` from an agent's terminal whose conversation is showing
+  goes over the conversation, and the conversation comes back when the
+  file's window goes.
+- **It goes with its base.** Deleting a base deletes its lens, and so
+  on up the chain: the terminal exiting takes its conversation with it.
+- **It goes with its owner.** A lens is its maker's attachment's, and
+  goes when that detaches, as a status does: a tool that dies leaves
+  no face over the window it was showing.
+- **The place is the chain's.** Stash, move, grow, minimize act on the
+  place and take the chain with them. Keys and clicks are the top's.
+  A jump to any window in the chain (B3, Goto, a notification) shows
+  the place as it is, top lens and all, and tells the lens's owner
+  (`Revealed { base, at }`): Preview scrolls its page to the line, or
+  takes itself away if it would rather the text were seen.
+- **The status is the place's.** The handle shows the most pressing
+  status in the chain: an agent done under its conversation is done.
+- **Not written down.** A dump leaves lenses out: a page lens is its
+  tool's to make again, and an editor lens is gone with its process.
+
+The tool keeps what a lens was: it can only be removed, so what is in
+it -- a page's scroll, a draft -- is the tool's to keep and give back
+the next time. Preview puts the file at the page's top line as its lens
+goes (by the page's `data-line`, from `PageScroll`), and the page at
+the file's when it is made; the agent tool keeps an unsent draft and
+puts it back.
+
+### `$EDITOR` is a lens
+
+`apex editor FILE`, run in a window (`$winid`), proposes a lens on that
+window whose body is FILE's buffer -- a window of its own on the file's
+text, as `EditOver` made -- and waits for the lens to go. Del removes
+it (a dirty buffer warns first, as Del does), the terminal shows again,
+and editor exits. Interrupted, it detaches, and its lens goes with it.
+There is no peeking at the terminal meanwhile: Swap is gone.
+
+### ⌘↩ is a word
+
+A key runs a word, as if B2'd in the window under the pointer, and the
+rules say whose it is. ⌘↩ runs `View`. apex gives `View` no meaning of
+its own; tools offer it:
+
+- Preview, on a file it converts: `View` makes the rendered page its
+  lens; `View` on the lens removes it.
+- The agent tool, on an agent's terminal (`sync_targets` already offers
+  it verbs there): `View` makes the conversation its lens -- the
+  prompts, tool calls folded to a line, the replies rendered, kept as
+  the agent goes -- with an input strip; `View` on it removes it.
+
+At first the binding is the client's; later the keys a session binds
+can be settings (`apex set key.cmd-enter View`).
+
+### The input strip
+
+A window can have an **input strip**: a second text buffer, its
+owner's, drawn under the body, a few lines tall and growing as it is
+typed into. It is apex text -- B2, snarf, Edit, undo all work in it --
+and it is replicated as any buffer is, so a draft is in every UI and
+survives switching. Submitting is a word (`Send`), run in the strip's
+context, so a key can mean it there (⌘↩ in the strip is `Send`, not
+`View`) while ↩ stays a newline. The owner hears it, reads the strip
+and clears it. The agent lens uses one for prompts, and `Stop` in its
+tag interrupts the agent; a REPL, a search, a notebook's prompt could
+use one too.
+
+The agent tool needs to type into a terminal for this, prompts and
+Stop: a `Tool::term_send`, not `apex term send` run as a process.
+
+### Outlines
+
+A tool can give a window an **outline**:
+`Proposal::Outline { window, items }`, each item a level, a title and
+an anchor -- in text an offset `apply` moves with edits, as it moves
+views; in a page an element or a `data-line`; in a terminal a prompt
+mark. It is the tool's and goes with it. The client draws it as it
+draws a page's headings now (`outline.rs`: ticks on the bar, the list
+the pointer brings out), from the page or from a tool.
+
+The lsp tool gives each file window it serves its symbols
+(`textDocument/documentSymbol`), kept up as the file changes; the agent
+tool gives its conversation lens its turns.
+
+### Order
+
+1. `Lens` and its removal, replacing the stacks: the layout's model,
+   going with the base and the owner, the place's status; `apex
+   editor` moved onto it; covers, Swap and `EditOver` taken out.
+2. ⌘↩ running `View`; Preview's lens, scroll carried both ways.
+3. The input strip and `Send`; `Tool::term_send`; the agent lens.
+4. Outlines from tools; the lsp tool's symbols.
