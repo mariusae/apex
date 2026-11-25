@@ -148,8 +148,10 @@ windows put away out of the tiling, which is the core's
   place or opens a thing (⌘P, ⌘O, the picker, the folder and path
   pickers, ^F's list, the session menu, the outline by a scrollbar);
   in a list with no keys, the row under the pointer. Where a list
-  already is (the session shown, the heading being read, ⌘P's tab) is
-  a ✓ in the quiet ink. What is anchored to a thing -- the B4 menu, the
+  already is (the session shown, ⌘P's tab) is a ✓ in the quiet ink;
+  the heading being read, in the outline by a scrollbar, has the chosen
+  row's bar at its left, and the pill naming it there is a popover
+  row's height at 13, a target the pointer finds. What is anchored to a thing -- the B4 menu, the
   session menu, the pickers, ^F's list, the outline, the cards -- is a
   popover, one chrome for all (`shell::popover`): rounded 9, the
   palette's half-pixel hairline, one nearer shadow, rows 26 high at the

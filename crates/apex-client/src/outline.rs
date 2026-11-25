@@ -35,8 +35,9 @@ const PAD: f32 = crate::shell::POPOVER_PAD + crate::shell::HAIRLINE;
 /// number short of the thumb's, so a stop is centred on it to the pixel.
 const STOP: [f32; 5] = [0., 4., 3., 2., 2.];
 
-/// How tall the pill naming the part being read is.
-const PILL: f32 = 20.;
+/// How tall the pill naming the part being read is: a popover row's, a
+/// target the pointer finds.
+const PILL: f32 = crate::shell::POPOVER_ROW_H;
 
 /// The outline's state in the app: which page's is out, its bar (as the
 /// pointer last found it: the bars are laid out after the panel is made),
@@ -231,7 +232,7 @@ impl Acme {
 
     /// The outline beside the bar of the page whose it is: its pill
     /// (`outline_pill`), or the whole of it, a heading a row, indented by
-    /// level, the view's marked as every list marks where it is (`shell::HERE`); B1 on one, the page there.
+    /// level, the view's with a menu's chosen bar at its left; B1 on one, the page there.
     pub fn outline_panel(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let w = self.outline.open?;
         let bar = self.outline.bar?;
@@ -261,9 +262,9 @@ impl Acme {
                 .overflow_hidden()
                 .cursor_default()
                 .when(h.level == 1 && nested, |d| d.font_weight(crate::fonts::weight(gpui::FontWeight::SEMIBOLD)))
-                // the heading being read: the quiet mark every list has
-                // for where it is
-                .child(div().flex_none().w(px(14.)).text_color(rgb(t.panel_dim)).font_weight(crate::fonts::weight(gpui::FontWeight::NORMAL)).child(if here { crate::shell::HERE } else { "" }))
+                // the heading being read: the bar a menu's chosen row
+                // has at its left, B3's, as going there is
+                .when(here, |d| d.child(div().absolute().left(px(3.)).top(px(crate::shell::BAR_INSET)).bottom(px(crate::shell::BAR_INSET)).w(px(2.5)).rounded(px(1.25)).bg(rgb(t.look_hl))))
                 .child(div().flex_none().w(px(12. * (h.level.saturating_sub(1)) as f32)))
                 .child(div().flex_1().min_w_0().overflow_hidden().text_ellipsis().child(title(h)))
                 // what more it says (a command's run), quieter, at the right
@@ -323,13 +324,13 @@ impl Acme {
             .gap(px(5.))
             .h(px(PILL))
             .max_w(px(320.))
-            .px(px(8.))
+            .px(px(10.))
             .rounded(px(PILL / 2.))
             .bg(rgb(t.tag_bg))
             .border_1()
             .border_color(rgb(t.body_border))
             .font_family(crate::fonts::ui())
-            .text_size(px(11.5))
+            .text_size(px(13.))
             .text_color(rgb(t.text_dim))
             .whitespace_nowrap()
             .child(self.overlay_mark_by(px(0.)))
