@@ -44,7 +44,7 @@ pub struct Sub {
 #[derive(Clone, Debug)]
 pub struct Agent {
     pub session: String,
-    /// `claude`, `codex`, `muse`, `pi`.
+    /// `claude`, `codex`, `muse`, `pi`, `agy`.
     pub kind: String,
     pub cwd: String,
     pub transcript: Option<String>,
@@ -179,6 +179,22 @@ impl Agent {
                 self.asking = None;
                 self.said = None;
                 self.why = None;
+            }
+            // Antigravity fires PreInvocation before every model call in a
+            // turn: only a fresh turn (or a new prompt) resets the turn state
+            "PreInvocation" => {
+                let fresh = self.state != State::Working || (e.text.is_some() && e.text != self.prompt);
+                self.state = State::Working;
+                if fresh {
+                    if e.text.is_some() {
+                        self.prompt = e.text.clone();
+                    }
+                    self.running.clear();
+                    self.asked = None;
+                    self.asking = None;
+                    self.said = None;
+                    self.why = None;
+                }
             }
             "PreToolUse" => {
                 self.state = State::Working;
@@ -397,15 +413,15 @@ pub fn shown_dir(dir: &str, home: Option<&str>) -> String {
 /// with `under` given, only agents in that directory are blocks, and
 /// the last line counts the rest; with `session` given (`-s`), only
 /// agents started in that apex session are. With no agents the first
-/// line is a guide: `Start claude`, `Start codex`, `Start muse` and
-/// `Start pi` are verbs, to be B2'd there.
+/// line is a guide: `Start claude`, `Start codex`, `Start muse`,
+/// `Start pi` and `Start agy` are verbs, to be B2'd there.
 pub fn pane(agents: &[&Agent], now: i64, home: Option<&str>, under_dir: Option<&str>, session: Option<&str>) -> (String, Vec<(String, String)>, String) {
     let (here, elsewhere): (Vec<&Agent>, Vec<&Agent>) = agents.iter().partition(|a| match session {
         Some(s) => a.apex.as_deref() == Some(s),
         None => under_dir.is_none_or(|d| under(&a.cwd, d)),
     });
     let header = match (here.len(), elsewhere.len()) {
-        (0, 0) => "– no agents yet: Start claude, Start codex, Start muse, Start pi, or `apex tool agent install` first\n".to_string(),
+        (0, 0) => "– no agents yet: Start claude, Start codex, Start muse, Start pi, Start agy, or `apex tool agent install` first\n".to_string(),
         (0, _) if session.is_some() => "– no agents in this session\n".to_string(),
         (0, _) => "– no agents here\n".to_string(),
         (1, _) => "– 1 agent\n".to_string(),
@@ -578,5 +594,26 @@ mod tests {
         assert_eq!(shown_dir("/home/me/src", Some("/home/me")), "~/src");
         assert_eq!(shown_dir("/home/me", Some("/home/me")), "~");
         assert_eq!(shown_dir("/home/meh/src", Some("/home/me")), "/home/meh/src");
+    }
+
+    #[test]
+    fn pre_invocation_starts_a_turn_and_keeps_running_calls_mid_turn() {
+        let mut ag = Agents::default();
+        let agy = |event: &str, ms: i64| Event { ms, agent: "agy".into(), event: event.into(), session: "ec33ebf9-0cba".into(), cwd: "/home/me/proj".into(), ..Event::default() };
+        ag.apply(&agy("SessionStart", 1000));
+        assert_eq!(ag.get("ec33ebf9-0cba").unwrap().state, State::Idle);
+        ag.apply(&Event { text: Some("fix the test".into()), ..agy("PreInvocation", 2000) });
+        ag.apply(&Event { call: Some("step-2".into()), title: Some("run_command: cargo test".into()), ..agy("PreToolUse", 2100) });
+        // another invocation in the same turn with the same prompt does not clear running calls
+        ag.apply(&Event { text: Some("fix the test".into()), ..agy("PreInvocation", 2200) });
+        assert_eq!(ag.get("ec33ebf9-0cba").unwrap().doing().as_deref(), Some("▶ run_command: cargo test"));
+        ag.apply(&Event { call: Some("step-2".into()), ..agy("PostToolUse", 2300) });
+        ag.apply(&Event { text: Some("Fixed.".into()), ..agy("Stop", 2400) });
+        assert_eq!(ag.get("ec33ebf9-0cba").unwrap().state, State::Idle);
+        assert_eq!(ag.get("ec33ebf9-0cba").unwrap().exchange.as_ref().map(|x| (x.asked.as_str(), x.said.as_str())), Some(("fix the test", "Fixed.")));
+        // a new turn with the same prompt still transitions back to Working
+        ag.apply(&Event { text: Some("fix the test".into()), ..agy("PreInvocation", 3000) });
+        let a = ag.get("ec33ebf9-0cba").unwrap();
+        assert_eq!((a.state, a.said.as_deref()), (State::Working, None));
     }
 }

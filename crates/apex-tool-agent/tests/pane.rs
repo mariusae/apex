@@ -139,7 +139,7 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     let mut t = Tool::attach_to(&sock, "main", "agent").unwrap();
     // the page's converter: the markdown itself, so the test can read it
     t.set("Preview.md", "cat");
-    let pane = Pane::start(t, Opts { pane: true, all: true, claude_home: claude_home.clone(), codex_home: tmp.join("codex-home"), muse_home: muse_home.clone(), ..Opts::new(tmp.clone(), logs.clone()) }).unwrap();
+    let pane = Pane::start(t, Opts { pane: true, all: true, claude_home: claude_home.clone(), codex_home: tmp.join("codex-home"), muse_home: muse_home.clone(), agy_home: tmp.join("agy-home"), ..Opts::new(tmp.clone(), logs.clone()) }).unwrap();
     let served = std::thread::spawn(move || {
         let mut pane = pane;
         let r = pane.serve();
@@ -865,5 +865,127 @@ fn a_resumed_sessions_lens_is_its_whole_transcript() {
         let _ = c.step(Duration::from_millis(20));
     }
     assert!(has(&c, "ax-prompt\">and then?</pre>") && has(&c, "ax-prompt\">no, the other one</pre>") && !has(&c, "from a peer"), "{}", text_of(&c, lens));
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// An Antigravity (`agy`) agent's log is a block too, its PreInvocation
+/// starts a turn, B3 opens its transcript with live glyphs keyed by
+/// `stepIdx`, and History finds past sessions via `history.jsonl`.
+#[test]
+fn an_agy_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
+    let sock = daemon();
+    let tmp = std::env::temp_dir().join(format!("apex-tool-agent-pane-agy-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let logs = tmp.join("agent");
+    let proj = tmp.join("proj");
+    let agy_home = tmp.join("agy-home");
+    let transcript = agy_home.join("brain/82316aaa-3333/.system_generated/logs/transcript.jsonl");
+    std::fs::create_dir_all(transcript.parent().unwrap()).unwrap();
+    std::fs::create_dir_all(&proj).unwrap();
+    std::fs::write(
+        &transcript,
+        concat!(
+            "{\"step_index\":0,\"source\":\"USER_EXPLICIT\",\"type\":\"USER_INPUT\",\"status\":\"DONE\",\"content\":\"<USER_REQUEST>\\nwhat is in hosts?\\n</USER_REQUEST>\"}\n",
+            "{\"step_index\":1,\"source\":\"MODEL\",\"type\":\"PLANNER_RESPONSE\",\"status\":\"DONE\",\"tool_calls\":[{\"name\":\"run_command\",\"args\":{\"CommandLine\":\"\\\"cat /etc/hosts\\\"\",\"toolSummary\":\"\\\"Read hosts\\\"\"}}]}\n"
+        ),
+    )
+    .unwrap();
+    let past_transcript = agy_home.join("brain/cafebabe-4444/.system_generated/logs/transcript.jsonl");
+    std::fs::create_dir_all(past_transcript.parent().unwrap()).unwrap();
+    std::fs::write(
+        &past_transcript,
+        concat!(
+            "{\"step_index\":0,\"source\":\"USER_EXPLICIT\",\"type\":\"USER_INPUT\",\"status\":\"DONE\",\"content\":\"<USER_REQUEST>\\nan old agy prompt\\n</USER_REQUEST>\"}\n",
+            "{\"step_index\":1,\"source\":\"MODEL\",\"type\":\"PLANNER_RESPONSE\",\"status\":\"DONE\",\"content\":\"an old agy answer\"}\n"
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        agy_home.join("history.jsonl"),
+        format!("{{\"conversationId\":\"cafebabe-4444\",\"workspace\":\"{}\",\"display\":\"an old agy prompt\",\"timestamp\":1000}}\n", tmp.display()),
+    )
+    .unwrap();
+
+    let ev = |event: &str| Event {
+        ms: event::now_ms(),
+        agent: "agy".into(),
+        event: event.into(),
+        session: "82316aaa-3333".into(),
+        cwd: proj.display().to_string(),
+        transcript: Some(transcript.display().to_string()),
+        ..Event::default()
+    };
+    event::append(&logs, &ev("SessionStart")).unwrap();
+    event::append(&logs, &Event { text: Some("what is in hosts?".into()), ..ev("PreInvocation") }).unwrap();
+    event::append(&logs, &Event { call: Some("step-2".into()), tool: Some("run_command".into()), title: Some("run_command: Read hosts".into()), ..ev("PreToolUse") }).unwrap();
+
+    let mut t = Tool::attach_to(&sock, "main", "agent").unwrap();
+    t.set("Preview.md", "cat");
+    let pane = Pane::start(
+        t,
+        Opts { pane: true, all: true, claude_home: tmp.join("claude-home"), codex_home: tmp.join("codex-home"), muse_home: tmp.join("muse-home"), pi_home: tmp.join("pi-home"), agy_home: agy_home.clone(), ..Opts::new(tmp.clone(), logs.clone()) },
+    )
+    .unwrap();
+    let served = std::thread::spawn(move || {
+        let mut pane = pane;
+        pane.serve()
+    });
+    let pane_name = format!("{}/ (agent)", tmp.display());
+    let mut c = Remote::connect_as(&sock, "main", "watch", AttachmentKind::Tool).unwrap();
+    let text = wait_text(&mut c, &pane_name, |t| t.contains("run_command: Read hosts"));
+    let home = std::env::var("HOME").unwrap_or_default();
+    let dir = match proj.display().to_string().strip_prefix(&home) {
+        Some(rest) if !home.is_empty() => format!("~{rest}"),
+        _ => proj.display().to_string(),
+    };
+    assert_eq!(text, format!("– 1 agent\n\n▶ agy  {dir}  82316aaa\n  what is in hosts?\n  ▶ run_command: Read hosts\n"));
+
+    let w = window_named(&c, &pane_name).unwrap();
+    let b = c.node.state.window(w).unwrap().body_buffer().unwrap();
+    let chars: Vec<char> = text.chars().collect();
+    let at = chars.windows(3).position(|w| w.iter().collect::<String>() == "agy").unwrap();
+    let span = Span { buffer: b, q0: at, q1: at + 3 };
+    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Window(w), text: "agy".into(), dir: None, edit_only: false, dry: false, at: Some(span), sel: Some(span), alt: None, reverse: false, verb: None });
+    let detail_name = format!("{}/ (agy 82316aaa)", proj.display());
+    let text = wait_text(&mut c, &detail_name, |t| t.contains("run_command"));
+    assert_eq!(text, "~\n\nwhat is in hosts?\n\n▶ run_command: Read hosts\n    cat /etc/hosts\n");
+
+    let mut f = std::fs::OpenOptions::new().append(true).open(&transcript).unwrap();
+    std::io::Write::write_all(
+        &mut f,
+        b"{\"step_index\":2,\"source\":\"MODEL\",\"type\":\"GENERIC\",\"status\":\"DONE\",\"content\":\"Created At: 2026-11-25T13:17:01-05:00\\n127.0.0.1 localhost\"}\n{\"step_index\":3,\"source\":\"MODEL\",\"type\":\"PLANNER_RESPONSE\",\"status\":\"DONE\",\"content\":\"It names localhost.\"}\n",
+    )
+    .unwrap();
+    event::append(&logs, &Event { call: Some("step-2".into()), ..ev("PostToolUse") }).unwrap();
+    event::append(&logs, &Event { text: Some("It names localhost.".into()), ..ev("Stop") }).unwrap();
+    let text = wait_text(&mut c, &detail_name, |t| t.contains("localhost."));
+    assert_eq!(text, "~\n\nwhat is in hosts?\n\n✓ run_command: Read hosts\n    cat /etc/hosts\n    127.0.0.1 localhost\n• It names localhost.\n");
+    let text = wait_text(&mut c, &pane_name, |t| t.contains("\n~ agy"));
+    assert_eq!(text, format!("– 1 agent\n\n~ agy  {dir}  82316aaa\n  what is in hosts?\n  • It names localhost.\n"));
+
+    // Preview with dot in the block
+    c.propose(apex_server::Proposal::Select { view: ViewId::Body(w), q0: at, q1: at }, Duration::from_secs(5)).unwrap();
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Preview".into() }, Duration::from_secs(5)).unwrap();
+    let page_name = format!("page {detail_name}");
+    let text = wait_text(&mut c, &page_name, |t| t.contains("localhost"));
+    assert_eq!(text, "> what is in hosts?\n\nIt names localhost.\n");
+
+    // History lists the past agy session and B3 opens its transcript
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "History".into() }, Duration::from_secs(5)).unwrap();
+    let hist_name = format!("{}/ (agent history)", tmp.display());
+    let text = wait_text(&mut c, &hist_name, |t| t.contains("cafebabe-4444"));
+    assert!(text.contains("  agy  an old agy prompt\n"), "{text}");
+    let hw = window_named(&c, &hist_name).unwrap();
+    let hb = c.node.state.window(hw).unwrap().body_buffer().unwrap();
+    let hat = text.chars().collect::<Vec<char>>().windows(8).position(|x| x.iter().collect::<String>() == "cafebabe").unwrap();
+    let span = Span { buffer: hb, q0: hat, q1: hat + 8 };
+    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Window(hw), text: "cafebabe".into(), dir: None, edit_only: false, dry: false, at: Some(span), sel: Some(span), alt: None, reverse: false, verb: None });
+    let past_name = format!("{}/ (agy cafebabe)", tmp.display());
+    let text = wait_text(&mut c, &past_name, |t| t.contains("old agy answer"));
+    assert!(text.ends_with("~\n\nan old agy prompt\n\n• an old agy answer\n"), "{text}");
+
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Del".into() }, Duration::from_secs(5)).unwrap();
+    wait_gone(&mut c, &pane_name);
+    served.join().unwrap().unwrap();
     let _ = std::fs::remove_dir_all(&tmp);
 }

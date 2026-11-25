@@ -1,7 +1,7 @@
 # apex tool agent
 
 Serves the terminals of an apex session that are running agents --
-Claude Code, Codex, Muse and pi -- so that each of them has its transcript,
+Claude Code, Codex, Muse, pi and Antigravity (`agy`) -- so that each of them has its transcript,
 its last answer as a page and its changes as a diff on its own window,
 and says with a notification when one wants you. It is fed by the hooks
 those agents offer and written against the public tool API
@@ -22,9 +22,10 @@ those agents offer and written against the public tool API
     apex tool agent events [-all]     # the events as they come, a line each
 
 `install` writes the hooks into `~/.claude/settings.json`,
-`~/.codex/hooks.json` and `~/.config/muse/settings.json` (wherever
-`$XDG_CONFIG_HOME` says, for Muse), and for pi, which has extensions
-rather than hooks, writes one, `~/.pi/agent/extensions/apex.ts`
+`~/.codex/hooks.json`, `~/.config/muse/settings.json` (wherever
+`$XDG_CONFIG_HOME` says, for Muse) and `~/.gemini/config/hooks.json`
+(for Antigravity, under the named hook set `"apex"`), and for pi, which
+has extensions rather than hooks, writes one, `~/.pi/agent/extensions/apex.ts`
 (wherever `$PI_CODING_AGENT_DIR` says), that runs the hook at pi's
 events; naming apex by its full path
 as it was invoked -- a bare `apex` as PATH finds it, symlinks and
@@ -61,7 +62,12 @@ environment instead. pi's extension hands the hook its events said
 as Claude Code's hooks say theirs -- a prompt as `UserPromptSubmit`, a
 tool call's start and end as `PreToolUse` and `PostToolUse`, the end of
 a turn as `Stop`, or `StopFailure` or `Interrupt` as it ended -- and
-waits for each, so the log has them in order.
+waits for each, so the log has them in order. Antigravity's hooks speak
+camelCase (`SessionStart`, `PreInvocation`, `PreToolUse`, `PostToolUse`,
+`Stop`), expect JSON on standard output (`{"decision":"allow"}` for
+`PreToolUse`, which is fail-closed, and `{}` for the rest), and carry no
+assistant reply on `Stop`, so the hook reads the turn's last reply from
+`transcriptPath`.
 
 The tool reads those logs, and nothing else: no socket, no daemon.
 Nothing need be running when an agent starts, nothing is lost when it
@@ -139,7 +145,7 @@ doing. A block that changes is written in place. The window's handle
 pulses while any agent works, and the window is clean while none does:
 what it says is whole and nothing is going on behind it. The first line
 is apex's own, `–`, and says how many; with no agents it is a guide,
-and `Start claude`, `Start codex`, `Start muse` and `Start pi` there are verbs to B2.
+and `Start claude`, `Start codex`, `Start muse`, `Start pi` and `Start agy` there are verbs to B2.
 
 The pane shows the agents started in the apex session it was launched
 from, wherever their directories are, and a last line counts the rest
@@ -201,7 +207,7 @@ to the snarf buffer and the clipboard:
 to paste into a prompt however it fits, so the agent reads the place as
 well as the text; B3 on the first line goes there.
 
-`Start [claude|codex|muse|pi] [DIR]` makes a terminal beside the pane
+`Start [claude|codex|muse|pi|agy] [DIR]` makes a terminal beside the pane
 running the agent, in the pane's directory or the one named, by
 `Newterm`; the hooks pick it up from there. `Resume ID` does the same
 with a past session, in the directory it was had in, so the agent
@@ -255,7 +261,8 @@ that names no session of ours being handed back to what B3 always
 does. It is read from the agent's own record (Claude Code's
 `~/.claude/projects/.../SESSION.jsonl`, Codex's rollout, Muse's
 `session.jsonl`, found by the session since Muse says nothing of where
-it is, pi's `~/.pi/agent/sessions/--DIR--/TIME_ID.jsonl`) as that grows, and reads as apex-acp's transcript window does:
+it is, pi's `~/.pi/agent/sessions/--DIR--/TIME_ID.jsonl`, Antigravity's
+`~/.gemini/antigravity-cli/brain/ID/.system_generated/logs/transcript.jsonl`) as that grows, and reads as apex-acp's transcript window does:
 
     ~
 
@@ -337,6 +344,10 @@ lands, tab-separated: when, the session, the agent, what happened, and
 the words for it; `-all` starts from the beginning of every log.
 
 ## Not done
+
+Antigravity has no `PermissionRequest` or `SessionEnd` hook, so
+permissions stay in its terminal and an exited `agy` is cleaned up when
+the slow pass sees its process gone.
 
 pi is read from its documentation and its published source, and not
 against a running one. pi asks no permissions, so a pi agent never

@@ -620,7 +620,7 @@ lens for a minute.
 
 apex tool agent attaches as the tool named agent and serves the
 session's terminals that run coding agents (Claude Code, Codex, Muse,
-pi), fed by the hooks those agents offer: apex tool agent install puts
+pi, Antigravity), fed by the hooks those agents offer: apex tool agent install puts
 them in (uninstall takes them out), each one apex tool agent hook AGENT,
 which appends the event to ~/.apex/agent/SESSION.jsonl. While an agent
 runs, its terminal's tools menu has Transcript, Preview and Changes,

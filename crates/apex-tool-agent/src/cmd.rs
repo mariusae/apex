@@ -10,9 +10,9 @@ use crate::{hook, install, win};
 
 fn usage() -> ! {
     eprintln!("usage: apex tool agent [-cwd DIR] [-a] [-all] [-thoughts]");
-    eprintln!("       apex tool agent install|uninstall [claude|codex|muse|pi]...");
+    eprintln!("       apex tool agent install|uninstall [claude|codex|muse|pi|agy]...");
     eprintln!("       apex tool agent ls | wait ID | events [-all]");
-    eprintln!("       apex tool agent hook claude|codex|muse|pi");
+    eprintln!("       apex tool agent hook claude|codex|muse|pi|agy");
     std::process::exit(2);
 }
 
@@ -25,12 +25,18 @@ pub fn run(socket: &Path, session: &str, args: &[String]) -> Result<(), String> 
             std::process::exit(hook::run(agent));
         }
         Some(cmd @ ("install" | "uninstall")) => {
-            let which: Vec<&str> = if args.len() > 1 { args[1..].iter().map(String::as_str).collect() } else { install::AGENTS.to_vec() };
-            for a in &which {
-                if !install::AGENTS.contains(a) {
-                    return Err(format!("{a}: not an agent I know; claude, codex, muse or pi"));
+            let which: Vec<&str> = if args.len() > 1 {
+                let mut v = Vec::new();
+                for a in &args[1..] {
+                    match install::canonical(a) {
+                        Some(c) => v.push(c),
+                        None => return Err(format!("{a}: not an agent I know; claude, codex, muse, pi or agy")),
+                    }
                 }
-            }
+                v
+            } else {
+                install::AGENTS.to_vec()
+            };
             let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| usage()));
             let res = match cmd {
                 "install" => {
@@ -111,7 +117,8 @@ fn wait(dir: &std::path::Path, id: &str) -> i32 {
         if let Some(a) = agents.by_id(id) {
             return Some(a.session.clone());
         }
-        let kinds: Vec<&agent::Agent> = agents.ordered().into_iter().filter(|a| a.kind == id).collect();
+        let kind = install::canonical(id).unwrap_or(id);
+        let kinds: Vec<&agent::Agent> = agents.ordered().into_iter().filter(|a| a.kind == kind).collect();
         match kinds.as_slice() {
             [one] => Some(one.session.clone()),
             _ => None,

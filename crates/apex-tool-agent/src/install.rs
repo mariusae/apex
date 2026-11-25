@@ -1,11 +1,13 @@
 //! `apex tool agent install`: the hooks put where the agents read them.
 //! Claude Code reads `~/.claude/settings.json`; Codex reads
 //! `~/.codex/hooks.json`; Muse reads `~/.config/muse/settings.json`;
-//! all in the same shape. Ours are the handlers whose
-//! command is `apex tool agent hook AGENT`, and they are known by that, so an
-//! install over an install changes nothing, an install of a moved
-//! binary replaces the old path, and `uninstall` takes ours away and
-//! leaves everything else as it was.
+//! all in the same shape. Antigravity reads `~/.gemini/config/hooks.json`,
+//! whose top level is named hook sets, with flat handler lists for
+//! lifecycle events and matcher groups for tool events. Ours are the
+//! handlers whose command is `apex tool agent hook AGENT`, and they are
+//! known by that, so an install over an install changes nothing, an
+//! install of a moved binary replaces the old path, and `uninstall` takes
+//! ours away and leaves everything else as it was.
 //!
 //! pi has no hooks of that kind, only extensions: TypeScript it loads
 //! from `~/.pi/agent/extensions/`. Ours is one file there, `apex.ts`,
@@ -72,7 +74,25 @@ pub const MUSE_EVENTS: [&str; 14] = [
     "PostCompact",
 ];
 
-pub const AGENTS: [&str; 4] = ["claude", "codex", "muse", "pi"];
+/// Antigravity's lifecycle events (flat handler arrays) and tool events
+/// (matcher-grouped handler arrays).
+pub const AGY_FLAT_EVENTS: [&str; 3] = ["SessionStart", "PreInvocation", "Stop"];
+pub const AGY_TOOL_EVENTS: [&str; 2] = ["PreToolUse", "PostToolUse"];
+
+pub const AGENTS: [&str; 5] = ["claude", "codex", "muse", "pi", "agy"];
+
+/// The canonical name of an agent we know, accepting `antigravity` as
+/// an alias for `agy`.
+pub fn canonical(agent: &str) -> Option<&'static str> {
+    match agent {
+        "claude" => Some("claude"),
+        "codex" => Some("codex"),
+        "muse" => Some("muse"),
+        "pi" => Some("pi"),
+        "agy" | "antigravity" => Some("agy"),
+        _ => None,
+    }
+}
 
 /// Where Muse reads its configuration: `$XDG_CONFIG_HOME`, else
 /// `~/.config`, as Muse itself has it.
@@ -102,6 +122,7 @@ pub fn hooks_file(home: &Path, agent: &str) -> PathBuf {
         "claude" => home.join(".claude").join("settings.json"),
         "muse" => config_dir(home).join("muse").join("settings.json"),
         "pi" => pi_dir(home).join("extensions").join("apex.ts"),
+        "agy" | "antigravity" => home.join(".gemini").join("config").join("hooks.json"),
         _ => home.join(".codex").join("hooks.json"),
     }
 }
@@ -302,17 +323,96 @@ fn settle_pi(file: &Path, ext: Option<&str>) -> Result<bool, String> {
     }
 }
 
+/// Put our hooks into Antigravity's `~/.gemini/config/hooks.json` (or
+/// take them out, with no command). Top-level keys are named hook sets;
+/// ours is `"apex"`, with flat handler lists for lifecycle events and
+/// matcher groups for tool events. Everything else in the file stays as
+/// it was. Says whether the file changed.
+fn settle_agy(file: &Path, cmd: Option<&str>) -> Result<bool, String> {
+    let before = match std::fs::read_to_string(file) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            if cmd.is_none() {
+                return Ok(false);
+            }
+            String::new()
+        }
+        Err(e) => return Err(format!("{}: {e}", file.display())),
+    };
+    let mut root: Value = match before.trim() {
+        "" => json!({}),
+        s => serde_json::from_str(s).map_err(|e| format!("{}: {e}", file.display()))?,
+    };
+    let obj = root.as_object_mut().ok_or_else(|| format!("{}: not a JSON object", file.display()))?;
+    // strip our handlers from every named hook set, flat or matcher-grouped
+    for (_, set) in obj.iter_mut() {
+        if let Some(set_obj) = set.as_object_mut() {
+            for (_, entries) in set_obj.iter_mut() {
+                if let Some(list) = entries.as_array_mut() {
+                    for item in list.iter_mut() {
+                        if let Some(hs) = item.get_mut("hooks").and_then(Value::as_array_mut) {
+                            hs.retain(|h| !ours(h));
+                        }
+                    }
+                    list.retain(|item| {
+                        if let Some(hs) = item.get("hooks").and_then(Value::as_array) {
+                            !hs.is_empty()
+                        } else {
+                            !ours(item)
+                        }
+                    });
+                }
+            }
+            set_obj.retain(|_, v| !v.as_array().is_some_and(Vec::is_empty));
+        }
+    }
+    obj.retain(|k, v| match v.as_object() {
+        Some(m) => !(m.is_empty() || (k == "apex" && m.keys().all(|ek| ek == "enabled"))),
+        None => true,
+    });
+    if let Some(cmd) = cmd {
+        let apex = obj.entry("apex").or_insert_with(|| json!({}));
+        let apex = apex.as_object_mut().ok_or_else(|| format!("{}: \"apex\" is not an object", file.display()))?;
+        for ev in AGY_FLAT_EVENTS {
+            let list = apex.entry(ev).or_insert_with(|| json!([]));
+            if let Some(list) = list.as_array_mut() {
+                list.push(json!({ "type": "command", "command": cmd, "timeout": 5 }));
+            }
+        }
+        for ev in AGY_TOOL_EVENTS {
+            let list = apex.entry(ev).or_insert_with(|| json!([]));
+            if let Some(list) = list.as_array_mut() {
+                list.push(json!({ "matcher": "*", "hooks": [{ "type": "command", "command": cmd, "timeout": 5 }] }));
+            }
+        }
+    }
+    let mut after = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
+    after.push('\n');
+    if after == before {
+        return Ok(false);
+    }
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
+    let tmp = file.with_extension("json.apex-tool-agent");
+    std::fs::write(&tmp, after).map_err(|e| format!("{}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, file).map_err(|e| format!("{}: {e}", file.display()))?;
+    Ok(true)
+}
+
 /// Install for each agent named; what was done, a line each.
 pub fn install(home: &Path, exe: &Path, agents: &[&str]) -> Result<Vec<String>, String> {
     let mut said = Vec::new();
     for a in agents {
+        let a = canonical(a).unwrap_or(a);
         let file = hooks_file(home, a);
-        let changed = match *a {
+        let changed = match a {
             "pi" => settle_pi(&file, Some(&pi_extension(exe)))?,
+            "agy" => settle_agy(&file, Some(&command(exe, a)))?,
             _ => settle(&file, events_of(a), Some(&command(exe, a)))?,
         };
         said.push(format!("{a}: {} {}", if changed { "hooks written to" } else { "hooks already in" }, file.display()));
-        if *a == "codex" {
+        if a == "codex" {
             said.push("codex: hooks are on by default in current versions; an older one wants `[features]` `codex_hooks = true` in ~/.codex/config.toml".to_string());
         }
     }
@@ -322,9 +422,11 @@ pub fn install(home: &Path, exe: &Path, agents: &[&str]) -> Result<Vec<String>, 
 pub fn uninstall(home: &Path, agents: &[&str]) -> Result<Vec<String>, String> {
     let mut said = Vec::new();
     for a in agents {
+        let a = canonical(a).unwrap_or(a);
         let file = hooks_file(home, a);
-        let changed = match *a {
+        let changed = match a {
             "pi" => settle_pi(&file, None)?,
+            "agy" => settle_agy(&file, None)?,
             _ => settle(&file, events_of(a), None)?,
         };
         said.push(format!("{a}: {} {}", if changed { "hooks taken out of" } else { "no hooks of ours in" }, file.display()));
@@ -490,5 +592,45 @@ mod tests {
         assert_eq!(invoked_as(Some(OsString::from("/opt/x/apex")), None, None), Some(PathBuf::from("/opt/x/apex")));
         assert_eq!(invoked_as(Some(OsString::from("bin/apex")), Some(tmp.clone()), None), Some(tmp.join("bin/apex")));
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn agy_hooks_go_in_gemini_config_hooks_json_and_leave_others_alone() {
+        let home = home();
+        let file = hooks_file(&home, "agy");
+        assert_eq!(file, home.join(".gemini/config/hooks.json"));
+        assert_eq!(canonical("antigravity"), Some("agy"));
+        // uninstalling when absent does not create the file
+        assert!(uninstall(&home, &["agy"]).unwrap()[0].contains("no hooks"));
+        assert!(!file.exists());
+        // existing named hooks stay untouched
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, r#"{"lint-checker":{"PostToolUse":[{"matcher":"run_command","hooks":[{"type":"command","command":"./lint.sh"}]}]}}"#).unwrap();
+        let said = install(&home, Path::new("/opt/apex app/apex"), &["agy"]).unwrap();
+        assert!(said[0].contains("written"), "{said:?}");
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(v["lint-checker"]["PostToolUse"][0]["hooks"][0]["command"], "./lint.sh");
+        assert_eq!(v["apex"]["SessionStart"][0]["command"], "'/opt/apex app/apex' tool agent hook agy");
+        assert_eq!(v["apex"]["PreInvocation"][0]["command"], "'/opt/apex app/apex' tool agent hook agy");
+        assert_eq!(v["apex"]["Stop"][0]["command"], "'/opt/apex app/apex' tool agent hook agy");
+        assert_eq!(v["apex"]["PreToolUse"][0]["matcher"], "*");
+        assert_eq!(v["apex"]["PreToolUse"][0]["hooks"][0]["command"], "'/opt/apex app/apex' tool agent hook agy");
+        assert_eq!(v["apex"]["PostToolUse"][0]["matcher"], "*");
+        assert_eq!(v["apex"]["PostToolUse"][0]["hooks"][0]["command"], "'/opt/apex app/apex' tool agent hook agy");
+        // idempotent
+        assert!(install(&home, Path::new("/opt/apex app/apex"), &["agy"]).unwrap()[0].contains("already"));
+        // moved binary replaces the old path
+        install(&home, Path::new("/bin/apex"), &["agy"]).unwrap();
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(v["apex"]["SessionStart"].as_array().unwrap().len(), 1);
+        assert_eq!(v["apex"]["SessionStart"][0]["command"], "/bin/apex tool agent hook agy");
+        assert_eq!(v["apex"]["PreToolUse"].as_array().unwrap().len(), 1);
+        assert_eq!(v["apex"]["PreToolUse"][0]["hooks"][0]["command"], "/bin/apex tool agent hook agy");
+        // uninstall removes apex and keeps lint-checker
+        assert!(uninstall(&home, &["agy"]).unwrap()[0].contains("taken out"));
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(keys(&v), vec!["lint-checker"]);
+        assert!(uninstall(&home, &["agy"]).unwrap()[0].contains("no hooks"));
+        let _ = std::fs::remove_dir_all(&home);
     }
 }

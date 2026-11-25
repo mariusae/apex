@@ -1,9 +1,11 @@
-//! The hook itself: `apex tool agent hook claude` (or `codex`, `muse`
-//! or `pi`), which the agent runs at every event with the event's JSON
-//! on its standard input -- pi by way of the extension `install` gives
-//! it, which says pi's events as Claude Code's hooks say theirs. It says what happened in one line of the
-//! session's log and exits 0 whatever else: a hook that fails or
-//! dawdles is the agent's problem, and this one must never be.
+//! The hook itself: `apex tool agent hook claude` (or `codex`, `muse`,
+//! `pi` or `agy`), which the agent runs at every event with the event's
+//! JSON on its standard input -- pi by way of the extension `install`
+//! gives it, which says pi's events as Claude Code's hooks say theirs,
+//! and Antigravity (`agy`) with camelCase payloads and JSON on stdout.
+//! It says what happened in one line of the session's log and exits 0
+//! whatever else: a hook that fails or dawdles is the agent's problem,
+//! and this one must never be.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -19,11 +21,21 @@ use crate::transcript::call_title;
 const WAIT: Duration = Duration::from_secs(90);
 
 pub fn run(agent: &str) -> i32 {
+    let agent = crate::install::canonical(agent).unwrap_or(agent);
     let mut input = String::new();
     if std::io::stdin().read_to_string(&mut input).is_err() {
+        if agent == "agy" {
+            println!("{{}}");
+        }
         return 0;
     }
-    let Ok(v) = serde_json::from_str::<Value>(&input) else { return 0 };
+    let Ok(v) = serde_json::from_str::<Value>(&input) else {
+        if agent == "agy" {
+            println!("{{}}");
+        }
+        return 0;
+    };
+    let raw_event = v.get("hookEventName").or_else(|| v.get("hook_event_name")).and_then(Value::as_str).unwrap_or("");
     let mut ev = event_from(agent, &v);
     ev.ms = event::now_ms();
     let dir = event::dir();
@@ -55,7 +67,9 @@ pub fn run(agent: &str) -> i32 {
     // to it, and waiting would hold the agent up for nothing
     let from = std::fs::metadata(&log).map(|m| m.len()).unwrap_or(0);
     let _ = event::append(&dir, &ev);
-    if ev.event == "PermissionRequest" && ev.sub.is_none() && event::pane_present(&dir) {
+    if agent == "agy" {
+        println!("{}", agy_output(raw_event));
+    } else if ev.event == "PermissionRequest" && ev.sub.is_none() && event::pane_present(&dir) {
         if let Some(call) = ev.call.as_deref() {
             if let Some(d) = await_decision(&log, from, call, WAIT) {
                 println!("{}", decision_json(&d));
@@ -63,6 +77,17 @@ pub fn run(agent: &str) -> i32 {
         }
     }
     0
+}
+
+/// What Antigravity expects on stdout: `PreToolUse` is fail-closed and
+/// requires a decision (`allow` delegates to its normal policy); every
+/// other hook expects an empty JSON object.
+pub fn agy_output(hook_event: &str) -> &'static str {
+    if hook_event == "PreToolUse" {
+        r#"{"decision":"allow"}"#
+    } else {
+        "{}"
+    }
 }
 
 /// Where a Muse subagent's session is remembered: a file a child,
@@ -240,6 +265,10 @@ pub fn decision_json(behavior: &str) -> String {
 /// one or two the pane wants of each kind. The tool's input is said in
 /// words rather than kept.
 pub fn event_from(agent: &str, v: &Value) -> Event {
+    let agent = crate::install::canonical(agent).unwrap_or(agent);
+    if agent == "agy" {
+        return agy_event_from(v);
+    }
     let s = |k: &str| v.get(k).and_then(Value::as_str).map(String::from);
     let event = s("hook_event_name").unwrap_or_default();
     let cwd = s("cwd").unwrap_or_default();
@@ -292,6 +321,102 @@ pub fn event_from(agent: &str, v: &Value) -> Event {
         mode: s("permission_mode"),
         plan,
     }
+}
+
+/// Antigravity's hooks speak camelCase (`conversationId`, `hookEventName`,
+/// `transcriptPath`, `toolCall`, `stepIdx`, `lastUserInput`,
+/// `terminationReason`). Its `Stop` hook carries no assistant reply, so
+/// the last answer of the turn is read from `transcriptPath`.
+fn agy_event_from(v: &Value) -> Event {
+    let s = |k: &str| v.get(k).and_then(Value::as_str).map(String::from);
+    let raw_event = s("hookEventName").or_else(|| s("hook_event_name")).unwrap_or_default();
+    let cwd = s("cwd")
+        .filter(|c| !c.is_empty())
+        .or_else(|| v.get("workspacePaths").and_then(Value::as_array).and_then(|a| a.first()).and_then(Value::as_str).map(String::from))
+        .unwrap_or_default();
+    let session = s("conversationId").or_else(|| s("session_id")).unwrap_or_else(|| "unknown".to_string());
+    let transcript = s("transcriptPath").or_else(|| s("transcript_path"));
+    let tc = v.get("toolCall");
+    let tool = tc.and_then(|t| t.get("name")).and_then(Value::as_str).map(String::from);
+    let args = tc.and_then(|t| t.get("args")).unwrap_or(&Value::Null);
+    let title = tool.as_deref().map(|t| call_title(t, args, &cwd));
+    // `stepIdx` matches the step_index in transcript.jsonl so the
+    // transcript's live status glyphs find their calls
+    let call = v
+        .get("stepIdx")
+        .and_then(Value::as_u64)
+        .map(|i| format!("step-{i}"))
+        .or_else(|| tc.and_then(|t| t.get("id")).and_then(Value::as_str).map(String::from));
+    let error = s("error").filter(|e| !e.trim().is_empty());
+    let reason = s("terminationReason").filter(|r| !r.trim().is_empty());
+    let (event, text, kind) = match raw_event.as_str() {
+        "PreInvocation" => {
+            let prompt = s("lastUserInput").and_then(|t| crate::transcript::agy_user_text(&t)).map(|t| cut(&t, WHOLE));
+            ("PreInvocation".to_string(), prompt, None)
+        }
+        "PostToolUse" => {
+            if let Some(err) = error {
+                ("PostToolUseFailure".to_string(), Some(cut(&err, LINE)), None)
+            } else {
+                ("PostToolUse".to_string(), None, None)
+            }
+        }
+        "Stop" => {
+            if reason.as_deref() == Some("ERROR") || error.is_some() {
+                ("StopFailure".to_string(), error.map(|e| cut(&e, LINE)), reason)
+            } else if reason.as_deref() == Some("USER_CANCELED") {
+                ("Interrupt".to_string(), None, reason)
+            } else {
+                let said = s("lastAssistantMessage")
+                    .or_else(|| s("last_assistant_message"))
+                    .or_else(|| transcript.as_deref().and_then(last_agy_reply))
+                    .map(|t| cut(&t, WHOLE))
+                    .filter(|t| !t.trim().is_empty());
+                ("Stop".to_string(), said, reason)
+            }
+        }
+        _ => (raw_event, None, None),
+    };
+    Event {
+        ms: 0,
+        agent: "agy".to_string(),
+        event,
+        session,
+        cwd,
+        transcript,
+        pid: None,
+        apex: None,
+        win: None,
+        rev: None,
+        sub: None,
+        tool,
+        call,
+        title,
+        text,
+        kind,
+        mode: None,
+        plan: None,
+    }
+}
+
+/// The last assistant message of the current turn in an Antigravity
+/// transcript (since its `Stop` hook carries none).
+fn last_agy_reply(path: &str) -> Option<String> {
+    use crate::transcript::{Item, Parser};
+    use std::io::BufRead;
+    let f = std::fs::File::open(path).ok()?;
+    let mut p = crate::transcript::Agy::new("", false);
+    let mut last = None;
+    for line in std::io::BufReader::new(f).lines().map_while(Result::ok) {
+        for it in p.line(&line) {
+            match it {
+                Item::User(_) => last = None,
+                Item::Agent(t) if !t.trim().is_empty() => last = Some(t),
+                _ => {}
+            }
+        }
+    }
+    last
 }
 
 /// A question names no call, as Muse has it: one is made from the
@@ -397,7 +522,7 @@ fn agent_pid(agent: &str) -> Option<u32> {
 /// Whether the process is the agent by name: itself, or the binary
 /// it runs as (`muse.real`, under a `muse` launcher).
 fn is_agent(name: &str, agent: &str) -> bool {
-    name == agent || name.strip_suffix(".real").is_some_and(|b| b == agent)
+    name == agent || name.strip_suffix(".real").is_some_and(|b| b == agent) || (agent == "agy" && name == "antigravity")
 }
 
 /// A process's parent and command, as `ps` says.
@@ -642,5 +767,84 @@ mod tests {
         let v: Value = serde_json::json!({"session_id": "s", "hook_event_name": "UserPromptSubmit", "prompt": "x".repeat(3000), "cwd": "/"});
         let e = event_from("claude", &v);
         assert_eq!(e.text.as_ref().map(|t| t.chars().count()), Some(3000));
+    }
+
+    #[test]
+    fn an_agy_hooks_input_becomes_one_event_and_stdout_is_json() {
+        assert_eq!(agy_output("PreToolUse"), r#"{"decision":"allow"}"#);
+        assert_eq!(agy_output("PostToolUse"), "{}");
+        assert_eq!(agy_output("SessionStart"), "{}");
+        assert_eq!(agy_output("PreInvocation"), "{}");
+        assert_eq!(agy_output("Stop"), "{}");
+        assert!(is_agent("agy", "agy"));
+        assert!(is_agent("antigravity", "agy"));
+
+        let v: Value = serde_json::json!({
+            "conversationId": "ec33ebf9-0cba", "workspacePaths": ["/home/me/proj"],
+            "transcriptPath": "/t/transcript.jsonl", "hookEventName": "SessionStart", "cwd": "/home/me/proj"
+        });
+        let e = event_from("agy", &v);
+        assert_eq!((e.agent.as_str(), e.event.as_str(), e.session.as_str(), e.cwd.as_str()), ("agy", "SessionStart", "ec33ebf9-0cba", "/home/me/proj"));
+        assert_eq!(e.transcript.as_deref(), Some("/t/transcript.jsonl"));
+
+        let v: Value = serde_json::json!({
+            "conversationId": "ec33ebf9-0cba", "hookEventName": "PreInvocation", "cwd": "/home/me/proj",
+            "invocationNum": 1, "lastUserInput": "<USER_REQUEST>\nFix the test\n</USER_REQUEST>"
+        });
+        let e = event_from("agy", &v);
+        assert_eq!((e.event.as_str(), e.text.as_deref()), ("PreInvocation", Some("Fix the test")));
+
+        let v: Value = serde_json::json!({
+            "conversationId": "ec33ebf9-0cba", "hookEventName": "PreToolUse", "cwd": "/home/me/proj",
+            "stepIdx": 19,
+            "toolCall": { "id": "toolu_01", "name": "run_command", "args": { "CommandLine": "cargo test", "toolSummary": "Run tests" } }
+        });
+        let e = event_from("agy", &v);
+        assert_eq!(e.event, "PreToolUse");
+        assert_eq!(e.call.as_deref(), Some("step-19"));
+        assert_eq!(e.tool.as_deref(), Some("run_command"));
+        assert_eq!(e.title.as_deref(), Some("run_command: Run tests"));
+
+        let v: Value = serde_json::json!({
+            "conversationId": "ec33ebf9-0cba", "hookEventName": "PostToolUse", "cwd": "/home/me/proj",
+            "stepIdx": 19, "error": "exit status 1",
+            "toolCall": { "id": "toolu_01", "name": "run_command", "args": { "CommandLine": "cargo test" } }
+        });
+        let e = event_from("agy", &v);
+        assert_eq!((e.event.as_str(), e.call.as_deref(), e.text.as_deref()), ("PostToolUseFailure", Some("step-19"), Some("exit status 1")));
+
+        // Stop reads the last assistant reply from transcriptPath
+        let tmp = std::env::temp_dir().join(format!("apex-tool-agent-agy-stop-{}", std::process::id()));
+        std::fs::write(
+            &tmp,
+            concat!(
+                "{\"step_index\":0,\"source\":\"USER_EXPLICIT\",\"type\":\"USER_INPUT\",\"status\":\"DONE\",\"content\":\"<USER_REQUEST>\\nfirst\\n</USER_REQUEST>\"}\n",
+                "{\"step_index\":1,\"source\":\"MODEL\",\"type\":\"PLANNER_RESPONSE\",\"status\":\"DONE\",\"content\":\"First answer.\"}\n",
+                "{\"step_index\":2,\"source\":\"USER_EXPLICIT\",\"type\":\"USER_INPUT\",\"status\":\"DONE\",\"content\":\"<USER_REQUEST>\\nsecond\\n</USER_REQUEST>\"}\n",
+                "{\"step_index\":3,\"source\":\"MODEL\",\"type\":\"PLANNER_RESPONSE\",\"status\":\"DONE\",\"content\":\"Second answer.\"}\n"
+            ),
+        )
+        .unwrap();
+        let v: Value = serde_json::json!({
+            "conversationId": "ec33ebf9-0cba", "hookEventName": "Stop", "cwd": "/home/me/proj",
+            "transcriptPath": tmp.display().to_string(), "terminationReason": "NO_TOOL_CALL", "error": ""
+        });
+        let e = event_from("agy", &v);
+        assert_eq!((e.event.as_str(), e.text.as_deref(), e.kind.as_deref()), ("Stop", Some("Second answer."), Some("NO_TOOL_CALL")));
+        let _ = std::fs::remove_file(&tmp);
+
+        let v: Value = serde_json::json!({
+            "conversationId": "ec33ebf9-0cba", "hookEventName": "Stop", "cwd": "/x",
+            "terminationReason": "ERROR", "error": "quota exceeded"
+        });
+        let e = event_from("agy", &v);
+        assert_eq!((e.event.as_str(), e.kind.as_deref(), e.text.as_deref()), ("StopFailure", Some("ERROR"), Some("quota exceeded")));
+
+        let v: Value = serde_json::json!({
+            "conversationId": "ec33ebf9-0cba", "hookEventName": "Stop", "cwd": "/x",
+            "terminationReason": "USER_CANCELED"
+        });
+        let e = event_from("agy", &v);
+        assert_eq!((e.event.as_str(), e.kind.as_deref()), ("Interrupt", Some("USER_CANCELED")));
     }
 }

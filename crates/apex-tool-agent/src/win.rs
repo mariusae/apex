@@ -59,17 +59,18 @@ pub struct Opts {
     pub all: bool,
     /// No notes in +Errors when an agent asks or fails.
     /// Where the agents keep their sessions: `~/.claude`, `~/.codex`,
-    /// `~/.local/share/muse`, `~/.pi/agent`.
+    /// `~/.local/share/muse`, `~/.pi/agent`, `~/.gemini/antigravity-cli`.
     pub claude_home: PathBuf,
     pub codex_home: PathBuf,
     pub muse_home: PathBuf,
     pub pi_home: PathBuf,
+    pub agy_home: PathBuf,
 }
 
 impl Opts {
     pub fn new(cwd: PathBuf, dir: PathBuf) -> Opts {
         let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/".into()));
-        Opts { cwd, dir, thoughts: false, pane: false, all: false, claude_home: home.join(".claude"), codex_home: home.join(".codex"), muse_home: history::muse_home(), pi_home: history::pi_home() }
+        Opts { cwd, dir, thoughts: false, pane: false, all: false, claude_home: home.join(".claude"), codex_home: home.join(".codex"), muse_home: history::muse_home(), pi_home: history::pi_home(), agy_home: history::agy_home() }
     }
 }
 
@@ -926,7 +927,8 @@ impl Pane {
                 }
             };
         }
-        let keys: Vec<String> = self.agents.ordered().iter().filter(|a| a.session.starts_with(want) || a.kind == want || a.cwd.ends_with(want)).map(|a| a.session.clone()).collect();
+        let canon = crate::install::canonical(want);
+        let keys: Vec<String> = self.agents.ordered().iter().filter(|a| a.session.starts_with(want) || a.kind == want || canon == Some(a.kind.as_str()) || a.cwd.ends_with(want)).map(|a| a.session.clone()).collect();
         match keys.as_slice() {
             [one] => Ok(Some(one.clone())),
             [] => {
@@ -1011,7 +1013,7 @@ impl Pane {
 
     // ---- starting and sending ----
 
-    /// `Start [claude|codex|muse|pi] [DIR]`: the agent in a new terminal
+    /// `Start [claude|codex|muse|pi|agy] [DIR]`: the agent in a new terminal
     /// beside the pane, in the pane's directory or the one named, which
     /// the hooks then pick up. `Newterm` is what apex starts terminals
     /// with, so that is what this is.
@@ -1019,12 +1021,12 @@ impl Pane {
         let words: Vec<&str> = args.split_whitespace().collect();
         let (agent, dir) = match words.as_slice() {
             [] => ("claude", None),
-            [a] if crate::install::AGENTS.contains(a) => (*a, None),
+            [a] if crate::install::canonical(a).is_some() => (crate::install::canonical(a).unwrap(), None),
             [d] => ("claude", Some(*d)),
-            [a, d] if crate::install::AGENTS.contains(a) => (*a, Some(*d)),
-            [d, a] if crate::install::AGENTS.contains(a) => (*a, Some(*d)),
+            [a, d] if crate::install::canonical(a).is_some() => (crate::install::canonical(a).unwrap(), Some(*d)),
+            [d, a] if crate::install::canonical(a).is_some() => (crate::install::canonical(a).unwrap(), Some(*d)),
             _ => {
-                self.t.errors(None, "Start: usage: Start [claude|codex|muse|pi] [DIR]\n")?;
+                self.t.errors(None, "Start: usage: Start [claude|codex|muse|pi|agy] [DIR]\n")?;
                 return Ok(true);
             }
         };
@@ -1048,6 +1050,7 @@ impl Pane {
         let extra = match kind.as_str() {
             "codex" | "muse" => format!("resume {id}"),
             "pi" => format!("--session {id}"),
+            // claude and agy both take --resume ID
             _ => format!("--resume {id}"),
         };
         self.start_agent(&kind, Some(&cwd), &extra)
@@ -1076,7 +1079,7 @@ impl Pane {
     fn send_verb(&mut self, args: &str, at: Option<Range>) -> apex_tool::Result<bool> {
         // the agent first, when the first word names one and more follows
         let (target, text) = match args.split_once(char::is_whitespace) {
-            Some((first, rest)) if self.agents.by_id(first).is_some() || crate::install::AGENTS.contains(&first) => (first, rest.trim()),
+            Some((first, rest)) if self.agents.by_id(first).is_some() || crate::install::canonical(first).is_some() => (first, rest.trim()),
             _ => ("", args.trim()),
         };
         if text.is_empty() {
@@ -1316,7 +1319,10 @@ impl Pane {
             // its transcript: read from its start the first time, as it
             // grows after; another file (a session's own), afresh
             // (as the transcript window finds it: Muse's hooks name none)
-            let path = transcript::transcript_path(a.transcript.as_deref()).map(Path::to_path_buf).or_else(|| (a.kind == "muse").then(|| history::muse_transcript(&self.opts.muse_home, &a.session)).flatten());
+            let path = transcript::transcript_path(a.transcript.as_deref())
+                .map(Path::to_path_buf)
+                .or_else(|| (a.kind == "muse").then(|| history::muse_transcript(&self.opts.muse_home, &a.session)).flatten())
+                .or_else(|| (a.kind == "agy").then(|| history::agy_transcript(&self.opts.agy_home, &a.session)).flatten());
             let stale = l.told.as_ref().map(|t| t.tail.path.clone()) != path;
             if stale {
                 let old = self.lenses.get_mut(&w).and_then(|l| l.told.take());
@@ -1434,7 +1440,7 @@ impl Pane {
             return Ok(true);
         }
         let dir = self.opts.cwd.display().to_string();
-        let past = history::sessions(&self.opts.claude_home, &self.opts.codex_home, &self.opts.muse_home, &self.opts.pi_home, &dir);
+        let past = history::sessions(&self.opts.claude_home, &self.opts.codex_home, &self.opts.muse_home, &self.opts.pi_home, &self.opts.agy_home, &dir);
         let text = history::listing(&dir, &past, history::now());
         self.past = past.into_iter().map(|p| (p.id.clone(), p)).collect();
         let w = self.t.new_scratch(&format!("{}/", dir.trim_end_matches('/')), Some("agent history"))?;
@@ -1518,7 +1524,10 @@ impl Pane {
         };
         // Muse says nothing of where its log is, so it is looked up by
         // the session when its transcript is wanted
-        let transcript = transcript::transcript_path(a.transcript.as_deref()).map(Path::to_path_buf).or_else(|| (a.kind == "muse").then(|| history::muse_transcript(&self.opts.muse_home, &a.session)).flatten());
+        let transcript = transcript::transcript_path(a.transcript.as_deref())
+            .map(Path::to_path_buf)
+            .or_else(|| (a.kind == "muse").then(|| history::muse_transcript(&self.opts.muse_home, &a.session)).flatten())
+            .or_else(|| (a.kind == "agy").then(|| history::agy_transcript(&self.opts.agy_home, &a.session)).flatten());
         self.detail_window(session, &a.kind, &a.cwd, &a.short(), transcript.as_deref(), None, &a.running, asking)
     }
 

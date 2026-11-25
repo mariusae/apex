@@ -2,7 +2,9 @@
 //! Claude Code's under `~/.claude/projects/DIR-AS-A-NAME/`, Codex's
 //! rollouts under `~/.codex/sessions/`, Muse's logs under
 //! `~/.local/share/muse/sessions/`, pi's under
-//! `~/.pi/agent/sessions/--DIR-AS-A-NAME--/`, each saying which
+//! `~/.pi/agent/sessions/--DIR-AS-A-NAME--/`, Antigravity's indexed in
+//! `~/.gemini/antigravity-cli/history.jsonl` with transcripts under
+//! `brain/ID/.system_generated/logs/transcript.jsonl`, each saying which
 //! directory it was in. Listed as apex-acp's `Resume` lists them -- the id, when it
 //! was last worked in, what it is about -- so B3 on an id opens the
 //! transcript and `Resume ID` takes the session up again.
@@ -30,6 +32,20 @@ pub fn pi_home() -> PathBuf {
     crate::install::pi_dir(Path::new(&std::env::var("HOME").unwrap_or_else(|_| "/".into())))
 }
 
+/// Antigravity CLI's data directory: `history.jsonl` and `brain/`.
+pub fn agy_home() -> PathBuf {
+    PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/".into())).join(".gemini").join("antigravity-cli")
+}
+
+/// An Antigravity session's transcript, by its conversation id.
+pub fn agy_transcript(agy_home: &Path, session: &str) -> Option<PathBuf> {
+    if !session.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return None;
+    }
+    let path = agy_home.join("brain").join(session).join(".system_generated").join("logs").join("transcript.jsonl");
+    path.is_file().then_some(path)
+}
+
 /// pi's name for a directory: the leading `/` gone, every other `/`
 /// (and `\`, and `:`) a `-`, between `--` and `--`.
 pub fn pi_project(cwd: &str) -> String {
@@ -41,7 +57,7 @@ pub fn pi_project(cwd: &str) -> String {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Past {
     pub id: String,
-    /// `claude`, `codex`, `muse`, `pi`.
+    /// `claude`, `codex`, `muse`, `pi`, `agy`.
     pub kind: String,
     /// Its transcript.
     pub path: PathBuf,
@@ -59,9 +75,10 @@ pub fn claude_project(cwd: &str) -> String {
 
 /// The sessions had in `cwd`, newest first: Claude Code's from
 /// `claude_home` (`~/.claude`), Codex's from `codex_home` (`~/.codex`),
-/// Muse's from `muse_home` (`~/.local/share/muse`) and pi's from
-/// `pi_home` (`~/.pi/agent`).
-pub fn sessions(claude_home: &Path, codex_home: &Path, muse_home: &Path, pi_home: &Path, cwd: &str) -> Vec<Past> {
+/// Muse's from `muse_home` (`~/.local/share/muse`), pi's from
+/// `pi_home` (`~/.pi/agent`) and Antigravity's from `agy_home`
+/// (`~/.gemini/antigravity-cli`).
+pub fn sessions(claude_home: &Path, codex_home: &Path, muse_home: &Path, pi_home: &Path, agy_home: &Path, cwd: &str) -> Vec<Past> {
     let mut out = Vec::new();
     let dir = claude_home.join("projects").join(claude_project(cwd));
     if let Ok(rd) = std::fs::read_dir(&dir) {
@@ -93,6 +110,7 @@ pub fn sessions(claude_home: &Path, codex_home: &Path, muse_home: &Path, pi_home
             out.push(p);
         }
     }
+    out.extend(agy_sessions(agy_home, cwd));
     out.sort_by(|a, b| b.when.cmp(&a.when).then(a.id.cmp(&b.id)));
     out
 }
@@ -312,6 +330,53 @@ fn pi_meta(path: &Path, cwd: &str) -> Option<Past> {
     Some(Past { id, kind: "pi".into(), path: path.to_path_buf(), cwd: cwd.to_string(), when: mtime(path), title: name.or(first) })
 }
 
+/// Antigravity's sessions had in `cwd`, read from `history.jsonl` (which
+/// maps `conversationId` to `workspace` and `display`) and matched to
+/// their transcripts under `brain/ID/.system_generated/logs/transcript.jsonl`.
+fn agy_sessions(agy_home: &Path, cwd: &str) -> Vec<Past> {
+    use std::collections::BTreeMap;
+    use std::io::BufRead;
+    let Ok(f) = std::fs::File::open(agy_home.join("history.jsonl")) else { return Vec::new() };
+    let want = cwd.trim_end_matches('/');
+    let mut by_id: BTreeMap<String, Option<String>> = BTreeMap::new();
+    for line in std::io::BufReader::new(f).lines().map_while(Result::ok) {
+        let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
+        let Some(ws) = v.get("workspace").and_then(Value::as_str) else { continue };
+        if ws.trim_end_matches('/') != want {
+            continue;
+        }
+        let Some(id) = v.get("conversationId").and_then(Value::as_str).filter(|s| !s.is_empty()) else { continue };
+        let title = v.get("display").and_then(Value::as_str).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        let entry = by_id.entry(id.to_string()).or_insert(None);
+        if entry.is_none() && title.is_some() {
+            *entry = title;
+        }
+    }
+    let mut out = Vec::new();
+    for (id, title) in by_id {
+        let Some(path) = agy_transcript(agy_home, &id) else { continue };
+        let title = title.or_else(|| agy_title(&path));
+        out.push(Past { id, kind: "agy".into(), when: mtime(&path), path, cwd: cwd.to_string(), title });
+    }
+    out
+}
+
+/// First user prompt in an Antigravity transcript, when `history.jsonl`
+/// had no `display` text.
+fn agy_title(path: &Path) -> Option<String> {
+    use std::io::BufRead;
+    let f = std::fs::File::open(path).ok()?;
+    for line in std::io::BufReader::new(f).lines().take(50).map_while(Result::ok) {
+        let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
+        if v.get("type").and_then(Value::as_str) == Some("USER_INPUT") {
+            if let Some(t) = v.get("content").and_then(Value::as_str).and_then(crate::transcript::agy_user_text) {
+                return Some(t);
+            }
+        }
+    }
+    None
+}
+
 /// The sessions as a listing, apex-acp's way: the id, when, and what
 /// it is about, a line each, with a first line of apex's own.
 pub fn listing(dir: &str, past: &[Past], now: i64) -> String {
@@ -366,6 +431,23 @@ mod tests {
         let codex = home.join(".codex");
         let muse = home.join("share").join("muse");
         let pi = home.join(".pi").join("agent");
+        let agy = home.join(".gemini").join("antigravity-cli");
+        let agy_logs = agy.join("brain/82316aaa-1111/.system_generated/logs");
+        std::fs::create_dir_all(&agy_logs).unwrap();
+        std::fs::write(agy_logs.join("transcript.jsonl"), "{\"step_index\":0,\"source\":\"USER_EXPLICIT\",\"type\":\"USER_INPUT\",\"status\":\"DONE\",\"content\":\"<USER_REQUEST>\\nwire agy\\n</USER_REQUEST>\"}\n").unwrap();
+        let agy_other = agy.join("brain/82316bbb-2222/.system_generated/logs");
+        std::fs::create_dir_all(&agy_other).unwrap();
+        std::fs::write(agy_other.join("transcript.jsonl"), "{\"step_index\":0,\"source\":\"USER_EXPLICIT\",\"type\":\"USER_INPUT\",\"status\":\"DONE\",\"content\":\"elsewhere\"}\n").unwrap();
+        std::fs::write(
+            agy.join("history.jsonl"),
+            concat!(
+                "{\"conversationId\":\"82316aaa-1111\",\"workspace\":\"/work/proj\",\"display\":\"wire agy\",\"timestamp\":1000}\n",
+                "{\"conversationId\":\"82316aaa-1111\",\"workspace\":\"/work/proj\",\"display\":\"follow up\",\"timestamp\":2000}\n",
+                "{\"conversationId\":\"82316bbb-2222\",\"workspace\":\"/elsewhere\",\"display\":\"other\",\"timestamp\":3000}\n",
+                "{\"conversationId\":\"82316ccc-3333\",\"workspace\":\"/work/proj\",\"display\":\"deleted\",\"timestamp\":4000}\n"
+            ),
+        )
+        .unwrap();
         assert_eq!(pi_project("/work/proj"), "--work-proj--");
         let pproj = pi.join("sessions").join(pi_project("/work/proj"));
         std::fs::create_dir_all(&pproj).unwrap();
@@ -388,10 +470,10 @@ mod tests {
         std::fs::create_dir_all(mday.join("gggg-7")).unwrap();
         std::fs::write(mday.join("ffff-6/session.jsonl"), "{\"payload_type\":\"runtime.session.metadata\",\"payload\":{\"record\":{\"workspace_root\":\"/work/proj\"}}}\n{\"payload_type\":\"runtime.session\",\"payload\":{\"kind\":\"run\",\"event\":{\"kind\":\"started\",\"prompt\":\"wire the widget\"}}}\n").unwrap();
         std::fs::write(mday.join("gggg-7/session.jsonl"), "{\"payload_type\":\"runtime.session.metadata\",\"payload\":{\"record\":{\"workspace_root\":\"/elsewhere\"}}}\n{\"payload_type\":\"runtime.session\",\"payload\":{\"kind\":\"run\",\"event\":{\"kind\":\"started\",\"prompt\":\"another thing\"}}}\n").unwrap();
-        let got = sessions(&claude, &codex, &muse, &pi, "/work/proj");
+        let got = sessions(&claude, &codex, &muse, &pi, &agy, "/work/proj");
         let ids: Vec<&str> = got.iter().map(|p| p.id.as_str()).collect();
-        assert_eq!(got.len(), 6, "{ids:?}");
-        assert!(ids.contains(&"aaaa-1") && ids.contains(&"bbbb-2") && ids.contains(&"dddd-4") && ids.contains(&"ffff-6"), "{ids:?}");
+        assert_eq!(got.len(), 7, "{ids:?}");
+        assert!(ids.contains(&"aaaa-1") && ids.contains(&"bbbb-2") && ids.contains(&"dddd-4") && ids.contains(&"ffff-6") && ids.contains(&"82316aaa-1111"), "{ids:?}");
         let by = |id: &str| got.iter().find(|p| p.id == id).unwrap();
         assert_eq!(by("aaaa-1").title.as_deref(), Some("Build fix"));
         assert_eq!(by("bbbb-2").title.as_deref(), Some("port the shell"));
@@ -399,6 +481,9 @@ mod tests {
         assert_eq!((by("ffff-6").kind.as_str(), by("ffff-6").title.as_deref()), ("muse", Some("wire the widget")));
         assert_eq!((by("9999-a").kind.as_str(), by("9999-a").title.as_deref()), ("pi", Some("tidy the docs")));
         assert_eq!(by("9999-b").title.as_deref(), Some("Named one"));
+        assert_eq!((by("82316aaa-1111").kind.as_str(), by("82316aaa-1111").title.as_deref()), ("agy", Some("wire agy")));
+        assert_eq!(agy_transcript(&agy, "82316aaa-1111"), Some(agy_logs.join("transcript.jsonl")));
+        assert_eq!(agy_transcript(&agy, "../x"), None);
         // a log is found by its session, whatever date it was had on,
         // and a subagent's parent by the child
         assert_eq!(muse_transcript(&muse, "ffff-6"), Some(mday.join("ffff-6/session.jsonl")));

@@ -238,12 +238,12 @@ fn summary(run: &[(&str, bool)]) -> String {
     let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
     for (title, _) in run {
         let k = match tool_of(title) {
-            "Read" | "NotebookRead" | "read_file" | "read" | "view_file" => "read",
-            "Edit" | "MultiEdit" | "Write" | "NotebookEdit" | "edit_file" | "write_file" | "edit" | "write" | "apply_patch" => "edit",
-            "Bash" | "bash" | "BashOutput" | "KillShell" | "shell" | "shell_command" | "exec_command" | "local_shell" | "container.exec" => "run",
-            "Grep" | "Glob" | "LS" | "grep" | "find" | "search" | "ls" => "search",
-            "WebFetch" | "WebSearch" => "web",
-            "Task" | "Agent" | "subagent_spawn" => "agent",
+            "Read" | "NotebookRead" | "read_file" | "read" | "view_file" | "view_file_outline" | "view_code_item" => "read",
+            "Edit" | "MultiEdit" | "Write" | "NotebookEdit" | "edit_file" | "write_file" | "edit" | "write" | "apply_patch" | "write_to_file" | "replace_file_content" | "multi_replace_file_content" => "edit",
+            "Bash" | "bash" | "BashOutput" | "KillShell" | "shell" | "shell_command" | "exec_command" | "local_shell" | "container.exec" | "run_command" => "run",
+            "Grep" | "Glob" | "LS" | "grep" | "find" | "search" | "ls" | "grep_search" | "find_by_name" | "list_dir" => "search",
+            "WebFetch" | "WebSearch" | "search_web" | "read_url_content" => "web",
+            "Task" | "Agent" | "subagent_spawn" | "invoke_subagent" => "agent",
             "TodoWrite" | "update_plan" | "write_todos" => "todo",
             _ => "other",
         };
@@ -334,12 +334,12 @@ fn activity(title: &str) -> String {
     let file = what.rsplit('/').next().unwrap_or(what);
     let cut = |s: &str, n: usize| s.chars().take(n).collect::<String>();
     match tool_of(title) {
-        "Read" | "read_file" | "read" | "view_file" => if what.is_empty() { "Reading".into() } else { format!("Reading {file}") },
-        "Edit" | "MultiEdit" | "Write" | "edit_file" | "write_file" | "edit" | "write" | "apply_patch" => if what.is_empty() { "Editing".into() } else { format!("Editing {file}") },
-        "Bash" | "bash" | "shell" | "shell_command" | "exec_command" | "local_shell" => if what.is_empty() { "Running a command".into() } else { format!("Running {}", cut(what, 80)) },
-        "Grep" | "Glob" | "LS" | "grep" | "find" | "search" | "ls" => if what.is_empty() { "Searching".into() } else { format!("Searching for {}", cut(what, 60)) },
-        "WebFetch" | "WebSearch" => "Looking on the web".into(),
-        "Task" | "Agent" | "subagent_spawn" => if what.is_empty() { "Asking a subagent".into() } else { format!("Asking a subagent: {}", cut(what, 60)) },
+        "Read" | "read_file" | "read" | "view_file" | "view_file_outline" | "view_code_item" => if what.is_empty() { "Reading".into() } else { format!("Reading {file}") },
+        "Edit" | "MultiEdit" | "Write" | "edit_file" | "write_file" | "edit" | "write" | "apply_patch" | "write_to_file" | "replace_file_content" | "multi_replace_file_content" => if what.is_empty() { "Editing".into() } else { format!("Editing {file}") },
+        "Bash" | "bash" | "shell" | "shell_command" | "exec_command" | "local_shell" | "run_command" => if what.is_empty() { "Running a command".into() } else { format!("Running {}", cut(what, 80)) },
+        "Grep" | "Glob" | "LS" | "grep" | "find" | "search" | "ls" | "grep_search" | "find_by_name" | "list_dir" => if what.is_empty() { "Searching".into() } else { format!("Searching for {}", cut(what, 60)) },
+        "WebFetch" | "WebSearch" | "search_web" | "read_url_content" => "Looking on the web".into(),
+        "Task" | "Agent" | "subagent_spawn" | "invoke_subagent" => if what.is_empty() { "Asking a subagent".into() } else { format!("Asking a subagent: {}", cut(what, 60)) },
         "TodoWrite" | "update_plan" | "write_todos" => "Updating its to-do list".into(),
         t => format!("Using {t}"),
     }

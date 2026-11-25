@@ -4,8 +4,9 @@
 //! the agent speaks, a line a tool call with its status ticked off in
 //! place, the files it touched as `path:line` for B3, an edit as its
 //! diff, a result cut to a dozen lines. Claude Code keeps a JSONL of
-//! its own shape, Codex another, Muse a third and pi a fourth; each is
-//! read into the same items, and one writer renders them.
+//! its own shape, Codex another, Muse a third, pi a fourth and
+//! Antigravity a fifth; each is read into the same items, and one
+//! writer renders them.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -54,27 +55,30 @@ pub fn call_title(tool: &str, input: &Value, cwd: &str) -> String {
     let path = |k: &str| s(k).map(|p| shown(p, cwd));
     let words = match tool {
         "Bash" | "bash" => s("description").map(String::from).or_else(|| s("command").map(String::from)),
-        "Edit" | "Write" | "Read" | "NotebookEdit" | "MultiEdit" | "edit_file" | "write_file" | "read_file" | "edit" | "write" | "read" | "ls" => {
-            path("file_path").or_else(|| path("notebook_path")).or_else(|| path("path"))
+        "run_command" => s("toolSummary").map(String::from).or_else(|| s("CommandLine").map(String::from)),
+        "Edit" | "Write" | "Read" | "NotebookEdit" | "MultiEdit" | "edit_file" | "write_file" | "read_file" | "edit" | "write" | "read" | "ls" | "view_file" | "view_file_outline" | "view_code_item" | "write_to_file" | "replace_file_content" | "multi_replace_file_content" | "list_dir" => {
+            path("file_path").or_else(|| path("notebook_path")).or_else(|| path("path")).or_else(|| path("Path")).or_else(|| path("TargetFile")).or_else(|| path("AbsolutePath")).or_else(|| path("DirectoryPath"))
         }
-        "Glob" | "find" => s("pattern").map(|p| match path("path") {
+        "Glob" | "find" | "find_by_name" => s("pattern").or_else(|| s("Pattern")).map(|p| match path("path").or_else(|| path("SearchDirectory")) {
             Some(d) => format!("{p} in {d}"),
             None => p.to_string(),
         }),
-        "Grep" | "search" | "grep" => s("pattern").map(|p| match path("path").or_else(|| paths_of(input)) {
+        "Grep" | "search" | "grep" | "grep_search" => s("pattern").or_else(|| s("Query")).map(|p| match path("path").or_else(|| path("SearchPath")).or_else(|| paths_of(input)) {
             Some(d) => format!("{p} in {d}"),
             None => p.to_string(),
         }),
         "Agent" | "Task" => s("description").map(String::from).or_else(|| s("subagent_type").map(String::from)),
         "subagent_spawn" => s("task_name").map(String::from).or_else(|| s("role").map(String::from)).or_else(|| s("objective").map(String::from)),
+        "invoke_subagent" => s("Role").map(String::from).or_else(|| s("TypeName").map(String::from)),
+        "run_workflow" => s("Description").map(String::from).or_else(|| path("ScriptPath")),
         "submit_result" => s("text").map(String::from),
-        "WebFetch" => s("url").map(String::from),
-        "WebSearch" => s("query").map(String::from),
+        "WebFetch" | "read_url_content" => s("url").or_else(|| s("Url")).map(String::from),
+        "WebSearch" | "search_web" => s("query").or_else(|| s("Query")).map(String::from),
         "Skill" => s("skill").map(String::from),
         "TodoWrite" | "update_plan" | "write_todos" => Some("plan".to_string()),
         "shell" | "shell_command" | "exec_command" | "local_shell" | "container.exec" => command_of(input),
         "apply_patch" => s("patch").or_else(|| s("input")).map(patched_files),
-        _ => ["description", "command", "cmd", "file_path", "path", "pattern", "query", "prompt", "url", "name"].iter().find_map(|k| s(k)).map(String::from).or_else(|| command_of(input)),
+        _ => ["description", "Description", "toolSummary", "command", "CommandLine", "cmd", "file_path", "path", "Path", "TargetFile", "pattern", "Pattern", "query", "Query", "prompt", "Prompt", "url", "Url", "name", "Name", "Role"].iter().find_map(|k| s(k)).map(String::from).or_else(|| command_of(input)),
     };
     let words = words.unwrap_or_default();
     let line = words.lines().next().unwrap_or("").trim();
@@ -128,8 +132,18 @@ pub fn call_detail(tool: &str, input: &Value, cwd: &str) -> Vec<String> {
                 out.extend(cmd.lines().skip(1).map(String::from));
             }
         }
-        "Edit" | "edit_file" => {
-            let (lines, cut) = hunk(s("old_string").or_else(|| s("find")).unwrap_or(""), s("new_string").or_else(|| s("replace")).unwrap_or(""));
+        "run_command" => {
+            if let (Some(_), Some(cmd)) = (s("toolSummary"), s("CommandLine")) {
+                out.extend(cmd.lines().map(String::from));
+            } else if let Some(cmd) = s("CommandLine") {
+                out.extend(cmd.lines().skip(1).map(String::from));
+            }
+        }
+        "Edit" | "edit_file" | "replace_file_content" => {
+            let (lines, cut) = hunk(
+                s("old_string").or_else(|| s("find")).or_else(|| s("Target")).or_else(|| s("TargetContent")).unwrap_or(""),
+                s("new_string").or_else(|| s("replace")).or_else(|| s("Replacement")).or_else(|| s("ReplacementContent")).unwrap_or(""),
+            );
             let (minus, plus) = (lines.iter().filter(|l| l.starts_with('-')).count(), lines.iter().filter(|l| l.starts_with('+')).count());
             out.push(format!("+{plus} -{minus}"));
             out.extend(lines);
@@ -154,8 +168,8 @@ pub fn call_detail(tool: &str, input: &Value, cwd: &str) -> Vec<String> {
                 out.push(format!("… {cut} more lines"));
             }
         }
-        "Write" | "write_file" | "write" => {
-            let n = s("content").map(|c| c.lines().count()).unwrap_or(0);
+        "Write" | "write_file" | "write" | "write_to_file" => {
+            let n = s("content").or_else(|| s("Content")).or_else(|| s("CodeContent")).map(|c| c.lines().count()).unwrap_or(0);
             out.push(format!("+{n} lines"));
         }
         "TodoWrite" | "write_todos" => {
@@ -193,8 +207,8 @@ pub fn call_detail(tool: &str, input: &Value, cwd: &str) -> Vec<String> {
                 out.push(format!("… {} more lines", lines.len() - shown));
             }
         }
-        "Agent" | "Task" | "subagent_spawn" => {
-            if let Some(p) = s("prompt").or_else(|| s("objective")) {
+        "Agent" | "Task" | "subagent_spawn" | "invoke_subagent" => {
+            if let Some(p) = s("prompt").or_else(|| s("objective")).or_else(|| s("Prompt")) {
                 out.extend(p.lines().take(6).map(String::from));
             }
         }
@@ -437,6 +451,7 @@ pub fn parser(kind: &str, cwd: &str, thoughts: bool) -> Box<dyn Parser> {
         "codex" => Box::new(Codex { cwd: cwd.to_string(), thoughts }),
         "muse" => Box::new(Muse { cwd: cwd.to_string(), thoughts }),
         "pi" => Box::new(Pi { cwd: cwd.to_string(), thoughts }),
+        "agy" | "antigravity" => Box::new(Agy::new(cwd, thoughts)),
         _ => Box::new(Claude { cwd: cwd.to_string(), thoughts }),
     }
 }
@@ -838,6 +853,152 @@ impl Parser for Pi {
     }
 }
 
+/// Antigravity's `~/.gemini/antigravity-cli/brain/ID/.system_generated/logs/transcript.jsonl`:
+/// a line a step (`step_index`, `source`, `type`, `status`). `USER_INPUT`
+/// carries the user's prompt (wrapped in `<USER_REQUEST>`),
+/// `PLANNER_RESPONSE` carries the model's `thinking`, `content` (or
+/// `response`) and `tool_calls` (whose string args are JSON-encoded),
+/// and the tool results follow as `GENERIC` steps at `step_index + 1 + k`,
+/// matching `stepIdx` in its hooks.
+pub struct Agy {
+    cwd: String,
+    thoughts: bool,
+}
+
+impl Agy {
+    pub fn new(cwd: &str, thoughts: bool) -> Agy {
+        Agy { cwd: cwd.to_string(), thoughts }
+    }
+}
+
+impl Parser for Agy {
+    fn line(&mut self, line: &str) -> Vec<Item> {
+        let Ok(v) = serde_json::from_str::<Value>(line) else { return Vec::new() };
+        let s = |k: &str| v.get(k).and_then(Value::as_str);
+        let step = v.get("step_index").and_then(Value::as_u64);
+        let mut out = Vec::new();
+        match s("type") {
+            Some("USER_INPUT") => {
+                if let Some(t) = s("content").and_then(agy_user_text) {
+                    out.push(Item::User(t));
+                }
+            }
+            Some("PLANNER_RESPONSE") => {
+                if self.thoughts {
+                    if let Some(t) = s("thinking").filter(|t| !t.trim().is_empty()) {
+                        out.push(Item::Thought(t.trim().to_string()));
+                    }
+                }
+                if let Some(t) = s("content").or_else(|| s("response")).filter(|t| !t.trim().is_empty()) {
+                    out.push(Item::Agent(t.trim().to_string()));
+                }
+                for (k, tc) in v.get("tool_calls").and_then(Value::as_array).into_iter().flatten().enumerate() {
+                    let name = tc.get("name").and_then(Value::as_str).unwrap_or("tool");
+                    let args = unwrap_agy_args(tc.get("args"));
+                    let id = match step {
+                        Some(idx) => format!("step-{}", idx + 1 + k as u64),
+                        None => tc.get("id").and_then(Value::as_str).unwrap_or("").to_string(),
+                    };
+                    out.push(Item::Call { id, title: call_title(name, &args, &self.cwd), detail: call_detail(name, &args, &self.cwd) });
+                }
+                if s("status") == Some("ERROR") || s("error").is_some_and(|e| !e.trim().is_empty()) {
+                    let what = s("error").filter(|e| !e.trim().is_empty()).unwrap_or("error");
+                    out.push(Item::Note(format!("error: {}", what.trim())));
+                }
+            }
+            Some("ERROR_MESSAGE") => {
+                let what = s("error").or_else(|| s("content")).filter(|e| !e.trim().is_empty()).unwrap_or("error");
+                out.push(Item::Note(format!("error: {}", what.trim())));
+            }
+            Some("SYSTEM_MESSAGE") | None => {}
+            Some(_) if s("source") == Some("MODEL") => {
+                let id = step.map(|idx| format!("step-{idx}")).unwrap_or_default();
+                let err = s("error").filter(|e| !e.trim().is_empty());
+                let body = strip_agy_timestamps(s("content").unwrap_or(""));
+                let ok = s("status") != Some("ERROR") && err.is_none() && !exited_nonzero(&body);
+                let text = if !body.is_empty() { body } else { err.unwrap_or("").to_string() };
+                out.push(Item::Result { id, ok, text });
+            }
+            Some(_) => {}
+        }
+        out
+    }
+}
+
+/// The user's prompt out of an Antigravity `USER_INPUT` step or
+/// `lastUserInput`: the text inside `<USER_REQUEST>...</USER_REQUEST>`
+/// when wrapped, else the text with metadata blocks stripped.
+pub(crate) fn agy_user_text(s: &str) -> Option<String> {
+    if let Some(a) = s.find("<USER_REQUEST>") {
+        let rest = &s[a + "<USER_REQUEST>".len()..];
+        let body = match rest.find("</USER_REQUEST>") {
+            Some(b) => &rest[..b],
+            None => rest,
+        };
+        let t = body.trim();
+        return if t.is_empty() { None } else { Some(t.to_string()) };
+    }
+    let mut text = s.to_string();
+    for tag in ["ADDITIONAL_METADATA", "USER_SETTINGS_CHANGE", "SYSTEM_MESSAGE"] {
+        let open = format!("<{tag}>");
+        let close = format!("</{tag}>");
+        while let Some(i) = text.find(&open) {
+            match text[i..].find(&close) {
+                Some(j) => text.replace_range(i..i + j + close.len(), ""),
+                None => {
+                    text.truncate(i);
+                    break;
+                }
+            }
+        }
+    }
+    let t = text.trim();
+    if t.is_empty() { None } else { Some(t.to_string()) }
+}
+
+/// Antigravity serializes each value in `tool_calls[].args` as a JSON
+/// string (`"\"/etc/hosts\""`): unwrap JSON-encoded values back to JSON.
+fn unwrap_agy_args(v: Option<&Value>) -> Value {
+    let Some(Value::Object(map)) = v else {
+        return v.cloned().unwrap_or(Value::Null);
+    };
+    let mut out = serde_json::Map::with_capacity(map.len());
+    for (k, val) in map {
+        let decoded = match val {
+            Value::String(s) if s.starts_with('"') || s.starts_with('[') || s.starts_with('{') => serde_json::from_str::<Value>(s).unwrap_or_else(|_| val.clone()),
+            _ => val.clone(),
+        };
+        out.insert(k.clone(), decoded);
+    }
+    Value::Object(out)
+}
+
+/// Drop the repeated `Created At:` / `Completed At:` headers Antigravity
+/// prepends to tool results.
+fn strip_agy_timestamps(s: &str) -> String {
+    let mut rest = s;
+    loop {
+        let trimmed = rest.trim_start_matches(['\r', '\n']);
+        if trimmed.starts_with("Created At: ") || trimmed.starts_with("Completed At: ") {
+            rest = match trimmed.find('\n') {
+                Some(i) => &trimmed[i + 1..],
+                None => "",
+            };
+        } else {
+            return trimmed.to_string();
+        }
+    }
+}
+
+fn exited_nonzero(s: &str) -> bool {
+    s.lines().take(5).any(|l| {
+        l.trim()
+            .strip_prefix("Command exited with code ")
+            .and_then(|r| r.trim_end_matches('.').parse::<i64>().ok())
+            .is_some_and(|c| c != 0)
+    })
+}
+
 /// A result as shown: a tool's envelope -- a shell's, with the output
 /// in it -- is unwrapped to what it said.
 fn result_text(text: &str) -> String {
@@ -1075,5 +1236,36 @@ mod tests {
         let big: Vec<String> = (0..30).map(|i| format!("l{i}")).collect();
         let (lines, cut) = hunk("", &big.join("\n"));
         assert_eq!((lines.len(), cut), (12, 18));
+    }
+
+    #[test]
+    fn an_agy_transcript_reads_as_the_conversation() {
+        let mut p = Agy::new("/home/me/proj", true);
+        let mut w = Writer::new();
+        let lines = [
+            r#"{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","content":"<USER_REQUEST>\nfix the typo\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nnow\n</ADDITIONAL_METADATA>"}"#,
+            r#"{"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","thinking":"Find it first","tool_calls":[{"name":"read_file","args":{"Path":"\"/home/me/proj/README.md\""}},{"name":"run_command","args":{"CommandLine":"\"git status\"","toolSummary":"\"Check git status\""}}]}"#,
+            r#"{"step_index":2,"source":"MODEL","type":"GENERIC","status":"DONE","content":"Created At: 2026-11-25T13:17:01-05:00\nCompleted At: 2026-11-25T13:17:02-05:00\nteh end"}"#,
+            r#"{"step_index":3,"source":"MODEL","type":"GENERIC","status":"DONE","content":"Created At: 2026-11-25T13:17:01-05:00\nCommand exited with code 1.\n\nCommand output:\nfatal: not a git repo"}"#,
+            r#"{"step_index":4,"source":"SYSTEM","type":"SYSTEM_MESSAGE","status":"DONE","content":"internal reminder"}"#,
+            r#"{"step_index":5,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","tool_calls":[{"name":"edit_file","args":{"Path":"\"/home/me/proj/README.md\"","Target":"\"teh end\"","Replacement":"\"the end\""}}]}"#,
+            r#"{"step_index":6,"source":"MODEL","type":"GENERIC","status":"ERROR","error":"permission denied","content":"Created At: 2026-11-25T13:17:03-05:00\npermission denied"}"#,
+            r#"{"step_index":7,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","content":"Could not edit README.md."}"#,
+        ];
+        for l in lines {
+            for it in p.line(l) {
+                w.item(&it);
+            }
+        }
+        assert_eq!(
+            w.text,
+            "~\n\nfix the typo\n\n  · Find it first\n✓ read_file: README.md\n✗ run_command: Check git status\n    git status\n    teh end\n    Command exited with code 1.\n    \n    Command output:\n    fatal: not a git repo\n✗ edit_file: README.md\n    +1 -1\n    -teh end\n    +the end\n    permission denied\n• Could not edit README.md.\n"
+        );
+        // without thoughts, thinking is omitted
+        let mut p = Agy::new("/x", false);
+        assert!(p.line(r#"{"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","thinking":"hmm"}"#).is_empty());
+        assert_eq!(call_title("search_web", &serde_json::json!({"query": "rust hooks"}), "/x"), "search_web: rust hooks");
+        assert_eq!(call_title("invoke_subagent", &serde_json::json!({"Role": "Codebase Researcher", "TypeName": "research"}), "/x"), "invoke_subagent: Codebase Researcher");
+        assert_eq!(call_detail("write_file", &serde_json::json!({"Path": "/x/a.rs", "Content": "a\nb\n"}), "/x"), vec!["+2 lines"]);
     }
 }
