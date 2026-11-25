@@ -111,6 +111,14 @@ fn theme_rules() -> String {
     )
 }
 
+/// The round holes no other hole overlaps, and the bounds of those that
+/// give way to one: an overlay over a strip has the place to itself.
+fn give_way(holes: &[(Bounds<Pixels>, Pixels)], rounds: &[(Bounds<Pixels>, Pixels)]) -> (Vec<(Bounds<Pixels>, Pixels)>, Vec<Bounds<Pixels>>) {
+    let over = |b: &Bounds<Pixels>| holes.iter().any(|(o, m)| o.dilate(*m).intersects(b));
+    let (kept, gone): (Vec<_>, Vec<_>) = rounds.iter().copied().partition(|(b, _)| !over(b));
+    (kept, gone.into_iter().map(|(b, _)| b).collect())
+}
+
 /// Where something afloat over a page's foot is, in the page's view, in
 /// CSS pixels: in from its left, its right and its foot, how tall, its
 /// corners' round (`Webs::set_foot`).
@@ -428,6 +436,8 @@ pub struct WebHost {
     /// The room at its foot and the float's place last said (`set_foot`),
     /// none since it loaded.
     foot: Option<(u32, Option<Float>)>,
+    /// Its float's shadow hidden: the float gave way to an overlay.
+    float_hidden: bool,
     /// The holes cut in the view (`set_holes`), in the view's own
     /// coordinates, as last applied.
     holes: Vec<(f64, f64, f64, f64, f64)>,
@@ -846,6 +856,11 @@ impl Webs {
         #[link(name = "QuartzCore", kind = "framework")]
         extern "C" {}
         // a round hole is a hole at its bounds, with corners
+        // a round hole an overlay's hole overlaps gives way to it: two holes
+        // over one another, the mask's even-odd rule would cut the page
+        // back in where they meet. What floats there (an input strip) is
+        // under the page until the overlay goes, its shadow with it.
+        let (rounds, yielded) = give_way(holes, rounds);
         let holes: Vec<(Bounds<Pixels>, Pixels, f64)> = holes.iter().map(|&(o, m)| (o, m, 0.)).chain(rounds.iter().map(|&(o, r)| (o, gpui::px(0.), f64::from(f32::from(r))))).collect();
         self.cut = holes.iter().map(|&(o, _, _)| o).collect();
         // the panels' shadows reach past their bounds, each its own way
@@ -853,6 +868,13 @@ impl Webs {
             let Some(vb) = h.bounds else { continue };
             if !h.shown {
                 continue;
+            }
+            // a strip that gave way over this page: the page's shadow of it
+            // gone too, back with it
+            let hide = yielded.iter().any(|b| b.intersects(&vb));
+            if h.float_hidden != hide {
+                h.float_hidden = hide;
+                let _ = h.view.evaluate_script(&format!("document.documentElement.classList.toggle('apex-nofloat', {hide});"));
             }
             // what of the overlays lies over this page, their bounds alone:
             // the clicks there are theirs, not the page's (`hit_test`)
@@ -931,6 +953,7 @@ impl Webs {
 
     #[cfg(not(target_os = "macos"))]
     pub fn set_holes(&mut self, holes: &[(Bounds<Pixels>, Pixels)], rounds: &[(Bounds<Pixels>, Pixels)]) {
+        let (rounds, _) = give_way(holes, rounds);
         self.cut = holes.iter().map(|&(o, _)| o).chain(rounds.iter().map(|&(o, _)| o)).collect();
     }
 
@@ -1301,7 +1324,7 @@ impl Webs {
                 let _ = view.set_visible(visible);
                 round_foot(&view);
                 let loading = if from_buffer { None } else { Some(std::time::Instant::now()) };
-                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, holes: Vec::new(), foot: None, html, followed: None, reloads: None, owned: None, loading, watches, plane: self.plane.clone(), scroll: None, restoring: None, toc: None, veil: None });
+                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, holes: Vec::new(), foot: None, float_hidden: false, html, followed: None, reloads: None, owned: None, loading, watches, plane: self.plane.clone(), scroll: None, restoring: None, toc: None, veil: None });
             }
             Err(e) => eprintln!("web: {w}: {e}"),
         }
@@ -1456,9 +1479,10 @@ impl Webs {
         let mut css = if px > 0 { format!("html{{scroll-padding-bottom:{px}px}}body{{padding-bottom:{px}px !important}}") } else { String::new() };
         if let Some(f) = float {
             // a box as the strip's, its inside clear (an outer shadow is
-            // drawn outside it alone), taking no clicks
+            // drawn outside it alone), taking no clicks; none while the
+            // strip gives way to an overlay (`apex-nofloat`)
             css.push_str(&format!(
-                "html::after{{content:\"\";position:fixed;left:{}px;right:{}px;bottom:{}px;height:{}px;border-radius:{}px;box-shadow:0 4px 14px rgba(0,0,0,.14),0 1px 3px rgba(0,0,0,.08);pointer-events:none;z-index:2147483647}}",
+                "html::after{{content:\"\";position:fixed;left:{}px;right:{}px;bottom:{}px;height:{}px;border-radius:{}px;box-shadow:0 4px 14px rgba(0,0,0,.14),0 1px 3px rgba(0,0,0,.08);pointer-events:none;z-index:2147483647}}html.apex-nofloat::after{{display:none}}",
                 f.left, f.right, f.bottom, f.height, f.round
             ));
         }
