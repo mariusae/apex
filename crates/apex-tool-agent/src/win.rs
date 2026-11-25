@@ -104,10 +104,11 @@ struct Detail {
     send: RuleId,
 }
 
-/// An agent's open preview and the exchange it is showing.
 /// An agent's conversation, a lens on its terminal (`View`, ⌘↩): what
 /// was asked and answered, kept up as it goes, an input strip under it
-/// for the next prompt; `View` again, the terminal back.
+/// for the next prompt; `View` again, the terminal back. It shows the
+/// agent running in the terminal now: after a `/resume`, the session
+/// resumed, from the start of its transcript.
 struct Lens {
     session: String,
     /// The terminal it is a lens on.
@@ -118,8 +119,21 @@ struct Lens {
     stop: RuleId,
     /// The markdown it last showed, so that only a change is written.
     md: String,
+    /// The session's transcript, read as it grows, and what it has said:
+    /// the whole conversation, a resumed session's before this tool saw
+    /// it too. None for an agent whose hooks name no transcript (its
+    /// exchanges, as the hooks told them, then).
+    told: Option<Told>,
 }
 
+/// A transcript read for a lens: the file, how it is read, what it said.
+struct Told {
+    tail: Tail,
+    parser: Box<dyn Parser>,
+    items: Vec<crate::transcript::Item>,
+}
+
+/// An agent's open preview and the exchange it is showing.
 struct Page {
     session: String,
     at: Option<usize>,
@@ -374,6 +388,9 @@ impl Pane {
                     if let Some(l) = self.lenses.remove(&window) {
                         for r in [l.view, l.send, l.stop] {
                             self.t.withdraw(r);
+                        }
+                        if let Some(dir) = l.told.as_ref().and_then(|t| t.tail.path.parent()).map(Path::to_path_buf) {
+                            self.unwatch(&dir);
                         }
                     }
                     if let Some(page) = self.pages.remove(&window) {
@@ -1196,7 +1213,9 @@ impl Pane {
         self.t.set_input(w, Some(&draft))?;
         // the latest at the foot, where the next prompt goes
         let _ = self.t.scroll_page(w, apex_tool::Scroll::Fraction(1.0));
-        self.lenses.insert(w, Lens { session: key.to_string(), base, view, send, stop, md });
+        // the page written again from the transcript, once it is read
+        self.lenses.insert(w, Lens { session: key.to_string(), base, view, send, stop, md, told: None });
+        self.render_lenses()?;
         Ok(true)
     }
 
@@ -1227,24 +1246,81 @@ impl Pane {
         Ok(true)
     }
 
-    /// Each conversation lens kept up with its agent: written afresh when
-    /// what it says changed (the page at its foot when it grew), and its
+    /// Each conversation lens kept up with its agent: the one running in
+    /// its terminal now (another after a `/resume`, from the start of its
+    /// transcript), its transcript read as it grows, written afresh when
+    /// what it says changed (the page at its foot when it did), and its
     /// strip's draft remembered, so a lens gone (its terminal, the user's
     /// Del) leaves it for the next.
     fn render_lenses(&mut self) -> apex_tool::Result<()> {
+        let windows: Vec<WindowId> = self.t.windows().iter().map(|x| x.id).collect();
+        let now: HashMap<WindowId, String> = current_in_windows(&self.agents, &self.session, &windows, self.w).into_iter().map(|(w, a)| (w, a.session.clone())).collect();
         let ws: Vec<WindowId> = self.lenses.keys().copied().collect();
         for w in ws {
-            let Some(l) = self.lenses.get(&w) else { continue };
-            let Some(a) = self.agents.get(&l.session) else { continue };
-            let md = page::conversation(a);
-            let cwd = a.cwd.clone();
-            if let Some(draft) = self.t.input(w).filter(|d| !d.trim().is_empty()) {
-                self.drafts.insert(l.session.clone(), draft);
+            // the agent its terminal runs now
+            let (base, was) = match self.lenses.get(&w) {
+                Some(l) => (l.base, l.session.clone()),
+                None => continue,
+            };
+            if let Some(key) = now.get(&base).filter(|k| **k != was).cloned() {
+                if let Some(draft) = self.t.input(w).filter(|d| !d.trim().is_empty()) {
+                    self.drafts.insert(was, draft);
+                }
+                let told = self.lenses.get_mut(&w).and_then(|l| {
+                    l.session = key;
+                    l.told.take()
+                });
+                if let Some(dir) = told.as_ref().and_then(|t| t.tail.path.parent()).map(Path::to_path_buf) {
+                    self.unwatch(&dir);
+                }
             }
-            if md == l.md {
+            let Some(l) = self.lenses.get(&w) else { continue };
+            let Some(a) = self.agents.get(&l.session).cloned() else { continue };
+            // its transcript: read from its start the first time, as it
+            // grows after; another file (a session's own), afresh
+            // (as the transcript window finds it: Muse's hooks name none)
+            let path = transcript::transcript_path(a.transcript.as_deref()).map(Path::to_path_buf).or_else(|| (a.kind == "muse").then(|| history::muse_transcript(&self.opts.muse_home, &a.session)).flatten());
+            let stale = l.told.as_ref().map(|t| t.tail.path.clone()) != path;
+            if stale {
+                let old = self.lenses.get_mut(&w).and_then(|l| l.told.take());
+                if let Some(dir) = old.as_ref().and_then(|t| t.tail.path.parent()).map(Path::to_path_buf) {
+                    self.unwatch(&dir);
+                }
+                if let Some(p) = &path {
+                    if let Some(dir) = p.parent() {
+                        self.watch(dir);
+                    }
+                    let parser = crate::transcript::parser(&a.kind, &a.cwd, false);
+                    if let Some(l) = self.lenses.get_mut(&w) {
+                        l.told = Some(Told { tail: Tail::new(p.clone()), parser, items: Vec::new() });
+                    }
+                }
+            }
+            let Some(l) = self.lenses.get_mut(&w) else { continue };
+            if let Some(t) = l.told.as_mut() {
+                let before = t.tail.read;
+                let lines = t.tail.lines();
+                // shorter than it was: read again from its start
+                if t.tail.read < before {
+                    t.items.clear();
+                }
+                for line in lines {
+                    let items = t.parser.line(&line);
+                    t.items.extend(items);
+                }
+            }
+            let md = match &l.told {
+                Some(t) if !t.items.is_empty() => page::told(&t.items, &a),
+                _ => page::conversation(&a),
+            };
+            let session = l.session.clone();
+            if let Some(draft) = self.t.input(w).filter(|d| !d.trim().is_empty()) {
+                self.drafts.insert(session, draft);
+            }
+            if self.lenses.get(&w).is_some_and(|l| l.md == md) {
                 continue;
             }
-            let html = page::render_md(&self.t, Path::new(&cwd), &md);
+            let html = page::render_md(&self.t, Path::new(&a.cwd), &md);
             self.t.replace(w, 0, END, &html)?;
             let _ = self.t.scroll_page(w, apex_tool::Scroll::Fraction(1.0));
             if let Some(l) = self.lenses.get_mut(&w) {

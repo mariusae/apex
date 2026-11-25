@@ -31,35 +31,97 @@ pub fn conversation(a: &crate::agent::Agent) -> String {
     let mut md = String::new();
     // each turn a heading, its prompt's first line: the page's outline is
     // the conversation's turns, to go to from its scrollbar
-    let heading = |asked: &str| {
-        let first = asked.trim().lines().next().unwrap_or("").trim();
-        let short: String = first.chars().take(60).collect();
-        let more = if first.chars().count() > 60 { "…" } else { "" };
-        format!("### {}{more}\n\n", escape(&short).replace('#', "\\#"))
-    };
     for x in &a.exchanges {
         md.push_str(&heading(&x.asked));
         md.push_str(&markdown(&x.asked, &x.said));
         md.push_str("\n---\n\n");
     }
-    let going = matches!(a.state, crate::agent::State::Working | crate::agent::State::Asking | crate::agent::State::Starting);
+    let going = !doing(a).is_empty();
     if going {
         let finished = a.exchanges.last().map(|x| x.asked.trim()) == a.prompt.as_deref().map(str::trim);
         if let Some(p) = a.prompt.as_deref().filter(|_| !finished) {
             md.push_str(&heading(p));
             md.push_str(&markdown(p, ""));
         }
-        let doing = match (a.state, a.running.last(), a.asked.as_deref()) {
-            (crate::agent::State::Asking, _, Some(call)) => format!("asks to run {call}"),
-            (crate::agent::State::Asking, _, None) => "has a question".to_string(),
-            (_, Some((_, line)), _) => line.clone(),
-            _ => "working".to_string(),
-        };
-        md.push_str(&format!("*{}*\n", escape(doing.trim())));
+        md.push_str(&doing(a));
     } else if a.exchanges.is_empty() {
         md.push_str("*nothing asked yet*\n");
     }
     md
+}
+
+/// An agent's conversation from its transcript (`transcript::Item`s),
+/// for its lens: each prompt a heading (the page's outline its turns)
+/// and quoted, the agent's words as it wrote them, each run of tool
+/// calls folded into a list of their one-line titles (a failed one
+/// marked so); and the turn going, what it is doing.
+pub fn told(items: &[crate::transcript::Item], a: &crate::agent::Agent) -> String {
+    use crate::transcript::Item;
+    let failed: std::collections::HashSet<&str> = items.iter().filter_map(|i| match i {
+        Item::Result { id, ok: false, .. } => Some(id.as_str()),
+        _ => None,
+    }).collect();
+    let mut md = String::new();
+    let mut calls = false;
+    for it in items {
+        let call = matches!(it, Item::Call { .. });
+        if calls && !call && !matches!(it, Item::Result { .. }) {
+            md.push('\n');
+            calls = false;
+        }
+        match it {
+            Item::User(t) => {
+                if !md.is_empty() {
+                    md.push_str("\n---\n\n");
+                }
+                md.push_str(&heading(t));
+                md.push_str(&markdown(t, ""));
+            }
+            Item::Agent(t) => {
+                md.push_str(t.trim());
+                md.push_str("\n\n");
+            }
+            Item::Call { id, title, .. } => {
+                let mark = if failed.contains(id.as_str()) { " ✗" } else { "" };
+                md.push_str(&format!("- `{}`{mark}\n", title.replace('`', "'")));
+                calls = true;
+            }
+            Item::Note(t) => md.push_str(&format!("*{}*\n\n", escape(t.trim()))),
+            Item::Thought(_) | Item::Result { .. } => {}
+        }
+    }
+    if calls {
+        md.push('\n');
+    }
+    md.push_str(&doing(a));
+    if md.trim().is_empty() {
+        md.push_str("*nothing asked yet*\n");
+    }
+    md
+}
+
+/// A turn's prompt as a heading: its first line, cut short.
+fn heading(asked: &str) -> String {
+    let first = asked.trim().lines().next().unwrap_or("").trim();
+    let short: String = first.chars().take(60).collect();
+    let more = if first.chars().count() > 60 { "…" } else { "" };
+    format!("### {}{more}\n\n", escape(&short).replace('#', "\\#"))
+}
+
+/// What the agent is doing, for the foot of its conversation, while a
+/// turn goes on; nothing between turns.
+fn doing(a: &crate::agent::Agent) -> String {
+    use crate::agent::State;
+    if !matches!(a.state, State::Working | State::Asking | State::Starting) {
+        return String::new();
+    }
+    let doing = match (a.state, a.running.last(), a.asked.as_deref()) {
+        (State::Asking, _, Some(call)) => format!("asks to run {call}"),
+        (State::Asking, _, None) => "has a question".to_string(),
+        (_, Some((_, line)), _) => line.clone(),
+        _ => "working".to_string(),
+    };
+    format!("*{}*\n", escape(doing.trim()))
 }
 
 /// Markdown as a page, through the session's converter.

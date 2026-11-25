@@ -228,7 +228,15 @@ as the agent goes, the page at its foot; under it an input strip,
 whose text `Send` (⌘↩ in the strip) types into the terminal, pasted
 then Enter; `Stop` in its tag presses Escape, the agents' interrupt.
 `View` on the conversation takes it away, the terminal back; a draft
-left in the strip is put back the next time.
+left in the strip is put back the next time. The conversation is read
+from the session's transcript, the file its hooks name (Muse's found
+by its session), so a session resumed (`--resume`, `/resume`) shows
+the whole of it, what came before the hooks said anything too: each
+prompt a heading and quoted, the agent's words, each run of tool calls
+a list of their titles (✗ on one that failed). It is of the agent
+running in the terminal now: resume another there, and it is that
+one's. An agent whose transcript cannot be found has its exchanges as
+the hooks told them.
 
 ## The transcript
 

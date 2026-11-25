@@ -758,3 +758,81 @@ fn view_in_an_agents_terminal_is_its_conversation_with_a_prompt_under_it() {
     assert_eq!(c.node.state.window(lens).ok().and_then(|w| w.input).and_then(|b| c.node.state.buffer(b).ok()).map(|b| b.text.to_string()).as_deref(), Some("half a thought"));
     let _ = std::fs::remove_dir_all(&tmp);
 }
+
+/// A session resumed in a terminal (`claude --resume`, `/resume`): its
+/// lens is its whole conversation, from its transcript -- what came
+/// before the hooks said anything -- and, the terminal resuming another,
+/// that one's.
+#[test]
+fn a_resumed_sessions_lens_is_its_whole_transcript() {
+    let sock = daemon();
+    let tmp = std::env::temp_dir().join(format!("apex-tool-agent-resumed-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let logs = tmp.join("agent");
+    let proj = tmp.join("proj");
+    std::fs::create_dir_all(&proj).unwrap();
+    let claude = |prompt: &str, call: &str, answer: &str| {
+        format!(
+            "{{\"type\":\"user\",\"message\":{{\"role\":\"user\",\"content\":\"{prompt}\"}}}}\n{{\"type\":\"assistant\",\"message\":{{\"role\":\"assistant\",\"content\":[{{\"type\":\"tool_use\",\"id\":\"t1\",\"name\":\"Bash\",\"input\":{{\"command\":\"{call}\"}}}}]}}}}\n{{\"type\":\"user\",\"message\":{{\"role\":\"user\",\"content\":[{{\"type\":\"tool_result\",\"tool_use_id\":\"t1\",\"content\":\"ok\"}}]}}}}\n{{\"type\":\"assistant\",\"message\":{{\"role\":\"assistant\",\"content\":[{{\"type\":\"text\",\"text\":\"{answer}\"}}]}}}}\n"
+        )
+    };
+    let one = tmp.join("1111aaaa-0000.jsonl");
+    std::fs::write(&one, claude("the old question", "ls old", "the old answer")).unwrap();
+    let two = tmp.join("2222bbbb-0000.jsonl");
+    std::fs::write(&two, claude("another question", "ls other", "another answer")).unwrap();
+
+    let mut c = Remote::connect_as(&sock, "main", "watch", AttachmentKind::Tool).unwrap();
+    let sid = c.node.state.meta.id.clone();
+    let col = c.node.state.layout.cols.first().map(|x| x.id).unwrap();
+    let tw = c.propose(apex_server::Proposal::NewWindow { col, name: format!("{}/", proj.display()), label: Some("term".into()), scratch: true, diagnostic: false }, Duration::from_secs(5)).unwrap().unwrap();
+    let ev = |session: &str, path: &std::path::Path, event: &str| Event { ms: event::now_ms(), agent: "claude".into(), event: event.into(), session: session.into(), cwd: proj.display().to_string(), transcript: Some(path.display().to_string()), apex: Some(sid.clone()), win: Some(tw.0), ..Event::default() };
+    // resumed: the hooks say only that it started again
+    event::append(&logs, &Event { kind: Some("resume".into()), ..ev("1111aaaa-0000", &one, "SessionStart") }).unwrap();
+
+    let mut t = Tool::attach_to(&sock, "main", "agent").unwrap();
+    t.set("Preview.md", "cat");
+    let pane = Pane::start(t, Opts { claude_home: tmp.join("claude-home"), codex_home: tmp.join("codex-home"), ..Opts::new(tmp.clone(), logs.clone()) }).unwrap();
+    std::thread::spawn(move || {
+        let mut pane = pane;
+        if let Err(e) = pane.serve() {
+            eprintln!("serve: {}", e.0);
+        }
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !apex_core::plumb::claims_verb(&c.node.state.meta.rules, "View", &c.node.window_path(tw), c.node.window_kind(tw), tw, None) && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(tw), text: "View".into() }, Duration::from_secs(5)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while c.node.state.layout.lens_of(tw).is_none() && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    let lens = c.node.state.layout.lens_of(tw).expect("the conversation");
+    let has = |c: &Remote, s: &str| c.node.state.window(lens).is_ok() && text_of(c, lens).contains(s);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !has(&c, "the old answer") && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    let text = text_of(&c, lens);
+    assert!(text.contains("### the old question") && text.contains("> the old question") && text.contains("- `Bash: ls old`") && text.contains("the old answer"), "{text}");
+    // the terminal resumes another session: the lens is that one's
+    std::thread::sleep(Duration::from_millis(20));
+    event::append(&logs, &Event { kind: Some("resume".into()), ..ev("2222bbbb-0000", &two, "SessionStart") }).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while !has(&c, "another answer") && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    let text = text_of(&c, lens);
+    assert!(text.contains("another answer") && !text.contains("the old answer"), "{text}");
+    // and it follows the transcript as it grows
+    let mut f = std::fs::OpenOptions::new().append(true).open(&two).unwrap();
+    use std::io::Write;
+    writeln!(f, "{{\"type\":\"user\",\"message\":{{\"role\":\"user\",\"content\":\"and then?\"}}}}").unwrap();
+    event::append(&logs, &Event { text: Some("and then?".into()), ..ev("2222bbbb-0000", &two, "UserPromptSubmit") }).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while !has(&c, "### and then?") && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    assert!(has(&c, "### and then?"), "{}", text_of(&c, lens));
+    let _ = std::fs::remove_dir_all(&tmp);
+}
