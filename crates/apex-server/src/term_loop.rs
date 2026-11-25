@@ -130,13 +130,18 @@ pub fn scan(carry: &mut Vec<u8>, new: &[u8]) -> (Vec<u8>, Vec<(usize, Label)>) {
                     let rest: Vec<&[u8]> = parts.collect();
                     let exit = rest.first().and_then(|e| std::str::from_utf8(e).ok()).and_then(|e| e.trim().parse().ok());
                     // `C`'s command line: `cmdline_url=` (percent-encoded,
-                    // fish's and ghostty's), else `cmdline=` as it is
-                    let cmd = rest.iter().find_map(|p| {
+                    // fish's and ghostty's), else `cmdline=` as it is --
+                    // the rest of the mark, its semicolons too (rc's
+                    // `rcmain` says it so: `echo a; echo b`)
+                    let cmd = rest.iter().enumerate().find_map(|(i, p)| {
                         let p = lossy(p);
                         if let Some(u) = p.strip_prefix("cmdline_url=") {
                             Some(percent_decode(u))
                         } else {
-                            p.strip_prefix("cmdline=").map(str::to_string)
+                            p.strip_prefix("cmdline=").map(|_| {
+                                let all = lossy(&rest[i..].join(&b';'));
+                                all["cmdline=".len()..].to_string()
+                            })
                         }
                     });
                     labels.push((out.len(), Label::Mark(kind, exit, cmd)));
@@ -446,6 +451,9 @@ mod tests {
         assert_eq!(labels, vec![Label::Mark(b'C', None, Some("make test; ls".into()))]);
         let (_, labels) = run(&[b"\x1b]133;D;2\x07"]);
         assert_eq!(labels, vec![Label::Mark(b'D', Some(2), None)]);
+        // as it is, semicolons and all
+        let (_, labels) = run(&[b"\x1b]133;C;cmdline=echo a; echo b\x07"]);
+        assert_eq!(labels, vec![Label::Mark(b'C', None, Some("echo a; echo b".into()))]);
         let (_, labels) = run(&[b"\x1b]133;C\x07"]);
         assert_eq!(labels, vec![Label::Mark(b'C', None, None)]);
         assert_eq!(percent_decode("a%2"), "a%2");

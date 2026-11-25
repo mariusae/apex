@@ -1150,7 +1150,7 @@ fn an_outline_a_tool_gives_moves_with_the_text_and_goes_with_the_tool() {
     let b = node.state.window(w).unwrap().body_buffer().unwrap();
     let (by, _) = log.attach(AttachmentKind::Tool, "lsp");
     node.catch_up(&log).unwrap();
-    let items = vec![OutlineItem { level: 1, title: "a".into(), at: 0 }, OutlineItem { level: 1, title: "b".into(), at: 10 }];
+    let items = vec![OutlineItem { level: 1, title: "a".into(), at: 0, ..Default::default() }, OutlineItem { level: 1, title: "b".into(), at: 10, ..Default::default() }];
     node.set_outline(&mut log, b, by, Some(items)).unwrap();
     // a line put in before b: b's place moves, a's does not
     node.select(&mut log, ViewId::Body(w), 10, 10).unwrap();

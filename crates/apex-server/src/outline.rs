@@ -52,7 +52,11 @@ pub fn of(node: &Node, w: WindowId, now_ms: u64) -> Option<Vec<Entry>> {
         Body::Text(b) => {
             let o = node.window_outline(w)?;
             let len = node.state.buffer(b).ok()?.text.len();
-            o.items.iter().map(|it| Entry { level: it.level.clamp(1, 4), title: it.title.clone(), detail: None, failed: false, at: At::Text(it.at.min(len)) }).collect()
+            // a command among them (win's) says how it ran, as a terminal's
+            o.items
+                .iter()
+                .map(|it| Entry { level: it.level.clamp(1, 4), title: it.title.clone(), detail: crate::run_said_of(it.started, it.ended, it.exit, now_ms), failed: it.exit.is_some_and(|x| x != 0), at: At::Text(it.at.min(len)) })
+                .collect()
         }
         Body::Term(t) => {
             let term = node.state.terms.get(&t)?;

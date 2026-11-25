@@ -8,7 +8,10 @@
 //! (win's `echocancel`); a program that turns echo off (a password) is
 //! served raw: keys go at once and leave the window. Labels in the
 //! output name the window. `Send` (the builtin) appends the snarf buffer
-//! and a newline, which is typing like any other.
+//! and a newline, which is typing like any other. The shell's prompt
+//! marks (OSC 133: rc's `rcmain` in apex, or zsh's and bash's
+//! integrations) are the window's outline: each command at its prompt,
+//! with when it ran and how it went.
 
 use std::collections::VecDeque;
 use std::io::{Read, Write};
@@ -186,6 +189,20 @@ struct Win {
     title: Option<String>,
     initial_dir: PathBuf,
     label: String,
+    /// The window's outline, its commands (`outline_mark`): where the
+    /// last prompt began, and each command as proposed, how many of them
+    /// the buffer has (their places moved with its edits since).
+    prompt_at: Option<usize>,
+    cmds: Vec<OutlineItem>,
+    shown: usize,
+}
+
+/// The most commands the outline keeps, the oldest going first.
+const MOST_CMDS: usize = 500;
+
+/// Now by the clock a terminal's marks go by: ms since the epoch.
+fn now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
 }
 
 /// The rules that make this window win's, answered by our attachment
@@ -251,7 +268,7 @@ pub fn run(socket: &Path, session: &str, dir: &Path, cmd: &[String]) -> Result<(
         remote.rule_add(rule, 0, true, TIMEOUT)?;
     }
     let me = remote.attachment();
-    let mut w = Win { remote, window, buffer, shell, p: 0, typing: String::new(), breaks: 0, echo: VecDeque::new(), ours: VecDeque::new(), carry: Vec::new(), rx, cook: false, to_remove: Vec::new(), cwd: None, title: None, initial_dir: dir.to_path_buf(), label };
+    let mut w = Win { remote, window, buffer, shell, p: 0, typing: String::new(), breaks: 0, echo: VecDeque::new(), ours: VecDeque::new(), carry: Vec::new(), rx, cook: false, to_remove: Vec::new(), cwd: None, title: None, initial_dir: dir.to_path_buf(), label, prompt_at: None, cmds: Vec::new(), shown: 0 };
     // live while the shell is: the handle says so, Del does not ask
     let _ = w.propose(Proposal::Live { window, by: Some(me) }, TIMEOUT);
     let r = w.main_loop();
@@ -513,23 +530,31 @@ impl Win {
             eprintln!("win: output {:?} echo={:?}", String::from_utf8_lossy(&bytes), String::from_utf8_lossy(&self.echo.iter().copied().collect::<Vec<u8>>()));
         }
         let (bytes, labels) = scan(&mut self.carry, &bytes);
-        if !labels.is_empty() {
-            let was = self.window_place();
-            for (_, l) in labels {
-                match l {
-                    Label::Name(t) => self.title = Some(t),
-                    Label::Cwd(s) => {
-                        if let Some(p) = apex_server::term::cwd_path(&s) {
-                            self.cwd = Some(p);
-                        }
+        let was = (!labels.is_empty()).then(|| self.window_place());
+        // the output in its pieces between the labels, each label taken
+        // where it fell: a prompt's mark is where its prompt begins
+        let mut from = 0;
+        for (at, l) in labels {
+            self.emit(&bytes[from..at.min(bytes.len())]);
+            from = at.min(bytes.len());
+            match l {
+                Label::Name(t) => self.title = Some(t),
+                Label::Cwd(s) => {
+                    if let Some(p) = apex_server::term::cwd_path(&s) {
+                        self.cwd = Some(p);
                     }
-                    // win's text window has no prompts to mark, and its
-                    // programs' status (OSC 7501) is not yet heard here:
-                    // taken out of the text, at least; a reset is the
-                    // terminal's, of which win has none
-                    Label::Mark(..) | Label::Status(_) | Label::Reset => {}
                 }
+                // the shell's prompt marks (OSC 133, rc's rcmain in apex):
+                // the window's outline
+                Label::Mark(kind, exit, cmd) => self.outline_mark(kind, exit, cmd),
+                // its programs' status (OSC 7501) is not yet heard here:
+                // taken out of the text, at least; a reset is the
+                // terminal's, of which win has none
+                Label::Status(_) | Label::Reset => {}
             }
+        }
+        self.emit(&bytes[from..]);
+        if let Some(was) = was {
             let now = self.window_place();
             if now.0 != was.0 {
                 let _ = self.propose(Proposal::SetPath { window: self.window, path: now.0.clone() }, TIMEOUT);
@@ -538,13 +563,76 @@ impl Win {
                 let _ = self.propose(Proposal::SetLabel { window: self.window, label: Some(now.1) }, TIMEOUT);
             }
         }
-        let bytes = self.echocancel(&bytes);
+    }
+
+    /// A piece of output: echo cancelled, CR LF and backspace runs
+    /// dropped, the rest inserted at the output point.
+    fn emit(&mut self, bytes: &[u8]) {
+        if bytes.is_empty() {
+            return;
+        }
+        let bytes = self.echocancel(bytes);
         let bytes = dropcrnl(&bytes);
         if bytes.is_empty() {
             return;
         }
         let text = String::from_utf8_lossy(&bytes).to_string();
         self.insert_output(text);
+    }
+
+    /// A prompt mark from the shell: `A` a prompt begins here (the
+    /// output point); `C` a command runs, its line as the shell read it,
+    /// an entry in the outline at its prompt; `D` it ended, with its
+    /// status. Each change proposed whole: the outline is ours.
+    fn outline_mark(&mut self, kind: u8, exit: Option<i32>, cmd: Option<String>) {
+        match kind {
+            b'A' => self.prompt_at = Some(self.p),
+            b'C' => {
+                self.outline_places();
+                let at = self.prompt_at.take().unwrap_or(self.p);
+                let title = cmd.map(|c| c.split_whitespace().collect::<Vec<_>>().join(" ")).filter(|c| !c.is_empty()).unwrap_or_else(|| "a command".into());
+                self.cmds.push(OutlineItem { level: 1, title, at, started: Some(now_ms()), ended: None, exit: None });
+                if self.cmds.len() > MOST_CMDS {
+                    self.cmds.drain(..self.cmds.len() - MOST_CMDS);
+                }
+                self.propose_outline();
+            }
+            b'D' => {
+                self.outline_places();
+                if let Some(c) = self.cmds.last_mut().filter(|c| c.ended.is_none()) {
+                    c.ended = Some(now_ms());
+                    c.exit = exit;
+                    self.propose_outline();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// The commands' places as the window's text has moved them since
+    /// they were proposed (the buffer keeps them with its edits); those
+    /// a deletion brought onto the one after (`Clear`, a sweep cut) gone.
+    fn outline_places(&mut self) {
+        let me = self.remote.attachment();
+        let Ok(buf) = self.remote.node.state.buffer(self.buffer) else { return };
+        if let Some(o) = buf.outline.as_ref().filter(|o| o.by == me && o.items.len() == self.shown && self.shown == self.cmds.len()) {
+            for (c, it) in self.cmds.iter_mut().zip(&o.items) {
+                c.at = it.at;
+            }
+        }
+        let mut keep = vec![true; self.cmds.len()];
+        for i in 0..self.cmds.len().saturating_sub(1) {
+            keep[i] = self.cmds[i].at < self.cmds[i + 1].at;
+        }
+        let mut k = keep.into_iter();
+        self.cmds.retain(|_| k.next().unwrap_or(true));
+    }
+
+    fn propose_outline(&mut self) {
+        let by = self.remote.attachment();
+        if self.propose(Proposal::Outline { buffer: self.buffer, by, items: Some(self.cmds.clone()) }, TIMEOUT).is_ok() {
+            self.shown = self.cmds.len();
+        }
     }
 
     /// The window's path and label under the terminals' rule: OSC 7's

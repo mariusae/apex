@@ -574,6 +574,17 @@ windows put away out of the tiling, which is the core's
   one putting its line at the top. The lsp tool gives each file it
   serves its symbols (`textDocument/documentSymbol`, asked again as
   edits settle); an agent's conversation has its turns as headings.
+- **Win's commands are its outline** (`apex tool win`): rc's `rcmain`
+  (mariusae/rustrc), in apex, marks each prompt and command as zsh's
+  and bash's integrations do (OSC 133, through its `fn prompt` and
+  `fn preexec` hooks); win takes the marks out of the text and gives
+  its window an outline of them -- each command at its prompt, titled
+  as typed (a block of lines one), with when it ran, how long it took
+  and its status (`OutlineItem::started`, `ended`, `exit`, protocol
+  67), said as a terminal's: "18m ago › failed after 2.0s (exit 2)". So
+  the scrollbar's stops, its pill and list, ⌘P's sections and the
+  Outline lens have win's commands as they have a terminal's. A
+  command's `cmdline=` is the rest of its mark, semicolons and all.
 - **Outline, a lens to filter and go to** (`apex tool outline`): in
   every window's tools menu; the window's outline (a file's symbols, a
   terminal's commands, a page's headings or an agent's turns) as text

@@ -746,7 +746,7 @@ impl Tool {
                 let Some(start) = start else { continue };
                 let title = s["name"].as_str().unwrap_or("").to_string();
                 if !title.is_empty() {
-                    out.push(apex_core::OutlineItem { level, title, at: pos::offset(t, start) });
+                    out.push(apex_core::OutlineItem { level, title, at: pos::offset(t, start), ..Default::default() });
                 }
                 if let Some(kids) = s["children"].as_array() {
                     walk(t, kids, (level + 1).min(4), out);

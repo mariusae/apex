@@ -2051,8 +2051,14 @@ pub fn took(ms: u64) -> String {
 /// began, then how it went -- "18m ago › took 2m 52s", "4:05pm › failed
 /// after 5.0s (exit 2)", "just now › running".
 pub fn run_said(m: &apex_core::PromptMark, now_ms: u64) -> Option<String> {
-    let start = m.started?;
-    let how = match (m.ended, m.exit) {
+    run_said_of(m.started, m.ended, m.exit, now_ms)
+}
+
+/// `run_said` of a run's parts: when it began and ended, and its status
+/// (a prompt mark's, or a text outline's command, win's).
+pub fn run_said_of(started: Option<u64>, ended: Option<u64>, exit: Option<i32>, now_ms: u64) -> Option<String> {
+    let start = started?;
+    let how = match (ended, exit) {
         (None, _) => "running".to_string(),
         (Some(e), Some(x)) if x != 0 => format!("failed after {} (exit {x})", took(e.saturating_sub(start))),
         (Some(e), _) => format!("took {}", took(e.saturating_sub(start))),

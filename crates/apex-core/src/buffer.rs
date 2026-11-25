@@ -49,12 +49,18 @@ pub struct Outline {
 }
 
 /// One of an outline's items: how deep it is (1 the top), what it is
-/// called, and where it is in the text.
-#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+/// called, and where it is in the text; and, for a command (win's), how
+/// it ran, as a terminal's prompt mark says it (`PromptMark`): when it
+/// began and ended by the server's clock (ms since the epoch), and its
+/// status.
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub struct OutlineItem {
     pub level: u8,
     pub title: String,
     pub at: usize,
+    pub started: Option<u64>,
+    pub ended: Option<u64>,
+    pub exit: Option<i32>,
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]

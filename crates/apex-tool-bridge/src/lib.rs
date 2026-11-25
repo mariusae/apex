@@ -281,7 +281,7 @@ impl Bridge {
                 // [{level, title, at}], or null for none
                 let items = match &v["items"] {
                     Value::Null => None,
-                    Value::Array(a) => Some(a.iter().map(|x| apex_tool::OutlineItem { level: x["level"].as_u64().unwrap_or(1) as u8, title: x["title"].as_str().unwrap_or("").to_string(), at: x["at"].as_u64().unwrap_or(0) as usize }).collect()),
+                    Value::Array(a) => Some(a.iter().map(|x| apex_tool::OutlineItem { level: x["level"].as_u64().unwrap_or(1) as u8, title: x["title"].as_str().unwrap_or("").to_string(), at: x["at"].as_u64().unwrap_or(0) as usize, ..Default::default() }).collect()),
                     _ => return Err("items: a list".into()),
                 };
                 self.tool.set_outline(window(v)?, items).map_err(e)?;
