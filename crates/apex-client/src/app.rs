@@ -3186,7 +3186,9 @@ impl Acme {
             let (c, r) = l.cell_at(pos);
             return Some((Target::Term(*w, t), Region::Term(c, r)));
         }
-        for (v, l) in &self.layouts {
+        // an input strip floats over its window's body: it first
+        let strips = self.layouts.iter().filter(|(v, _)| matches!(v, ViewId::Input(_)));
+        for (v, l) in strips.chain(self.layouts.iter().filter(|(v, _)| !matches!(v, ViewId::Input(_)))) {
             if (only.is_some() && v.window() != only) || !l.bounds.contains(&pos) {
                 continue;
             }
@@ -4537,6 +4539,10 @@ impl Acme {
                 WebEvent::Open(path, line) => self.goto(Loc { session: None, name: path, pos: line.map(Pos::Line).unwrap_or(Pos::Keep) }),
                 WebEvent::Loading(on) => {
                     self.webs.set_loading(w, on);
+                    // a document anew: the room at its foot said again
+                    if !on {
+                        self.webs.forget_foot(w);
+                    }
                     self.tell_owner(w, PageEvent::Loading { started: on });
                 }
                 WebEvent::Down => self.toasts.clear(),

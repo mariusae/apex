@@ -501,9 +501,15 @@ windows put away out of the tiling, which is the core's
   client tells a page's owner that line as it scrolls,
   `WindowEvent::Scrolled`; `Proposal::Origin` puts a window there).
 - **An input strip** (`Window::input`): a window's second text, a
-  tool's, at its body's foot, as tall as its text (two lines to six):
-  apex text, replicated, a draft in every UI. ⌘↩ in it is Send, the
-  word its tool claims there to take the text (`take_input`).
+  tool's, afloat at its body's foot in a box of its own -- rounded,
+  bordered, a shadow under it, in from the sides -- so it reads as a
+  place to write; as tall as its text, two lines to six. What it floats
+  over can always be scrolled clear of it: a text's last line goes to
+  the window's top as ever, a page is given room at its foot as tall
+  as the box, and a terminal, which cannot scroll past its last row,
+  stops above it. Apex text, replicated, a draft in every UI. ⌘↩ in it
+  is Send, the word its tool claims there to take the text
+  (`take_input`).
 - **An agent's conversation is its terminal's lens**: ⌘↩ in a terminal
   running an agent (`apex tool agent`) shows what was asked and
   answered in its place, kept up as it goes, a prompt written in the

@@ -71,6 +71,11 @@ const CARD_Y: i32 = 1;
 /// many as its text takes up to six.
 const STRIP_MIN: usize = 2;
 const STRIP_MAX: usize = 6;
+/// The strip's box, afloat over the body: its distance from the body's
+/// sides and foot, the room inside it round the text, its corners.
+const STRIP_MARGIN: i32 = 10;
+const STRIP_PAD: i32 = 8;
+const STRIP_RADIUS: f32 = 14.;
 
 impl Render for Acme {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -403,30 +408,52 @@ impl Render for Acme {
                 let (tx, ty, tw) = (s.r.x0 + CARD_X, s.r.y0 + CARD_Y, s.r.dx() - 2 * CARD_X);
                 let th = if folded { tag_h - 2 * CARD_Y } else { tag_h - CARD_Y };
                 let (bx, bw, bh) = (s.body.x0 + CARD_X, s.body.dx() - 2 * CARD_X, s.body.dy() - CARD_Y);
-                // an input strip (DESIGN.md "Lenses"): at the body's foot,
-                // as many lines as its text takes (two to six), the body
-                // the rest; a hairline between
-                let strip_h = match win.input.filter(|_| s.body.dy() > 0 && !strip) {
+                // an input strip (DESIGN.md "Lenses"): a box afloat at the
+                // body's foot, rounded, apart from what is under it -- so
+                // it reads as a place to write -- as many lines as its text
+                // takes (two to six). What it floats over can always be
+                // scrolled clear of it: a text's last line goes to the top
+                // of its window, a page has room at its foot as tall as
+                // the box (`Webs::set_foot`), and a terminal, which cannot
+                // scroll past its last row, stops above it.
+                let float = match win.input.filter(|_| s.body.dy() > 0 && !strip) {
                     Some(ib) => {
                         let text = self.node.state.buffer(ib).map(|b| b.text.to_string()).unwrap_or_default();
                         let lh = self.node.tiling.body_font_height(w).max(1);
-                        let per = ((bw - text_element::LANE as i32) / (lh / 2).max(1)).max(1) as usize;
+                        let inner = bw - text_element::LANE as i32 - 2 * STRIP_MARGIN - 2 * STRIP_PAD;
+                        let per = (inner / (lh / 2).max(1)).max(1) as usize;
                         let lines: usize = text.split('\n').map(|l| l.chars().count().div_ceil(per).max(1)).sum();
                         // two lines at the least, room to write in
                         // before there is anything written; six at most
-                        let h = lines.clamp(STRIP_MIN, STRIP_MAX) as i32 * lh + lh / 2;
-                        (h < bh - lh).then_some(h)
+                        let h = lines.clamp(STRIP_MIN, STRIP_MAX) as i32 * lh + 2 * STRIP_PAD;
+                        (h + 2 * STRIP_MARGIN < bh - lh).then_some(h)
                     }
                     None => None,
                 };
-                let bh = match strip_h {
-                    Some(h) => {
-                        area = area.child(at(bx, s.body.y0 + bh - h - 1, bw, 1, div().size_full().bg(gpui::rgb(t.body_border)).into_any_element()));
-                        area = area.child(at(bx, s.body.y0 + bh - h, bw, h, TextElement { acme: me.clone(), view: ViewId::Input(w) }.into_any_element()).cursor(hold(CursorStyle::IBeam)).child(lane(None, hold(CursorStyle::Arrow))));
-                        bh - h - 1
-                    }
-                    None => bh,
-                };
+                // the room it takes at the body's foot, the margin under it
+                // and over it with it
+                let foot = float.map_or(0, |h| h + 2 * STRIP_MARGIN);
+                let float_el = float.map(|h| {
+                    let x = bx + text_element::LANE as i32 + STRIP_MARGIN;
+                    let wd = bw - text_element::LANE as i32 - 2 * STRIP_MARGIN;
+                    let y = s.body.y0 + bh - STRIP_MARGIN - h;
+                    let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.14), offset: gpui::point(px(0.), px(4.)), blur_radius: px(14.), spread_radius: px(0.), inset: false };
+                    let boxed = div()
+                        .size_full()
+                        .rounded(px(STRIP_RADIUS))
+                        .overflow_hidden()
+                        .bg(gpui::rgb(t.body_bg))
+                        .border_1()
+                        .border_color(gpui::rgb(t.body_border))
+                        .shadow(vec![shadow])
+                        .py(px(STRIP_PAD as f32 - 1.))
+                        .px(px(STRIP_PAD as f32))
+                        // over a page, its hole in the page's view
+                        .child(self.web_cut_by(px(STRIP_RADIUS)))
+                        .child(TextElement { acme: me.clone(), view: ViewId::Input(w) }.into_any_element());
+                    at(x, y, wd, h, boxed.into_any_element()).cursor(hold(CursorStyle::IBeam))
+                });
+                let bh = if matches!(win.body, Body::Term(_)) { bh - foot } else { bh };
                 if win.body == Body::Page(apex_core::Source::Url) && !strip {
                     // a page's header: its handle, back and forward, and
                     // its address, in the tag's place
@@ -514,7 +541,10 @@ impl Render for Acme {
                                     div().flex_1().h_full().pr(px(crate::web::PAGE_INSET)).pb(px(crate::web::PAGE_INSET)).cursor(cursor::NATIVE_CURSOR).child(
                                         canvas(
                                             move |bounds, window, cx| {
-                                                me2.update(cx, |acme, _| acme.web_place(w, bounds, window));
+                                                me2.update(cx, |acme, _| {
+                                                    acme.web_place(w, bounds, window);
+                                                    acme.webs.set_foot(w, foot as u32);
+                                                });
                                             },
                                             |_, _, _, _| {},
                                         )
@@ -534,6 +564,9 @@ impl Render for Acme {
                         at(bx, s.body.y0, bw, bh, body).cursor(hold(CursorStyle::Arrow)).child(lane(None, hold(CursorStyle::Arrow)))
                     };
                     area = area.child(body);
+                    if let Some(f) = float_el {
+                        area = area.child(f);
+                    }
                 }
             }
         }

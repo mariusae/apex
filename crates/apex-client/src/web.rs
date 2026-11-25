@@ -405,6 +405,8 @@ pub struct WebHost {
     url: String,
     bounds: Option<Bounds<Pixels>>,
     shown: bool,
+    /// The room at its foot last said (`set_foot`), none since it loaded.
+    foot: Option<u32>,
     /// The holes cut in the view (`set_holes`), in the view's own
     /// coordinates, as last applied.
     holes: Vec<(f64, f64, f64, f64)>,
@@ -1239,7 +1241,7 @@ impl Webs {
                 let _ = view.set_visible(visible);
                 round_foot(&view);
                 let loading = if from_buffer { None } else { Some(std::time::Instant::now()) };
-                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, holes: Vec::new(), html, followed: None, reloads: None, owned: None, loading, watches, plane: self.plane.clone(), scroll: None, restoring: None, toc: None, veil: None });
+                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, holes: Vec::new(), foot: None, html, followed: None, reloads: None, owned: None, loading, watches, plane: self.plane.clone(), scroll: None, restoring: None, toc: None, veil: None });
             }
             Err(e) => eprintln!("web: {w}: {e}"),
         }
@@ -1376,6 +1378,29 @@ impl Webs {
     /// Where the page is scrolled, as it last said: top, length, view.
     pub fn page_scroll(&self, w: WindowId) -> Option<(f64, f64, f64)> {
         self.hosts.get(&w).and_then(|h| h.scroll)
+    }
+
+    /// Room at page `w`'s foot, `px` tall, so what it shows can be
+    /// scrolled clear of what floats over its foot (an input strip); none
+    /// at 0. Said again when the page loads anew, its document new.
+    pub fn set_foot(&mut self, w: WindowId, px: u32) {
+        let Some(h) = self.hosts.get_mut(&w) else { return };
+        if h.foot == Some(px) || (h.foot.is_none() && px == 0) {
+            return;
+        }
+        h.foot = Some(px);
+        let css = if px > 0 { format!("html{{scroll-padding-bottom:{px}px}}body{{padding-bottom:{px}px !important}}") } else { String::new() };
+        let _ = h.view.evaluate_script(&format!(
+            "(function(){{var d=document,s=d.getElementById('apex-foot');if(!s){{s=d.createElement('style');s.id='apex-foot';(d.head||d.documentElement).appendChild(s);}}s.textContent={};}})();",
+            js_string(&css)
+        ));
+    }
+
+    /// Page `w` loaded anew: its foot's room is to be said again.
+    pub fn forget_foot(&mut self, w: WindowId) {
+        if let Some(h) = self.hosts.get_mut(&w) {
+            h.foot = None;
+        }
     }
 
     /// The page's outline, as it said it (`TOC_SCRIPT`).
