@@ -58,8 +58,9 @@ pub fn place_of(n: usize, count: usize) -> Option<usize> {
     }
 }
 
-/// ⌘n's pill: the key, small, in the panel's ground on the ink, as a
-/// key's badge.
+/// ⌘n's pill: the key, small, in the quiet ink on a faint wash of the
+/// ink over whatever ground it sits on (the sidebar's card, the title
+/// bar): there to be read when wanted, not to shout.
 pub fn key_pill(n: usize) -> gpui::Div {
     let t = crate::theme::theme();
     div()
@@ -69,8 +70,8 @@ pub fn key_pill(n: usize) -> gpui::Div {
         .rounded(px(4.))
         .flex()
         .items_center()
-        .bg(rgb(crate::text_element::mix(t.text, t.panel_bg, 0.15)))
-        .text_color(rgb(t.panel_bg))
+        .bg(gpui::Hsla::from(rgb(t.text)).opacity(0.08))
+        .text_color(rgb(t.text_dim))
         .font_family(crate::fonts::ui())
         .text_size(px(11.))
         .line_height(px(16.))
