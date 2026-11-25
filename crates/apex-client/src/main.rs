@@ -441,7 +441,6 @@ impl Render for Acme {
                     let x = bx + text_element::LANE as i32 + STRIP_MARGIN;
                     let wd = bw - text_element::LANE as i32 - 2 * STRIP_MARGIN;
                     let y = s.body.y0 + bh - STRIP_MARGIN - h;
-                    let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.14), offset: gpui::point(px(0.), px(4.)), blur_radius: px(14.), spread_radius: px(0.), inset: false };
                     // the send button: what ⌘↩ in the box does, at its
                     // right, its middle level with its last line's; quiet
                     // while there is nothing to send
@@ -477,7 +476,6 @@ impl Render for Acme {
                         .bg(gpui::rgb(t.body_bg))
                         .border_1()
                         .border_color(gpui::rgb(t.body_border))
-                        .shadow(vec![shadow])
                         .child(
                             div()
                                 .absolute()
@@ -605,7 +603,9 @@ impl Render for Acme {
                     // body's paper, the box afloat on it, the card's foot
                     // corners its own
                     if banded && foot > 0 {
-                        let band = div().size_full().bg(gpui::rgb(t.body_bg)).rounded_bl(px(text_element::CARD_RADIUS)).rounded_br(px(text_element::CARD_RADIUS));
+                        // the paper of what is over it: a page from the web's own
+                        let paper = if win.body == Body::Page(apex_core::Source::Url) { t.column } else { t.body_bg };
+                        let band = div().size_full().bg(gpui::rgb(paper)).rounded_bl(px(text_element::CARD_RADIUS)).rounded_br(px(text_element::CARD_RADIUS));
                         area = area.child(at(bx, s.body.y0 + bh, bw, foot, band.into_any_element()));
                     }
                     if let Some(f) = float_el {

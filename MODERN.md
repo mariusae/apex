@@ -510,7 +510,7 @@ windows put away out of the tiling, which is the core's
   `WindowEvent::Scrolled`; `Proposal::Origin` puts a window there).
 - **An input strip** (`Window::input`): a window's second text, a
   tool's, afloat at its body's foot in a box of its own -- rounded,
-  bordered, a shadow under it, in from the sides -- so it reads as a
+  bordered, no shadow, in from the sides -- so it reads as a
   place to write, a round send button at its right (an arrow up, the
   accent's while there is something to send: what ⌘↩ in it does); as
   tall as its text, one line to six. Over a text it floats, the text's
