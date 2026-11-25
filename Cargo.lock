@@ -240,6 +240,7 @@ dependencies = [
  "apex-tool-agent",
  "apex-tool-bridge",
  "apex-tool-lsp",
+ "apex-tool-outline",
  "apex-tool-preview",
  "apex-tool-web",
  "apex-tool-win",
@@ -352,6 +353,13 @@ dependencies = [
  "apex-core",
  "apex-server",
  "serde_json",
+]
+
+[[package]]
+name = "apex-tool-outline"
+version = "0.1.0"
+dependencies = [
+ "apex-tool",
 ]
 
 [[package]]

@@ -1478,6 +1478,8 @@ impl Server {
             tool("View", Some(PREVIEWED), Some(WinKind::File), true, "preview"),
             tool("Web", None, None, true, "web"),
             tool("Newweb", None, None, true, "web"),
+            // any window's outline, a lens on it to filter and go to
+            tool("Outline", None, None, false, "outline"),
         ] {
             let (_, e) = log.install_rule(SERVER, -10, rule);
             let _ = self.node.state.apply(Shard::Meta, &e);

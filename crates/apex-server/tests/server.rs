@@ -538,7 +538,8 @@ fn a_rules_verb_shows_in_the_tag_and_b2_runs_it() {
     let p = server.open_file(col, None, &dir, "notes.md", None).unwrap();
     let w = perform(&mut node, &mut log, vec![p]).expect("window");
     // the verb is offered in the window's tools menu (B4), not its tag
-    let verbs = |n: &Node, w: WindowId| apex_core::plumb::verbs_for(&n.state.meta.rules, &n.window_path(w), n.window_kind(w), Some(w), None);
+    // (Outline, every window's, aside)
+    let verbs = |n: &Node, w: WindowId| apex_core::plumb::verbs_for(&n.state.meta.rules, &n.window_path(w), n.window_kind(w), Some(w), None).into_iter().filter(|v| v != "Outline").collect::<Vec<_>>();
     assert_eq!(verbs(&node, w), vec!["Preview"]);
     assert!(!node.window_verbs(w).contains(&"Preview"), "{:?}", node.window_verbs(w));
     // a .txt window does not offer it

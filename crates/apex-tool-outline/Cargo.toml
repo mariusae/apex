@@ -1,0 +1,9 @@
+[package]
+name = "apex-tool-outline"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "apex tool outline: any window's outline as a text lens on it, to filter and go to"
+
+[dependencies]
+apex-tool = { path = "../apex-tool" }

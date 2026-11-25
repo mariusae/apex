@@ -120,7 +120,8 @@ fn a_rule_may_name_the_tool_that_owns_the_window() {
         for _ in 0..40 {
             let _ = c.step(Duration::from_millis(20));
         }
-        apex_core::plumb::verbs_for(&c.node.state.meta.rules, &c.node.window_path(w), c.node.window_kind(w), Some(w), c.node.window_owner(w))
+        // (Outline, every window's, aside)
+        apex_core::plumb::verbs_for(&c.node.state.meta.rules, &c.node.window_path(w), c.node.window_kind(w), Some(w), c.node.window_owner(w)).into_iter().filter(|v| v != "Outline").collect::<Vec<_>>()
     };
     assert_eq!(menu(&mut c, a), vec!["Snarfout"]);
     assert_eq!(c.node.window_owner(a), Some("win-42"));
@@ -213,7 +214,8 @@ fn an_unlisted_verb_works_but_is_not_in_the_menu() {
     let allow = t.offer(Rule::verb("Allow").window(w).unlisted()).unwrap();
     // the menu has the one, not the other
     let mut other = Remote::connect_as(&sock, "main", "other", AttachmentKind::Tool).unwrap();
-    let menu = |r: &Remote| apex_core::plumb::verbs_for(&r.node.state.meta.rules, "/tmp/acp-notes", WinKind::File, Some(w), r.node.window_owner(w));
+    // (Outline, every window's, aside)
+    let menu = |r: &Remote| apex_core::plumb::verbs_for(&r.node.state.meta.rules, "/tmp/acp-notes", WinKind::File, Some(w), r.node.window_owner(w)).into_iter().filter(|v| v != "Outline").collect::<Vec<_>>();
     let deadline = Instant::now() + Duration::from_secs(5);
     while menu(&other).is_empty() && Instant::now() < deadline {
         let _ = other.step(Duration::from_millis(20));

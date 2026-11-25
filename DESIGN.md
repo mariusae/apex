@@ -2788,6 +2788,36 @@ conversation its turns by making each a heading, not by an outline of
 its own. A text's stops show where its scrollbar does (a text that
 fits its window has none).
 
+### The outline lens
+
+Built after the rest, as a tool and nothing else, to see that the API
+is enough for one: `apex tool outline`, behind **Outline** in every
+window's tools menu (shift-B1), the session's rule starting it.
+
+- **One outline per window, read by anyone**
+  (`apex_server::outline::of`): a text's as its tool gave it, a
+  terminal's commands, a buffer page's parsed from its HTML as the
+  client's `TOC_SCRIPT` finds it (marked elements, else h1 to h4). A
+  page's maker overrides its headings by marking elements, as the agent
+  does its turns; there is no outline a tool gives a page. The client's
+  scrollbar reads the same thing for texts and terminals (a page's has
+  its pixel positions from the page itself).
+- **Each entry where it is in its own terms** (`At`): a place in the
+  text, a terminal's history line, the page's nth entry.
+  `Tool::reveal(w, at)` shows the window there on every client: a
+  text's origin and dot, a terminal's scroll, a page's
+  `Scroll::Outline(i)` (`Window::scrolls` counts page scrolls, so
+  going to the same entry twice scrolls twice).
+- **The lens is text** (`Tool::lens_text`, a scratch buffer
+  `PATH+Outline`): an entry a line, indented by depth, a command's when
+  and how long after it, `✗` before a failure. B1 or B3 on a line goes
+  there and the lens goes; its input strip filters (the title's letters
+  in order), ↩ or ⌘↩ there going to the entry selected; Outline or ⌘↩
+  on the lens takes it away. Kept as the outline changes.
+- Not yet: which entry a page is showing (its scroll is the client's,
+  so the lens starts on its first); outlines composed from several
+  windows (a workspace's), which the same calls would make.
+
 ### Order
 
 As built, one commit each (the input strip and the agent's lens two):
@@ -2798,3 +2828,5 @@ As built, one commit each (the input strip and the agent's lens two):
 2. ⌘↩ running `View`; Preview's lens, scroll carried both ways.
 3. The input strip and `Send`; `Tool::term_send`; the agent lens.
 4. Outlines from tools; the lsp tool's symbols.
+5. The outline lens: one outline per window, `reveal`, `lens_text`,
+   `apex tool outline`.

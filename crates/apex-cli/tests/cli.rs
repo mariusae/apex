@@ -1150,6 +1150,66 @@ fn view_makes_a_preview_the_files_lens_and_view_again_gives_the_file_back() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Outline (the tools menu's) on a page: the rule starts the outline
+/// tool, which makes the page's headings a text lens on it; a click on a
+/// line goes there (the page scrolled to that entry, the lens gone), and
+/// so does Return in the lens's filter, on the entry it kept.
+#[test]
+fn outline_is_a_lens_to_filter_and_go_to() {
+    let sock = daemon();
+    let mut c = Remote::connect_as(&sock, "main", "watcher", AttachmentKind::Tool).unwrap();
+    let col = c.node.state.layout.cols[0].id;
+    let html = "<h1>One</h1><p>a</p><h2>Two</h2><p>b</p><h2>Three</h2>";
+    let page = c.propose(apex_server::Proposal::open_html(col, "/tmp/outlined.html", html, None), Duration::from_secs(5)).unwrap().expect("a page");
+    let lens = |c: &mut Remote| -> WindowId {
+        c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(page), text: "Outline".into() }, Duration::from_secs(5)).unwrap();
+        // made, its filter there, and dot on the entry it starts at
+        let ready = |r: &Remote| r.node.state.layout.lens_of(page).filter(|l| r.node.state.window(*l).is_ok_and(|x| x.input.is_some()) && r.node.selection(ViewId::Body(*l)).is_ok_and(|(q0, q1)| q1 > q0));
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while Instant::now() < deadline && ready(c).is_none() {
+            let _ = c.step(Duration::from_millis(50));
+        }
+        ready(c).expect("the outline a lens on the page")
+    };
+    let text = |r: &Remote, w: WindowId| r.node.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|b| r.node.state.buffer(b).ok()).map(|b| b.text.to_string()).unwrap_or_default();
+    let gone_to = |c: &mut Remote, l: WindowId, i: u32| {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline && (c.node.state.window(l).is_ok() || c.node.state.window(page).unwrap().scroll != Some(apex_core::Scroll::Outline(i))) {
+            let _ = c.step(Duration::from_millis(50));
+        }
+        assert!(c.node.state.window(l).is_err(), "the lens gone");
+        assert_eq!(c.node.state.window(page).unwrap().scroll, Some(apex_core::Scroll::Outline(i)));
+    };
+    let l = lens(&mut c);
+    assert_eq!(text(&c, l), "One\n    Two\n    Three\n");
+    // a click on the third line
+    let at = text(&c, l).find("Three").unwrap();
+    c.propose(apex_server::Proposal::Select { view: ViewId::Body(l), q0: at + 1, q1: at + 1 }, Duration::from_secs(5)).unwrap();
+    gone_to(&mut c, l, 2);
+    // again, filtered: "tw" keeps Two, and Return goes to it
+    let l = lens(&mut c);
+    let strip = c.node.state.window(l).unwrap().input.unwrap();
+    let version = c.node.state.buffer(strip).unwrap().version;
+    c.propose(apex_server::Proposal::ReplaceRange { select: false, dir: None, buffer: strip, version, q0: 0, q1: 0, text: "tw".into() }, Duration::from_secs(5)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline && text(&c, l) != "Two\n" {
+        let _ = c.step(Duration::from_millis(50));
+    }
+    assert_eq!(text(&c, l), "Two\n");
+    let version = c.node.state.buffer(strip).unwrap().version;
+    c.propose(apex_server::Proposal::ReplaceRange { select: false, dir: None, buffer: strip, version, q0: 2, q1: 2, text: "\n".into() }, Duration::from_secs(5)).unwrap();
+    gone_to(&mut c, l, 1);
+    // and Outline on the lens takes it away, the page as it was
+    let l = lens(&mut c);
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(l), text: "Outline".into() }, Duration::from_secs(5)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline && c.node.state.window(l).is_ok() {
+        let _ = c.step(Duration::from_millis(50));
+    }
+    assert!(c.node.state.window(l).is_err(), "the lens gone");
+    assert_eq!(c.node.state.window(page).unwrap().scroll, Some(apex_core::Scroll::Outline(1)), "the page where it was");
+}
+
 #[test]
 fn preview_is_a_live_pipe_through_a_converter() {
     let sock = daemon();

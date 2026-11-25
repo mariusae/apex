@@ -508,7 +508,7 @@ source line it starts on (data-line, counted from 1), which is how a
 preview follows dot; a converter of your own may do the same. It is the
 converter Preview uses for .md and .markdown files unless a setting
 names another." },
-    Cmd { name: "tool", usage: "apex tool win [CMD...] | apex tool lsp [-v] | apex tool preview [FILE] | apex tool web | apex tool agent [ARGS] | apex tool bridge NAME", short: "the tools that come with apex", flags: &[], run: tool_cmd, long: "\
+    Cmd { name: "tool", usage: "apex tool win [CMD...] | apex tool lsp [-v] | apex tool preview [FILE] | apex tool web | apex tool outline | apex tool agent [ARGS] | apex tool bridge NAME", short: "the tools that come with apex", flags: &[], run: tool_cmd, long: "\
 Tool runs one of the tools that come with apex. None is privileged: each
 attaches to the session like anything else on this command line and works
 through the same protocol.
@@ -596,6 +596,15 @@ address nobody owns, keeps each page's history, answers Back, Fwd and
 Get in their tags, and exits when it has had no page for a minute. Run
 by hand, it offers Web and Newweb itself where no rule of the
 session's does.
+
+apex tool outline is the resident tool behind Outline, in every
+window's tools menu, started by the session's Outline rule: it makes
+the window's outline (what its scrollbar shows: a file's symbols, a
+terminal's commands, a page's headings) a text lens on it, an entry a
+line. B1 or B3 on a line goes there, the lens gone; the lens's input
+strip filters it, and Return there goes to the selected entry. Outline
+or cmd-Return on the lens takes it away. It exits when it has had no
+lens for a minute.
 
 apex tool agent attaches as the tool named agent and serves the
 session's terminals that run coding agents (Claude Code, Codex, Muse,
@@ -1152,6 +1161,7 @@ fn tool_cmd(ctx: &Ctx, p: &Parsed) -> R {
             None => apex_tool_preview::run_resident(&ctx.socket, &ctx.session),
         },
         Some("web") => apex_tool_web::run(&ctx.socket, &ctx.session),
+        Some("outline") => apex_tool_outline::run(&ctx.socket, &ctx.session),
         Some("agent") => apex_tool_agent::cmd::run(&ctx.socket, &ctx.session, &p.args[1..]),
         _ => Err("usage".into()),
     }
