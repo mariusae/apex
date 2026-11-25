@@ -615,6 +615,15 @@ const SCROLL_SCRIPT: &str = r#"(function () {
   // never left under the foot of the window
   let atEnd = false;
   function end() { const e = document.scrollingElement || document.documentElement; return e.scrollTop + e.clientHeight >= e.scrollHeight - 4; }
+  // to its end, and kept there as it grows: what the log's scroll all
+  // the way down means (`Scroll::Fraction(1.0)`), whether or not the
+  // page is long enough yet to scroll at all
+  window.__apexToEnd = function () {
+    atEnd = true;
+    const e = document.scrollingElement || document.documentElement;
+    e.scrollTop = e.scrollHeight;
+    soon();
+  };
   addEventListener('scroll', function () { atEnd = end(); soon(); }, { passive: true, capture: true });
   function grew() {
     if (atEnd && !end()) { const e = document.scrollingElement || document.documentElement; e.scrollTop = e.scrollHeight; }
@@ -1414,10 +1423,13 @@ impl Webs {
         ));
     }
 
-    /// Page `w` loaded anew: its foot's room is to be said again.
-    pub fn forget_foot(&mut self, w: WindowId) {
+    /// Page `w` loaded anew, its document new: the room at its foot and
+    /// the scroll the log has for it are to be said again (one said
+    /// before the document was there went nowhere).
+    pub fn loaded(&mut self, w: WindowId) {
         if let Some(h) = self.hosts.get_mut(&w) {
             h.foot = None;
+            h.followed = None;
         }
     }
 
@@ -1543,6 +1555,10 @@ if (best) {{
         h.followed = Some(scroll);
         match scroll {
             apex_core::Scroll::Line(line) => Self::follow_line(h, line),
+            // all the way down: to its end, and kept there as it grows
+            apex_core::Scroll::Fraction(f) if f >= 0.999 => {
+                let _ = h.view.evaluate_script("(function(){if(window.__apexToEnd){__apexToEnd();}else{const e = document.scrollingElement || document.documentElement; e.scrollTo(0, e.scrollHeight);}})();");
+            }
             apex_core::Scroll::Fraction(f) => {
                 let _ = h.view.evaluate_script(&format!("(function(){{const e = document.scrollingElement || document.documentElement; e.scrollTo(0, {f} * e.scrollHeight);}})();"));
             }

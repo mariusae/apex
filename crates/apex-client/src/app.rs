@@ -4539,9 +4539,10 @@ impl Acme {
                 WebEvent::Open(path, line) => self.goto(Loc { session: None, name: path, pos: line.map(Pos::Line).unwrap_or(Pos::Keep) }),
                 WebEvent::Loading(on) => {
                     self.webs.set_loading(w, on);
-                    // a document anew: the room at its foot said again
+                    // a document anew: the room at its foot, and where the
+                    // log says it is scrolled, said again
                     if !on {
-                        self.webs.forget_foot(w);
+                        self.webs.loaded(w);
                     }
                     self.tell_owner(w, PageEvent::Loading { started: on });
                 }
@@ -5200,6 +5201,15 @@ impl Acme {
                 self.overlay_edit("select-all", cx);
             }
             return;
+        }
+        // select all in a window's input strip: the strip's text, not the
+        // window's body's (which `Edit ,` there would select)
+        if text == "Edit ," {
+            let pos = self.pointer(window);
+            if let Some((Target::View(ViewId::Input(_)), _)) = self.locate(pos) {
+                self.menu_edit("select-all", window, cx);
+                return;
+            }
         }
         // select all over a page: the page's, as Copy and Paste are
         if text == "Edit ," {
