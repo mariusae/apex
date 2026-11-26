@@ -747,6 +747,27 @@ fn view_in_an_agents_terminal_is_its_conversation_with_a_prompt_under_it() {
     }
     assert!(screen(&c).lines().any(|l| l.trim() == "hello-lens"), "the prompt typed and entered: {}", screen(&c));
     assert_eq!(strip(&c).map(|s| s.2).as_deref(), Some(""));
+    // a prompt of several lines, to Claude: typed, its lines broken with
+    // ^J, not pasted (Claude Code makes a paste `<pasted_content>`) --
+    // what the terminal's program reads shown as cat -v has it, the
+    // program asking for bracketed paste as Claude Code does
+    let (ib, version, _) = strip(&c).unwrap();
+    c.propose(apex_server::Proposal::ReplaceRange { select: false, dir: None, buffer: ib, version, q0: 0, q1: 0, text: "printf '\\033[?2004h'; stty -icanon -echo; cat -v".into() }, Duration::from_secs(5)).unwrap();
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(lens), text: "Send".into() }, Duration::from_secs(5)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    let (ib, version, _) = strip(&c).unwrap();
+    c.propose(apex_server::Proposal::ReplaceRange { select: false, dir: None, buffer: ib, version, q0: 0, q1: 0, text: "first-line\nsecond-line".into() }, Duration::from_secs(5)).unwrap();
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(lens), text: "Send".into() }, Duration::from_secs(5)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while !screen(&c).lines().any(|l| l.trim() == "second-line") && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    let shown = screen(&c);
+    assert!(shown.lines().any(|l| l.trim() == "first-line") && shown.lines().any(|l| l.trim() == "second-line"), "typed, a line each: {shown}");
+    assert!(!shown.contains("200~") && !shown.contains("201~"), "not pasted: {shown}");
     // sent, it is no draft: View, View, and the strip is empty
     let deadline = Instant::now() + Duration::from_secs(2);
     while Instant::now() < deadline {

@@ -1275,8 +1275,19 @@ impl Pane {
             self.drafts.remove(&key);
             let text = text.trim_end();
             if !text.is_empty() {
-                // pasted, then Enter: a prompt of several lines is one
-                self.t.term_send(base, &format!("{text}\n"))?;
+                let claude = self.agents.get(&key).is_some_and(|a| a.kind == "claude");
+                if claude && text.contains('\n') {
+                    // typed, its lines broken with ^J, then Enter: Claude
+                    // Code takes a paste of several lines for pasted
+                    // material (`<pasted_content>`, whose instructions
+                    // the model is not to follow), and this is the
+                    // user's own prompt
+                    self.t.term_keys(base, &text.replace("\r\n", "\n"))?;
+                    self.t.term_key(base, "enter", Some("\r"))?;
+                } else {
+                    // pasted, then Enter: a prompt of several lines is one
+                    self.t.term_send(base, &format!("{text}\n"))?;
+                }
                 let _ = self.t.scroll_page(w, apex_tool::Scroll::Fraction(1.0));
             }
         } else if rule == l.stop {

@@ -880,6 +880,16 @@ impl Tool {
         Ok(())
     }
 
+    /// Type `text` into window `w`'s terminal as keys, byte for byte: no
+    /// paste brackets round it and nothing made of its newlines (a line
+    /// feed is ^J, what an agent's prompt takes as a line break where
+    /// Enter, a return, would send it).
+    pub fn term_keys(&mut self, w: WindowId, text: &str) -> Result<()> {
+        let t = self.term_of(w)?;
+        self.remote.send(&ClientMsg::TermKey { term: t, key: apex_server::TermKey { key: String::new(), text: Some(text.to_string()), shift: false, control: false, alt: false } });
+        Ok(())
+    }
+
     /// Press a key in window `w`'s terminal: its name (`enter`,
     /// `escape`, `c` with control...) and the text it types.
     pub fn term_key(&mut self, w: WindowId, key: &str, text: Option<&str>) -> Result<()> {
