@@ -1786,6 +1786,12 @@ impl Acme {
                                 if acme.caret_tick() {
                                     cx.notify();
                                 }
+                                // images dragged in with no file: written
+                                // out, and dropped where they landed
+                                crate::dragdata::register(window);
+                                for (path, at) in crate::dragdata::take(window) {
+                                    acme.drop_paths(&[path], at, cx);
+                                }
                                 // the strips, from where the pointer is, asked
                                 // of the system (a page keeps its moves to
                                 // itself, and it may have left): resting is

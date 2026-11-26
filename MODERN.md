@@ -635,6 +635,12 @@ windows put away out of the tiling, which is the core's
   keys and clicks thrown away, a panel over it saying how far the files
   have got; Escape, its Stop or the sidebar's × stops them, nothing put
   in and nothing left there. Folders are not sent.
+  An image dragged in with no file behind it (from a browser, a
+  preview: `dragdata.rs`) is written to `~/.apex/drops/KEY/NAME` on this
+  Mac first -- named as its URL names it, else as a screenshot is, its
+  key the image's -- and dropped as that file: gpui's windows take only
+  files, so they are registered for images too and its drag methods
+  wrapped, a drag with files going to gpui as ever.
 - **Transfers in the sidebar** (`transfers.rs`, as Manifold's): each
   file on its way at the foot of the sidebar's card -- its name, where
   to, a bar, how much of how much, how fast and how long to go, an × to

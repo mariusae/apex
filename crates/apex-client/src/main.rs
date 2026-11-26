@@ -28,6 +28,7 @@ mod bunny;
 mod commands;
 mod completion;
 mod cwdbar;
+mod dragdata;
 mod drops;
 mod transfers;
 mod glide;
@@ -899,6 +900,8 @@ fn main() {
     gpui_platform::application().run(move |cx: &mut App| {
         attention::dock_icon();
         cursor::install();
+        // images dragged in with no file behind them (`dragdata`)
+        dragdata::install();
         text_element::install_symbols();
         fonts::load();
         if let Some(n) = fontsize {
