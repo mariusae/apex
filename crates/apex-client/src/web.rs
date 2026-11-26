@@ -290,7 +290,12 @@ const FILE_SCRIPT: &str = r#"(function () {
 /// (h1 to h4, a diff's files among them), each line `level TAB top TAB
 /// p-for-a-path TAB title` after the page's height, said to the client
 /// whenever it changes; and `__apexTocGo(i)`, the page scrolled to
-/// heading `i`. Nothing of it is drawn in the page.
+/// heading `i`. ⌘↑ ⌘↓ go from entry to entry, as in any window with an
+/// outline (`Acme::outline_jump`): the one before or after where the
+/// view is, past the first the top and past the last the end, kept
+/// there as the page grows (an agent's conversation, answering); a page
+/// with no entries keeps WebKit's top and bottom. Nothing of it is
+/// drawn in the page.
 const TOC_SCRIPT: &str = r#"(function () {
   if (window.__apexToc) return;
   window.__apexToc = true;
@@ -326,6 +331,39 @@ const TOC_SCRIPT: &str = r#"(function () {
       if (window.__apexNotEnd) __apexNotEnd();
       if (h) view().scrollTo({ top: Math.max(0, at(h) - 12), behavior: 'smooth' });
     };
+    // ⌘↑ ⌘↓: from entry to entry. Where each is is where __apexTocGo
+    // puts it; a jump still gliding counts as arrived, so a key held or
+    // pressed again goes on to the next
+    let aim = null, aimed = 0;
+    addEventListener('keydown', function (e) {
+      if (!e.metaKey || e.shiftKey || e.altKey || e.ctrlKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+      const t = e.target;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (!heads.length) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const v = view(), max = Math.max(0, v.scrollHeight - v.clientHeight);
+      const y = aim !== null && Date.now() - aimed < 700 ? aim : v.scrollTop;
+      const tops = heads.map(function (h) { return Math.min(max, Math.max(0, at(h) - 12)); });
+      if (window.__apexUser) __apexUser();
+      if (e.key === 'ArrowUp') {
+        let to = 0;
+        for (let i = tops.length - 1; i >= 0; i--) if (tops[i] < y - 2) { to = tops[i]; break; }
+        if (window.__apexNotEnd) __apexNotEnd();
+        aim = to; aimed = Date.now();
+        v.scrollTo({ top: to, behavior: 'smooth' });
+      } else {
+        const to = tops.find(function (p) { return p > y + 2; });
+        if (to === undefined || to >= max) {
+          aim = max; aimed = Date.now();
+          if (window.__apexToEnd) __apexToEnd(); else v.scrollTo({ top: max, behavior: 'smooth' });
+        } else {
+          if (window.__apexNotEnd) __apexNotEnd();
+          aim = to; aimed = Date.now();
+          v.scrollTo({ top: to, behavior: 'smooth' });
+        }
+      }
+    }, true);
     // again when the page changes, once a frame at most
     let queued = false;
     function later() {

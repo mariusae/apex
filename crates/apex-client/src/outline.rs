@@ -141,6 +141,68 @@ impl Acme {
         Some((toc, Some(scroll), current))
     }
 
+    /// ⌘↑ ⌘↓ in window `w`: to the outline's entry before or after the
+    /// line at the top -- ⌘↑ to the start of the entry the view is in when
+    /// that is scrolled past -- and past the first, the top; past the
+    /// last, the end (a terminal's screen, a text's end as End shows it).
+    /// A terminal's commands are its prompts' lines; a text's entries a
+    /// tool gave it: win's commands, scrolled to, the typing left where it
+    /// is; a file's symbols, scrolled to and dot put there. Whether `w`
+    /// has an outline to go by (else the keys are what they were).
+    pub fn outline_jump(&mut self, w: WindowId, up: bool) -> bool {
+        let Ok(body) = self.node.state.window(w).map(|x| x.body) else { return false };
+        match body {
+            apex_core::Body::Term(t) => {
+                let Some(term) = self.node.state.terms.get(&t) else { return false };
+                let (top, last) = (term.top, term.total.saturating_sub(term.rows as u64));
+                let to = if up {
+                    term.marks.iter().rev().map(|m| m.prompt).find(|&p| p < top).unwrap_or(0)
+                } else {
+                    term.marks.iter().map(|m| m.prompt).find(|&p| p > top).unwrap_or(last).min(last.max(top))
+                };
+                if to != top {
+                    self.term_scroll(t, to as isize - top as isize);
+                }
+                true
+            }
+            apex_core::Body::Text(_) => {
+                let Some(entries) = apex_server::outline::of(&self.node, w, 0) else { return false };
+                let commands = self.node.window_outline(w).is_some_and(|o| o.items.iter().any(|it| it.of.is_none() && (it.started.is_some() || it.output.is_some())));
+                let v = apex_core::ViewId::Body(w);
+                let Some(t) = self.text_of(v) else { return false };
+                let origin = self.node.view_buffer(v).ok().and_then(|b| self.node.state.buffer(b).ok()).map(|b| b.view(v).origin).unwrap_or(0).min(t.len());
+                let top = t.line_of(origin);
+                let ats: Vec<usize> = entries.iter().filter_map(|e| match e.at {
+                    apex_server::outline::At::Text(a) => Some(a.min(t.len())),
+                    _ => None,
+                }).collect();
+                let to = if up { ats.iter().rev().copied().find(|&a| t.line_of(a) < top) } else { ats.iter().copied().find(|&a| t.line_of(a) > top) };
+                match to {
+                    Some(a) => {
+                        let _ = self.node.set_origin(&mut self.log, v, t.line_start(t.line_of(a)));
+                        if !commands {
+                            let _ = self.node.select(&mut self.log, v, a, a);
+                        }
+                    }
+                    None if up => {
+                        if origin > 0 {
+                            let _ = self.node.set_origin(&mut self.log, v, 0);
+                        }
+                    }
+                    // the end, as End shows it: a live window's with room
+                    // under it for what comes
+                    None => {
+                        let quarters = if self.node.window_live(w) { 3 } else { 1 };
+                        self.show_at.insert(v, (t.len(), quarters));
+                    }
+                }
+                self.after();
+                true
+            }
+            apex_core::Body::Page(_) => false,
+        }
+    }
+
     /// Window `w` at its outline's item `i`: a page scrolled to the
     /// heading; a text with the item's line at its top, dot there.
     pub fn outline_go(&mut self, w: WindowId, i: usize) {

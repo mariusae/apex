@@ -619,6 +619,17 @@ windows put away out of the tiling, which is the core's
   in its strip filters, ↩ going to the first match; Outline or ⌘↩ gives
   the window back. A tool like any other: `Tool::outline` reads any
   window's, `Tool::reveal` goes to an entry.
+- **⌘↑ ⌘↓ go from entry to entry** (`outline_jump`): in any window
+  with an outline, to the entry before or after the line at the top
+  (⌘↑ to the start of the one the view is in, when that is scrolled
+  past); past the first, the top, and past the last, the end -- a
+  terminal's screen, a text's end as End shows it. A terminal's or
+  win's commands are scrolled to, the typing left where it is; a file's
+  symbols are scrolled to and dot put there. A page from a buffer (a
+  preview, apex diff, an agent's conversation) does it in the page
+  (`TOC_SCRIPT`), by its headings, files or turns: past the last, its
+  end, kept there as it grows. A window without one keeps its keys as
+  they were (a page, WebKit's top and bottom).
 - **⌘P goes to sections too** (`finder.rs`): every open window's
   outline, from the same source as the scrollbar's and Outline's. With
   nothing typed, the window the keys are in has its sections under it

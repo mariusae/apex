@@ -4414,21 +4414,6 @@ impl Acme {
         self.settle_snarf(cx);
     }
 
-    /// ⌘↑ (⌘↓): the terminal's view to the prompt above (below) the
-    /// one at its top, as the shell marked them (OSC 133).
-    fn term_jump(&mut self, t: TermId, up: bool) {
-        let Some(term) = self.node.state.terms.get(&t) else { return };
-        let top = term.top;
-        let to = if up {
-            term.marks.iter().rev().map(|m| m.prompt).find(|&p| p < top)
-        } else {
-            term.marks.iter().map(|m| m.prompt).find(|&p| p > top)
-        };
-        if let Some(to) = to {
-            self.term_scroll(t, to as isize - top as isize);
-        }
-    }
-
     /// ⌘⇧C: the output of the last command the shell marked as ended, to
     /// the snarf buffer and the clipboard.
     fn term_copy_last(&mut self, t: TermId, cx: &mut Context<Self>) {
@@ -5264,11 +5249,11 @@ impl Acme {
         let ks = &e.keystroke;
         let m = ks.modifiers;
         match target {
-            Target::Term(_, t) => {
+            Target::Term(w, t) => {
                 // the shell's prompt marks (OSC 133): ⌘↑ ⌘↓ from prompt to
-                // prompt, ⌘⇧C the last command's output
+                // prompt (the outline's), ⌘⇧C the last command's output
                 if m.platform && !m.shift && (ks.key == "up" || ks.key == "down") {
-                    self.term_jump(t, ks.key == "up");
+                    self.outline_jump(w, ks.key == "up");
                 } else if m.platform && m.shift && ks.key == "c" {
                     self.term_copy_last(t, cx);
                 } else if m.platform && ks.key == "v" {
@@ -5536,6 +5521,14 @@ impl Acme {
         if (m.control && ks.key == "f") || ks.key == "insert" {
             self.complete(v, q0);
             return;
+        }
+        // ⌘↑ ⌘↓ in a body with an outline (win's commands, a file's
+        // symbols): from entry to entry
+        if let ViewId::Body(w) = v {
+            if m.platform && !m.shift && !m.control && (ks.key == "up" || ks.key == "down") && self.outline_jump(w, ks.key == "up") {
+                cx.notify();
+                return;
+            }
         }
         let fit = self.layouts.get(&v).map(|l| l.lines_that_fit()).unwrap_or(1) as i64;
         // acme's texttype in a tag: Up shrinks it to one line, Down expands it
