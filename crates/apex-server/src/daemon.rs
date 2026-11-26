@@ -162,6 +162,9 @@ enum IoStream {
     /// `tool://NAME/...`: served by that tool; this stream's frames go to
     /// the other half, on the tool's connection (or the asker's).
     Relay { conn: u64, stream: u32 },
+    /// `PUT apex-drop:NAME`: a file dropped on another machine, coming in
+    /// (`drops.rs`); gone unfinished, nothing of it stays.
+    Drop(crate::drops::Part),
 }
 
 /// What waits for a tool being started (`PlumbRule::start`).
@@ -1176,7 +1179,17 @@ impl Daemon {
                 _ => {}
             }
         }
+        let request = matches!(frame, IoFrame::Request { .. });
         self.io_frame(id, name, stream, frame);
+        // a request answered at once (a drop here already, a refusal)
+        // left no stream to pace
+        if request {
+            if let Some(c) = self.conns.get_mut(&id) {
+                if !c.streams.contains_key(&stream) {
+                    c.paced.remove(&stream);
+                }
+            }
+        }
         if let Some(n) = paced {
             if let Some(c) = self.conns.get_mut(&id) {
                 c.paced_in += n;
@@ -1206,6 +1219,7 @@ impl Daemon {
             IoFrame::Request { method, url, headers } => self.io_request(id, name, stream, &method, &url, &headers),
             IoFrame::Body(bytes) => match self.conns.get_mut(&id).and_then(|c| c.streams.get_mut(&stream)) {
                 Some(IoStream::Put { body, .. }) | Some(IoStream::Fetch { body, .. }) => body.extend_from_slice(&bytes),
+                Some(IoStream::Drop(part)) => part.write(&bytes),
                 Some(IoStream::Tunnel { sock: Some(sock), .. }) => {
                     use std::io::Write;
                     let _ = sock.write_all(&bytes);
@@ -1243,6 +1257,13 @@ impl Daemon {
                         self.io_finish(id, stream, status, text.into_bytes());
                     }
                     IoStream::Watch { path, .. } => self.unwatch_unused(name, &path),
+                    IoStream::Drop(part) => match part.finish() {
+                        Ok(path) => {
+                            self.send(id, ServerMsg::Io { stream, frame: IoFrame::Response { status: 200, headers: vec![("Location".into(), path.display().to_string())] } });
+                            self.send(id, ServerMsg::Io { stream, frame: IoFrame::End });
+                        }
+                        Err(e) => self.io_finish(id, stream, 500, e.into_bytes()),
+                    },
                     IoStream::Tunnel { .. } | IoStream::Fetch { .. } | IoStream::Relay { .. } => {}
                 }
             }
@@ -1262,6 +1283,9 @@ impl Daemon {
         }
         if let Some(rest) = url.strip_prefix("tool://") {
             return self.io_relay(id, name, stream, method, url, rest.split('/').next().unwrap_or(""), headers);
+        }
+        if let Some(file) = url.strip_prefix("apex-drop:") {
+            return self.io_drop_request(id, stream, method, file, headers);
         }
         if url.starts_with("http://") || url.starts_with("https://") {
             let bodyless = matches!(method, "GET" | "HEAD" | "DELETE" | "OPTIONS");
@@ -1309,6 +1333,37 @@ impl Daemon {
                 }
             }
             _ => self.io_finish(id, stream, 405, format!("{method} {url}: GET (with Watch) or PUT").into_bytes()),
+        }
+    }
+
+    /// `PUT apex-drop:NAME` with `Key` and `Length`: a file dropped on
+    /// another machine, for `~/.apex/drops/KEY/NAME` (`drops.rs`). Here
+    /// already (the same key, name and length): a 200 with `Have` and its
+    /// `Location`, the stream over, nothing to send. Else a 100 with the
+    /// `Location` it will have, the body to follow; at its end, a 200
+    /// once it is there whole, or why not.
+    fn io_drop_request(&mut self, id: u64, stream: u32, method: &str, file: &str, headers: &[(String, String)]) {
+        let header = |k: &str| headers.iter().find(|(h, _)| h.eq_ignore_ascii_case(k)).map(|(_, v)| v.as_str());
+        if method != "PUT" {
+            return self.io_finish(id, stream, 405, format!("{method} apex-drop:{file}: PUT").into_bytes());
+        }
+        let (Some(key), Some(len)) = (header("Key"), header("Length").and_then(|l| l.parse::<u64>().ok())) else {
+            return self.io_finish(id, stream, 400, format!("apex-drop:{file}: a Key and a Length").into_bytes());
+        };
+        crate::drops::sweep_now_and_then();
+        match crate::drops::Arrival::open(&crate::drops::dir(), key, file, len) {
+            Ok(crate::drops::Arrival::Have(path)) => {
+                self.send(id, ServerMsg::Io { stream, frame: IoFrame::Response { status: 200, headers: vec![("Location".into(), path.display().to_string()), ("Have".into(), "1".into())] } });
+                self.send(id, ServerMsg::Io { stream, frame: IoFrame::End });
+            }
+            Ok(crate::drops::Arrival::Part(part)) => {
+                let location = part.path().display().to_string();
+                if let Some(c) = self.conns.get_mut(&id) {
+                    c.streams.insert(stream, IoStream::Drop(part));
+                }
+                self.send(id, ServerMsg::Io { stream, frame: IoFrame::Response { status: 100, headers: vec![("Location".into(), location)] } });
+            }
+            Err(e) => self.io_finish(id, stream, 400, e.into_bytes()),
         }
     }
 

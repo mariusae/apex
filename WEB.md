@@ -79,6 +79,14 @@ budget steered by the queue the round trips show, as LEDBAT steers --
 grown while the queue is under 15 ms (or a fifth of the round trip),
 shrunk while over. A file on its way leaves a key behind it no more than
 that queue and a piece.
+*Drops* (`drops.rs`): `PUT apex-drop:NAME` with `Key` and `Length` is a
+file dropped on another machine, for `~/.apex/drops/KEY/NAME` -- its
+own name, the key the client's of the file. Here already: a 200 with
+`Have` and its `Location`, nothing to send. Else a 100 with the
+`Location` it will have, the body (paced), and a 200 once it is there
+whole: it comes in as `.NAME.N.part` and takes its name only whole, and
+one stopped, cut off or short leaves nothing. A week after it was last
+given, it goes.
 
 ### 1.1 Why a second plane
 
