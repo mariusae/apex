@@ -295,6 +295,8 @@ impl Render for Acme {
                 None => root,
             };
             let root = root.children(self.walk_cards(window, cx));
+        // a command's dot, at the end of the prompt row the pointer is on
+        let root = root.children(self.run_dot_element());
         let root = match self.selector_panel(cx) {
                 Some(panel) => root.child(panel),
                 None => root,

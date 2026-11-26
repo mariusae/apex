@@ -636,6 +636,10 @@ pub struct Acme {
     /// text comes back in the order asked.
     pub run_reads: Vec<crate::runs::RunRead>,
     pub read_seq: u64,
+    /// B1 held from a command's dot (`runs::RunDot`): its window and
+    /// entry, for B2's chord; and whether that chord was made.
+    pub dot_held: Option<(WindowId, usize)>,
+    pub dot_chorded: bool,
     /// Previews of remote files waiting for their first bytes: (ask id,
     /// path, app, the watch stream).
     previews: Vec<(u64, String, Option<String>, u32)>,
@@ -1927,6 +1931,8 @@ impl Acme {
             snarfouts: Vec::new(),
             run_reads: Vec::new(),
             read_seq: 0,
+            dot_held: None,
+            dot_chorded: false,
             previews: Vec::new(),
             live: std::collections::HashMap::new(),
             warp_wait: false,
@@ -3512,6 +3518,10 @@ impl Acme {
         }
         self.pointer = None;
         self.last_mouse = e.position;
+        // a command's dot by its prompt: the buttons on the command
+        if self.run_dot_down(e.position, self.logical_button_peek(e), cx) {
+            return;
+        }
         // the left button going down cannot already be down: a sweep still
         // held from it is one whose release never came, and it would keep
         // this press off a layout box and make B2 or B3 a chord
@@ -3735,6 +3745,11 @@ impl Acme {
 
     pub fn mouse_move(&mut self, e: &MouseMoveEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let pos = e.position;
+        // onto a prompt's row, or off one, or onto its dot: drawn again
+        let dot = |a: &Self, p| a.run_dot_near(p).map(|d| (d.window, d.entry, d.hit(p)));
+        if dot(self, self.last_mouse) != dot(self, pos) {
+            cx.notify();
+        }
         self.last_mouse = pos;
         self.hint_mods(e.modifiers);
         if self.caret_tick() {
@@ -3899,6 +3914,14 @@ impl Acme {
     pub fn mouse_up(&mut self, e: &MouseUpEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let button = if e.button == MouseButton::Left { self.mouse.left_as.take().unwrap_or(MouseButton::Left) } else { e.button };
         self.last_mouse = e.position;
+        // B1 up after a dot's press: done with it (its chord's B2 too)
+        if self.dot_held.is_some() {
+            if button == MouseButton::Left {
+                self.dot_held = None;
+            }
+            cx.notify();
+            return;
+        }
         if self.release_atom(e.position, button, cx) {
             return;
         }
@@ -5343,6 +5366,14 @@ impl Acme {
     /// before any key event) does: acme's rule, the text under the
     /// pointer, else the last selected text.
     pub fn menu_edit(&mut self, what: &str, window: &mut Window, cx: &mut Context<Self>) {
+        // ⌘C with the pointer on a command's dot: the command and its
+        // output, as the chord there copies them
+        if what == "copy" {
+            if let Some(d) = self.run_dot_at(self.pointer(window)) {
+                self.run_act(d.window, d.entry, crate::runs::RunAct::Copy, cx);
+                return;
+            }
+        }
         // ⌘C with the pointer on a command in an outline's list: the
         // command and its output (`runs`)
         if what == "copy" && self.outline.whole {

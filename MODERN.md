@@ -589,8 +589,12 @@ windows put away out of the tiling, which is the core's
   a shell's commands, a terminal's or win's, in the outline's list by
   the scrollbar, take what the buttons always mean -- B1 goes there, B2
   runs it again (typed to its shell), B3 opens its output in a window
-  of its own (`dir/+make`, the command its label) -- and ⌘C with the
-  pointer on one copies it and its output: `$ ` and the command, then
+  of its own (`dir/+make`, the command its label) -- and so does its
+  dot: with the pointer on a prompt's row, a dot at the row's end
+  (quiet; blue while it runs, orange when it failed), where B1 selects
+  the command and its output, B2 after it (B1 still held) copies them,
+  B2 runs it again and B3 opens it. ⌘C with the pointer on a dot or a
+  list's row copies it and its output: `$ ` and the command, then
   what it printed, whatever the prompt was. A terminal's output is read
   back from its history on the host; win's is the text between where
   its output began and ended (`OutlineItem::output`, kept with the
