@@ -1143,6 +1143,34 @@ fn an_input_strip_is_text_of_its_own_and_goes_with_its_window() {
     assert_eq!(f_hash(&log), node.state.hash());
 }
 
+/// A command's output in an outline (win's): its ends move with the
+/// edits; more output put in at its start is in it, and the next prompt
+/// put in at its end is not.
+#[test]
+fn a_commands_output_moves_with_the_text() {
+    let (mut log, mut node, col) = session();
+    let w = node.new_window(&mut log, col, "/tmp/-win", "% ls\na b\n% ").unwrap();
+    let b = node.state.window(w).unwrap().body_buffer().unwrap();
+    let (by, _) = log.attach(AttachmentKind::Tool, "win");
+    node.catch_up(&log).unwrap();
+    let items = vec![OutlineItem { level: 1, title: "ls".into(), at: 0, started: Some(1), output: Some((5, Some(9))), ..Default::default() }];
+    node.set_outline(&mut log, b, by, Some(items)).unwrap();
+    let out = |n: &Node| n.window_outline(w).and_then(|o| o.items[0].output);
+    // a line before it: both ends move
+    node.select(&mut log, ViewId::Body(w), 0, 0).unwrap();
+    node.insert(&mut log, ViewId::Body(w), "hi\n").unwrap();
+    assert_eq!(out(&node), Some((8, Some(12))));
+    // at its start: in it
+    node.select(&mut log, ViewId::Body(w), 8, 8).unwrap();
+    node.insert(&mut log, ViewId::Body(w), "x").unwrap();
+    assert_eq!(out(&node), Some((8, Some(13))));
+    // at its end: after it
+    node.select(&mut log, ViewId::Body(w), 13, 13).unwrap();
+    node.insert(&mut log, ViewId::Body(w), "y").unwrap();
+    assert_eq!(out(&node), Some((8, Some(13))));
+    assert_eq!(f_hash(&log), node.state.hash());
+}
+
 #[test]
 fn an_outline_a_tool_gives_moves_with_the_text_and_goes_with_the_tool() {
     let (mut log, mut node, col) = session();

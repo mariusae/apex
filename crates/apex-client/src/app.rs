@@ -551,7 +551,7 @@ pub struct Acme {
     /// positions (column, history line), the end exclusive.
     pub term_sel: Option<(WindowId, (usize, u64), (usize, u64))>,
     /// The snarf buffer as it was when a terminal copy was requested.
-    snarf_wanted: Option<String>,
+    pub(crate) snarf_wanted: Option<String>,
     /// Texts programs put on the clipboard (OSC 52), to be written once
     /// there is a context to write with.
     clips: Vec<String>,
@@ -628,7 +628,14 @@ pub struct Acme {
     /// came and never drawn, until the dismissal comes back.
     suppressed: std::collections::HashSet<apex_core::Seq>,
     /// Snarfouts waiting for a terminal's text: (ask id, terminal).
-    snarfouts: Vec<(u64, TermId)>,
+    /// Snarfout's asks waiting for a terminal's text: the ask, the
+    /// terminal, and its place in the order asked (`read_seq`).
+    snarfouts: Vec<(u64, TermId, u64)>,
+    /// A command's text asked of a terminal (`runs`), and the count both
+    /// these and Snarfout's asks take their order from: a terminal's
+    /// text comes back in the order asked.
+    pub run_reads: Vec<crate::runs::RunRead>,
+    pub read_seq: u64,
     /// Previews of remote files waiting for their first bytes: (ask id,
     /// path, app, the watch stream).
     previews: Vec<(u64, String, Option<String>, u32)>,
@@ -1277,7 +1284,8 @@ impl Acme {
                     return;
                 };
                 let to = term.top + term.rows as u64;
-                self.snarfouts.push((id, t));
+                self.read_seq += 1;
+                self.snarfouts.push((id, t, self.read_seq));
                 self.send(ClientMsg::TermRead { term: t, from: 0, to });
             }
             Ok(_) => {
@@ -1345,10 +1353,19 @@ impl Acme {
             _ => Vec::new(),
         };
         for (t, text) in lines {
-            if let Some(i) = self.snarfouts.iter().position(|(_, st)| *st == t) {
-                let (id, _) = self.snarfouts.remove(i);
-                let result = self.snarf_output(&text);
-                self.send(ClientMsg::Applied { id, result });
+            // whoever asked this terminal first: Snarfout, or a command's copy
+            let snarf = self.snarfouts.iter().position(|(_, st, _)| *st == t);
+            let run = self.run_reads.iter().filter(|r| r.term == t).map(|r| r.seq).min();
+            match (snarf, run) {
+                (Some(i), r) if r.is_none_or(|r| self.snarfouts[i].2 < r) => {
+                    let (id, _, _) = self.snarfouts.remove(i);
+                    let result = self.snarf_output(&text);
+                    self.send(ClientMsg::Applied { id, result });
+                }
+                (_, Some(_)) => {
+                    self.run_read(t, &text);
+                }
+                _ => {}
             }
         }
         self.preview_frames();
@@ -1908,6 +1925,8 @@ impl Acme {
             entered: None,
             suppressed: std::collections::HashSet::new(),
             snarfouts: Vec::new(),
+            run_reads: Vec::new(),
+            read_seq: 0,
             previews: Vec::new(),
             live: std::collections::HashMap::new(),
             warp_wait: false,
@@ -2945,7 +2964,7 @@ impl Acme {
 
     /// Type text into a terminal: what is sent runs, where a paste would
     /// be held on the line by a shell that asked for bracketed paste.
-    fn term_type(&mut self, t: TermId, text: String) {
+    pub(crate) fn term_type(&mut self, t: TermId, text: String) {
         self.input_to(t);
         match &mut self.backend {
             Backend::Local(server) => server.term_type(&mut self.log, t, &text),
@@ -5324,6 +5343,16 @@ impl Acme {
     /// before any key event) does: acme's rule, the text under the
     /// pointer, else the last selected text.
     pub fn menu_edit(&mut self, what: &str, window: &mut Window, cx: &mut Context<Self>) {
+        // ⌘C with the pointer on a command in an outline's list: the
+        // command and its output (`runs`)
+        if what == "copy" && self.outline.whole {
+            if let (Some(w), Some(i)) = (self.outline.open, self.outline.hover) {
+                if apex_server::outline::run_of(&self.node, w, i).is_some() {
+                    self.run_act(w, i, crate::runs::RunAct::Copy, cx);
+                    return;
+                }
+            }
+        }
         // an overlay (the session picker, the finder) has the keyboard:
         // the Edit menu works on its field, not on the text below
         if self.selector.is_some() || self.finder.is_some() || self.url_edit.is_some() || self.commands.is_some() || self.quick.is_some() {

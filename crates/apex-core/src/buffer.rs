@@ -61,6 +61,11 @@ pub struct OutlineItem {
     pub started: Option<u64>,
     pub ended: Option<u64>,
     pub exit: Option<i32>,
+    /// A command's output: where it begins in the text, and, once it
+    /// has ended, where it ends (moved with the edits as `at` is; text
+    /// put in at its start goes in, as more output does, and at its end
+    /// after it, as the next prompt does).
+    pub output: Option<(usize, Option<usize>)>,
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
@@ -198,6 +203,17 @@ impl Buffer {
                 // is where its symbol starts)
                 if ni > 0 && q0 <= it.at {
                     it.at += ni;
+                }
+                // its output's ends: neither moves for text put in at it
+                if let Some((a, b)) = it.output.as_mut() {
+                    for p in std::iter::once(a).chain(b.as_mut()) {
+                        if nd > 0 && q0 < *p {
+                            *p -= nd.min(*p - q0);
+                        }
+                        if ni > 0 && q0 < *p {
+                            *p += ni;
+                        }
+                    }
                 }
             }
         }

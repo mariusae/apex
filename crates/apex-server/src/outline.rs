@@ -75,6 +75,78 @@ pub fn of(node: &Node, w: WindowId, now_ms: u64) -> Option<Vec<Entry>> {
     (!entries.is_empty()).then_some(entries)
 }
 
+/// A command in a window's outline (a terminal's, or a text's that a
+/// shell's tool keeps: win's): what was run, and where its output is.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Run {
+    pub cmd: String,
+    pub output: RunOutput,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum RunOutput {
+    /// A text's: the output as the text has it now.
+    Text(String),
+    /// A terminal's: its history lines `from` to `to`, both in, which
+    /// only the host has (`TermHost::text`); none when it printed nothing.
+    Rows { term: apex_core::TermId, from: u64, to: u64 },
+    None,
+}
+
+/// The `i`th of window `w`'s outline's entries (as `of` lists them), if
+/// it is a command: a terminal's prompt mark, or a text's item with a
+/// run. Its output runs to its end, or, still running, to where the
+/// output stands now.
+pub fn run_of(node: &Node, w: WindowId, i: usize) -> Option<Run> {
+    let win = node.state.window(w).ok()?;
+    match win.body {
+        Body::Text(b) => {
+            let it = node.window_outline(w)?.items.get(i)?;
+            it.started?;
+            let text = &node.state.buffer(b).ok()?.text;
+            let len = text.len();
+            let output = match it.output {
+                Some((a, end)) => {
+                    let a = a.min(len);
+                    let z = end.unwrap_or(len).clamp(a, len);
+                    RunOutput::Text(text.slice(a, z))
+                }
+                None => RunOutput::None,
+            };
+            Some(Run { cmd: it.title.clone(), output })
+        }
+        Body::Term(t) => {
+            let term = node.state.terms.get(&t)?;
+            let m = term.marks.iter().filter(|m| m.started.is_some() || m.cmd.is_some()).nth(i)?;
+            let from = m.output.unwrap_or(m.prompt + 1);
+            // to the line before its end (where the next prompt is), else,
+            // still running, to the last line there is
+            let to = match m.end {
+                Some(e) => e.checked_sub(1),
+                None => term.total.checked_sub(1),
+            };
+            let output = match to {
+                Some(to) if to >= from => RunOutput::Rows { term: t, from, to },
+                _ => RunOutput::None,
+            };
+            Some(Run { cmd: m.cmd.clone().unwrap_or_default(), output })
+        }
+        Body::Page(_) => None,
+    }
+}
+
+/// A command and its output as copied: `$ ` and the command, a line,
+/// then the output, its trailing blank lines left off, ending in a
+/// newline (whatever the shell's prompt was).
+pub fn transcript(cmd: &str, output: &str) -> String {
+    let out = output.trim_end_matches(|c: char| c == '\n' || c == '\r' || c == ' ' || c == '\t');
+    if out.is_empty() {
+        format!("$ {cmd}\n")
+    } else {
+        format!("$ {cmd}\n{out}\n")
+    }
+}
+
 /// Which of window `w`'s `entries` it is showing, as best the state
 /// says: the last at or before the top of a text's or terminal's view.
 /// A page's scroll is the client's alone, so `None` for a page.
@@ -363,6 +435,13 @@ fn squash(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_transcript_is_dollar_the_command_then_its_output() {
+        assert_eq!(transcript("make; ls", "built\nok\n\n  \n"), "$ make; ls\nbuilt\nok\n");
+        assert_eq!(transcript("true", ""), "$ true\n");
+        assert_eq!(transcript("echo", "no newline"), "$ echo\nno newline\n");
+    }
 
     #[test]
     fn headings() {

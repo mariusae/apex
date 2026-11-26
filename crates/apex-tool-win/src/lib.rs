@@ -591,7 +591,8 @@ impl Win {
                 self.outline_places();
                 let at = self.prompt_at.take().unwrap_or(self.p);
                 let title = cmd.map(|c| c.split_whitespace().collect::<Vec<_>>().join(" ")).filter(|c| !c.is_empty()).unwrap_or_else(|| "a command".into());
-                self.cmds.push(OutlineItem { level: 1, title, at, started: Some(now_ms()), ended: None, exit: None });
+                // its output from here, the output point, as it comes
+                self.cmds.push(OutlineItem { level: 1, title, at, started: Some(now_ms()), ended: None, exit: None, output: Some((self.p, None)) });
                 if self.cmds.len() > MOST_CMDS {
                     self.cmds.drain(..self.cmds.len() - MOST_CMDS);
                 }
@@ -599,9 +600,11 @@ impl Win {
             }
             b'D' => {
                 self.outline_places();
+                let p = self.p;
                 if let Some(c) = self.cmds.last_mut().filter(|c| c.ended.is_none()) {
                     c.ended = Some(now_ms());
                     c.exit = exit;
+                    c.output = c.output.map(|(a, _)| (a, Some(p.max(a))));
                     self.propose_outline();
                 }
             }
@@ -618,6 +621,7 @@ impl Win {
         if let Some(o) = buf.outline.as_ref().filter(|o| o.by == me && o.items.len() == self.shown && self.shown == self.cmds.len()) {
             for (c, it) in self.cmds.iter_mut().zip(&o.items) {
                 c.at = it.at;
+                c.output = it.output;
             }
         }
         let mut keep = vec![true; self.cmds.len()];

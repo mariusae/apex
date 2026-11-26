@@ -54,6 +54,8 @@ pub struct Outline {
     pub top: Pixels,
     pub panel_at: Rc<Cell<Option<Bounds<Pixels>>>>,
     pub scroll: gpui::ScrollHandle,
+    /// The list's row under the pointer: what ⌘C copies, a command's.
+    pub hover: Option<usize>,
 }
 
 /// The stops down the bar: each heading where it is in the page
@@ -209,6 +211,7 @@ impl Acme {
         if self.outline.open.is_none() {
             self.outline.panel_at.set(None);
             self.outline.near = None;
+            self.outline.hover = None;
         }
         was != (self.outline.open, self.outline.whole, self.outline.near)
     }
@@ -276,7 +279,30 @@ impl Acme {
                         cx.stop_propagation();
                         cx.notify();
                     }),
-                );
+                )
+                // a command's (a terminal's, win's): B2 runs it again, B3
+                // opens its output in a window of its own (`runs`)
+                .on_mouse_down(
+                    MouseButton::Middle,
+                    cx.listener(move |acme, _, _, cx| {
+                        cx.stop_propagation();
+                        acme.run_again(w, i, cx);
+                    }),
+                )
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(move |acme, _, _, cx| {
+                        cx.stop_propagation();
+                        acme.run_act(w, i, crate::runs::RunAct::Open, cx);
+                    }),
+                )
+                .on_hover(cx.listener(move |acme, over: &bool, _, _| {
+                    if *over {
+                        acme.outline.hover = Some(i);
+                    } else if acme.outline.hover == Some(i) {
+                        acme.outline.hover = None;
+                    }
+                }));
             // going to a heading is B3's: its colours under the pointer
             crate::shell::chosen_under_pointer(row, crate::shell::Act::Look, crate::shell::BAR_INSET, "toc-row")
         });

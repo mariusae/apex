@@ -150,7 +150,7 @@ pub struct Parked {
     pub target: WakeTarget,
     pub previews: Vec<(u64, String, Option<String>, u32)>,
     pub live: HashMap<String, Live>,
-    pub snarfouts: Vec<(u64, TermId)>,
+    pub snarfouts: Vec<(u64, TermId, u64)>,
     pub pending_goto: Option<Loc>,
     pub parked_at: Instant,
     /// What the window had seen of the session when it was put aside

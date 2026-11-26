@@ -585,6 +585,16 @@ windows put away out of the tiling, which is the core's
   the scrollbar's stops, its pill and list, ⌘P's sections and the
   Outline lens have win's commands as they have a terminal's. A
   command's `cmdline=` is the rest of its mark, semicolons and all.
+- **A command is a thing to act on** (`runs.rs`, `outline::run_of`):
+  a shell's commands, a terminal's or win's, in the outline's list by
+  the scrollbar, take what the buttons always mean -- B1 goes there, B2
+  runs it again (typed to its shell), B3 opens its output in a window
+  of its own (`dir/+make`, the command its label) -- and ⌘C with the
+  pointer on one copies it and its output: `$ ` and the command, then
+  what it printed, whatever the prompt was. A terminal's output is read
+  back from its history on the host; win's is the text between where
+  its output began and ended (`OutlineItem::output`, kept with the
+  edits; protocol 68).
 - **Outline, a lens to filter and go to** (`apex tool outline`): in
   every window's tools menu; the window's outline (a file's symbols, a
   terminal's commands, a page's headings or an agent's turns) as text

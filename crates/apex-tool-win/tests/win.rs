@@ -210,6 +210,10 @@ fn the_shells_prompt_marks_are_the_windows_outline() {
     assert_eq!(items[0].at, prompt, "{:?}", text(&c.node));
     let t = text(&c.node);
     assert!(!t.contains('\u{1b}') && t.contains("built\n"), "{t:?}");
+    // its output, as copied: `$` and the command, then what it printed
+    let run = apex_server::outline::run_of(&c.node, w, 0).unwrap();
+    let apex_server::outline::RunOutput::Text(out) = run.output else { panic!("{run:?}") };
+    assert_eq!(apex_server::outline::transcript(&run.cmd, &out), "$ make; ls\nbuilt\n");
     // said as a terminal's command is: failed, and how
     let entries = apex_server::outline::of(&c.node, w, items[0].ended.unwrap()).unwrap();
     assert!(entries[0].failed);

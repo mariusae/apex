@@ -33,6 +33,7 @@ mod look;
 mod outline;
 mod miniature;
 mod restart;
+mod runs;
 mod sessionkeys;
 mod strips;
 mod switcher;
