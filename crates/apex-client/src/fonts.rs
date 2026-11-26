@@ -1,30 +1,16 @@
-//! The font sets (the modern-mac branch, View ▸ Font), to live with a
-//! while and choose among: what text windows and tags are set in, what
-//! mono windows and terminals are, what the sidebar, sheets and menus
-//! are, and what pages from buffers (previews, apex diff) are, all from
-//! one choice.
+//! The font sets (Settings ▸ Fonts), one choice for what text windows
+//! and tags are set in, what mono windows and terminals are, what the
+//! sidebar, sheets and menus are, and what pages from buffers
+//! (previews, apex diff) are.
 //!
+//! - Apex (what was Classic, and keeps its word): Lucida Grande and
+//!   Menlo, apex's as it was.
 //! - System: SF Pro, with its high legibility set and tabular figures,
 //!   and SF Mono -- Terminal's own copy, which is the whole family, at
 //!   its Medium weight, since the Regular draws thin at 12.
-//! - Classic: Lucida Grande and Menlo, apex's as it was.
-//! - Lucida: Lucida Grande and Lucida Grande Mono (Bigelow & Holmes's
-//!   W1G cut) where it is installed, Menlo where it is not. Not to be
-//!   bundled: the installed family.
-//! - Go: Go and Go Mono (bundled).
-//! - Nova: as Panic's Nova is set, SF (with its high legibility set and
-//!   tabular figures, as System's) for text and the interface, and Menlo
-//!   for code.
-//! - Mona: Mona Sans and Monaspace Xenon (bundled), Xenon set as
-//!   Manifold sets it: texture healing (`calt`) and stylistic sets 2, 3,
-//!   7 and 8, and in pages Radon for its italics.
-//! - Inter: Inter and JetBrains Mono (both bundled, both OFL), as rsms
-//!   sets his Sublime Text theme.
-//! - Geist: Vercel's Geist and Geist Mono (bundled, OFL).
-//! - Styrene: Commercial Type's Styrene B, with JetBrains Mono. Not to
-//!   be bundled: the installed family.
-//! - H&Co: Hoefler & Co.'s Ideal Sans (screen smart) and Operator Mono,
-//!   not to be bundled: the installed families.
+//! - Humanist (what was Lucida): Lucida Grande and Bigelow & Holmes's
+//!   Lucida Grande Mono, its W1G cut -- offered only where that is
+//!   installed; not to be bundled.
 //!
 //! The bundled faces go to gpui at launch (`install`) and to pages by
 //! `@font-face` from `apexfile://localhost/.apex-font/FILE`, which the
@@ -37,60 +23,64 @@ use gpui::{px, App, FontWeight, Pixels};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Set {
-    System,
+    /// Apex's own (`classic`, its word as it was).
     Classic,
-    Go,
-    Mona,
-    Nova,
-    Hco,
-    Inter,
-    Geist,
-    Styrene,
+    System,
+    /// Humanist (`lucida`, its word as it was).
     Lucida,
 }
 
-pub const ALL: [Set; 10] = [Set::System, Set::Classic, Set::Go, Set::Mona, Set::Nova, Set::Hco, Set::Inter, Set::Geist, Set::Styrene, Set::Lucida];
+pub const ALL: [Set; 3] = [Set::Classic, Set::System, Set::Lucida];
 
-/// The font set until one is chosen: Classic, acme's (its place in `ALL`).
-const DEFAULT_SET: u8 = 1;
+/// The font set until one is chosen: Apex's (its place in `ALL`), and
+/// what one chosen before, and gone since, comes back as.
+const DEFAULT_SET: u8 = 0;
 
 impl Set {
     pub fn title(self) -> &'static str {
         match self {
+            Set::Classic => "Apex",
             Set::System => "System",
-            Set::Classic => "Classic",
-            Set::Go => "Go",
-            Set::Mona => "Mona",
-            Set::Nova => "Nova",
-            Set::Hco => "H&Co",
-            Set::Inter => "Inter",
-            Set::Geist => "Geist",
-            Set::Styrene => "Styrene",
-            Set::Lucida => "Lucida",
+            Set::Lucida => "Humanist",
         }
     }
-
     fn word(self) -> &'static str {
         match self {
-            Set::System => "system",
             Set::Classic => "classic",
-            Set::Go => "go",
-            Set::Mona => "mona",
-            Set::Nova => "nova",
-            Set::Hco => "hco",
-            Set::Inter => "inter",
-            Set::Geist => "geist",
-            Set::Styrene => "styrene",
+            Set::System => "system",
             Set::Lucida => "lucida",
         }
     }
+    /// Whether it can be had here: Humanist only with Lucida Grande
+    /// Mono W1G installed (`install` looks).
+    pub fn available(self) -> bool {
+        match self {
+            Set::Lucida => LUCIDA_MONO.get().is_some(),
+            _ => true,
+        }
+    }
+}
+
+/// The sets offered here, in their order.
+pub fn offered() -> Vec<Set> {
+    ALL.into_iter().filter(|s| s.available()).collect()
 }
 
 static SET: AtomicU8 = AtomicU8::new(DEFAULT_SET);
 
 pub fn current() -> Set {
-    ALL[SET.load(Ordering::Relaxed) as usize % ALL.len()]
+    let s = ALL[SET.load(Ordering::Relaxed) as usize % ALL.len()];
+    // Humanist chosen, and its mono not installed (since gone, or
+    // another Mac): Apex's
+    if INSTALLED.load(Ordering::Relaxed) && !s.available() {
+        Set::Classic
+    } else {
+        s
+    }
 }
+
+/// `install` has looked at what is installed.
+static INSTALLED: AtomicBool = AtomicBool::new(false);
 
 /// Chosen: kept in the `fonts` state file, beside the theme's.
 pub fn set(s: Set) {
@@ -165,11 +155,6 @@ pub struct Spec {
     pub features: &'static [(&'static str, u32)],
 }
 
-/// Monaspace Xenon as Manifold sets it: texture healing, and stylistic
-/// sets 2, 3, 7 and 8. Each is a substitution of one glyph for another
-/// in a monospaced font, so every character keeps its cell and a click
-/// still lands between any two.
-const XENON: &[(&str, u32)] = &[("calt", 1), ("ss02", 1), ("ss03", 1), ("ss07", 1), ("ss08", 1)];
 /// SF Pro as an editor sets it for code: high legibility (an I with
 /// bars, an l with a tail, a 1 with a flag) and tabular figures.
 const LEGIBLE: &[(&str, u32)] = &[("ss06", 1), ("tnum", 1)];
@@ -193,44 +178,15 @@ pub fn text() -> Spec {
 fn text_as_set() -> Spec {
     match current() {
         Set::System => Spec { family: ".SystemUIFont", size: px(14.), line_height: px(20.), weight: FontWeight::NORMAL, features: LEGIBLE },
-        Set::Classic => Spec { family: "Lucida Grande", size: px(13.), line_height: px(17.), weight: FontWeight::NORMAL, features: &[] },
-        Set::Go => Spec { family: "Go", size: px(14.), line_height: px(20.), weight: FontWeight::NORMAL, features: &[] },
-        Set::Mona => Spec { family: "Mona Sans", size: px(15.), line_height: px(21.), weight: FontWeight::NORMAL, features: &[] },
-        Set::Nova => Spec { family: ".SystemUIFont", size: px(14.), line_height: px(20.), weight: FontWeight::NORMAL, features: LEGIBLE },
-        Set::Hco => Spec { family: IDEAL, size: px(14.), line_height: px(20.), weight: FontWeight::NORMAL, features: &[] },
-        Set::Inter => Spec { family: "Inter", size: px(14.), line_height: px(20.), weight: FontWeight::NORMAL, features: &[] },
-        Set::Geist => Spec { family: "Geist", size: px(14.), line_height: px(20.), weight: FontWeight::NORMAL, features: &[] },
-        Set::Styrene => Spec { family: STYRENE, size: px(14.), line_height: px(20.), weight: FontWeight::NORMAL, features: &[] },
-        Set::Lucida => Spec { family: "Lucida Grande", size: px(13.), line_height: px(17.), weight: FontWeight::NORMAL, features: &[] },
+        Set::Classic | Set::Lucida => Spec { family: "Lucida Grande", size: px(13.), line_height: px(17.), weight: FontWeight::NORMAL, features: &[] },
     }
 }
 
-/// The weight to ask for to get `w`: what it is, but for H&Co's faces,
-/// whose weights are drawn together as a typographic family's are --
-/// their Bold says it is Core Text's regular (0), their Book lighter
-/// (-0.17), and so on -- so that asking for a regular 400 got the Bold,
-/// and all of it was bold. Asked for, each comes out as the weight they
-/// say (font-kit's mapping of Core Text's: Light 300, Book 325, Medium
-/// 350, Semibold 375, Bold 400), a little over it, since the match looks
-/// down from what is asked first.
+/// The weight to ask for to get `w`: what it is (a set whose faces said
+/// their weights otherwise, H&Co's, is gone).
 pub fn weight(w: FontWeight) -> FontWeight {
-    if current() != Set::Hco {
-        return w;
-    }
-    FontWeight(match w.0 {
-        x if x < 350. => 305.,
-        x if x < 450. => 330.,
-        x if x < 550. => 355.,
-        x if x < 650. => 380.,
-        _ => 400.,
-    })
+    w
 }
-
-/// Hoefler & Co.'s families, as their screen-smart cuts name themselves.
-const IDEAL: &str = "Ideal Sans SSm";
-const OPERATOR: &str = "Operator Mono SSm";
-/// Commercial Type's Styrene B, as its desktop cut names itself.
-const STYRENE: &str = "Styrene B LC";
 
 /// What mono windows and terminals are set in.
 pub fn mono() -> Spec {
@@ -250,12 +206,6 @@ fn mono_as_set() -> Spec {
             Spec { family, size: px(12.), line_height: px(16.), weight: FontWeight::MEDIUM, features: &[] }
         }
         Set::Classic => Spec { family: "Menlo", size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: &[] },
-        Set::Go => Spec { family: "Go Mono", size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: &[] },
-        Set::Mona => Spec { family: "Monaspace Xenon", size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: XENON },
-        Set::Nova => Spec { family: "Menlo", size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: &[] },
-        Set::Hco => Spec { family: OPERATOR, size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: &[] },
-        Set::Inter | Set::Styrene => Spec { family: "JetBrains Mono", size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: &[] },
-        Set::Geist => Spec { family: "Geist Mono", size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: &[] },
         Set::Lucida => {
             let family = LUCIDA_MONO.get().map(String::as_str).unwrap_or("Menlo");
             Spec { family, size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: &[] }
@@ -263,19 +213,30 @@ fn mono_as_set() -> Spec {
     }
 }
 
+/// Set `s`'s text and mono families, whichever is chosen: what Settings
+/// names each set in.
+pub fn families(s: Set) -> (String, String) {
+    match s {
+        Set::Classic => ("Lucida Grande".into(), "Menlo".into()),
+        Set::System => {
+            let mono = if SF_MONO.load(Ordering::Relaxed) {
+                "SF Mono"
+            } else if SF_NS_MONO.load(Ordering::Relaxed) {
+                ".SF NS Mono"
+            } else {
+                "Menlo"
+            };
+            (".SystemUIFont".into(), mono.into())
+        }
+        Set::Lucida => ("Lucida Grande".into(), LUCIDA_MONO.get().cloned().unwrap_or_else(|| "Menlo".into())),
+    }
+}
+
 /// What the sidebar, sheets and menus are set in.
 pub fn ui() -> &'static str {
     match current() {
         Set::System => ".AppleSystemUIFont",
-        Set::Classic => "Lucida Grande",
-        Set::Go => "Go",
-        Set::Mona => "Mona Sans",
-        Set::Nova => ".AppleSystemUIFont",
-        Set::Hco => IDEAL,
-        Set::Inter => "Inter",
-        Set::Geist => "Geist",
-        Set::Styrene => STYRENE,
-        Set::Lucida => "Lucida Grande",
+        Set::Classic | Set::Lucida => "Lucida Grande",
     }
 }
 
@@ -289,62 +250,20 @@ pub struct Face {
     pub italic: bool,
 }
 
-macro_rules! face {
-    ($dir:literal, $file:literal, $family:literal, $weight:literal, $italic:literal) => {
-        Face { file: $file, bytes: include_bytes!(concat!("../assets/fonts/", $dir, "/", $file)), family: $family, weight: $weight, italic: $italic }
-    };
-}
 
-pub const FACES: &[Face] = &[
-    face!("go", "Go-Regular.ttf", "Go", 400, false),
-    face!("go", "Go-Bold.ttf", "Go", 700, false),
-    face!("go", "Go-Italic.ttf", "Go", 400, true),
-    face!("go", "Go-Bold-Italic.ttf", "Go", 700, true),
-    face!("go", "Go-Mono.ttf", "Go Mono", 400, false),
-    face!("go", "Go-Mono-Bold.ttf", "Go Mono", 700, false),
-    face!("go", "Go-Mono-Italic.ttf", "Go Mono", 400, true),
-    face!("go", "Go-Mono-Bold-Italic.ttf", "Go Mono", 700, true),
-    face!("mona", "MonaSans-Regular.otf", "Mona Sans", 400, false),
-    face!("mona", "MonaSans-Medium.otf", "Mona Sans", 500, false),
-    face!("mona", "MonaSans-Bold.otf", "Mona Sans", 700, false),
-    face!("mona", "MonaSans-Italic.otf", "Mona Sans", 400, true),
-    face!("mona", "MonaSans-BoldItalic.otf", "Mona Sans", 700, true),
-    face!("monaspace", "MonaspaceXenon-Regular.otf", "Monaspace Xenon", 400, false),
-    face!("monaspace", "MonaspaceXenon-Bold.otf", "Monaspace Xenon", 700, false),
-    // Xenon's italics are Radon's, the handwritten one, as Manifold's are
-    face!("monaspace", "MonaspaceRadon-Italic.otf", "Monaspace Xenon", 400, true),
-    face!("monaspace", "MonaspaceRadon-BoldItalic.otf", "Monaspace Xenon", 700, true),
-    face!("inter", "Inter-Regular.ttf", "Inter", 400, false),
-    face!("inter", "Inter-Medium.ttf", "Inter", 500, false),
-    face!("inter", "Inter-SemiBold.ttf", "Inter", 600, false),
-    face!("inter", "Inter-Bold.ttf", "Inter", 700, false),
-    face!("inter", "Inter-Italic.ttf", "Inter", 400, true),
-    face!("inter", "Inter-BoldItalic.ttf", "Inter", 700, true),
-    face!("jetbrains", "JetBrainsMono-Regular.ttf", "JetBrains Mono", 400, false),
-    face!("jetbrains", "JetBrainsMono-Medium.ttf", "JetBrains Mono", 500, false),
-    face!("jetbrains", "JetBrainsMono-Bold.ttf", "JetBrains Mono", 700, false),
-    face!("jetbrains", "JetBrainsMono-Italic.ttf", "JetBrains Mono", 400, true),
-    face!("jetbrains", "JetBrainsMono-BoldItalic.ttf", "JetBrains Mono", 700, true),
-    face!("geist", "Geist-Regular.ttf", "Geist", 400, false),
-    face!("geist", "Geist-Medium.ttf", "Geist", 500, false),
-    face!("geist", "Geist-SemiBold.ttf", "Geist", 600, false),
-    face!("geist", "Geist-Bold.ttf", "Geist", 700, false),
-    face!("geist", "Geist-Italic.ttf", "Geist", 400, true),
-    face!("geist", "Geist-BoldItalic.ttf", "Geist", 700, true),
-    face!("geist", "GeistMono-Regular.ttf", "Geist Mono", 400, false),
-    face!("geist", "GeistMono-Medium.ttf", "Geist Mono", 500, false),
-    face!("geist", "GeistMono-Bold.ttf", "Geist Mono", 700, false),
-    face!("geist", "GeistMono-Italic.ttf", "Geist Mono", 400, true),
-    face!("geist", "GeistMono-BoldItalic.ttf", "Geist Mono", 700, true),
-];
+/// None bundled now (the sets that had them, Go's and Geist's, are
+/// gone); the way a page has them stays, for a set that brings some.
+pub const FACES: &[Face] = &[];
 
 /// The bundled faces to gpui, and SF Mono: Terminal's copy, the whole
 /// family (not a font the system lets be named, nor one to bundle),
 /// else the system's `.SF NS Mono`.
 pub fn install(cx: &mut App) {
-    let bundled = FACES.iter().filter(|f| !f.italic || !f.file.starts_with("MonaspaceRadon")).map(|f| std::borrow::Cow::Borrowed(f.bytes)).collect();
-    if let Err(e) = cx.text_system().add_fonts(bundled) {
-        eprintln!("apex-ui: the bundled fonts: {e}");
+    let bundled: Vec<_> = FACES.iter().map(|f| std::borrow::Cow::Borrowed(f.bytes)).collect();
+    if !bundled.is_empty() {
+        if let Err(e) = cx.text_system().add_fonts(bundled) {
+            eprintln!("apex-ui: the bundled fonts: {e}");
+        }
     }
     let dir = std::path::Path::new("/System/Applications/Utilities/Terminal.app/Contents/Resources/Fonts");
     let terminal: Vec<std::borrow::Cow<'static, [u8]>> = std::fs::read_dir(dir)
@@ -355,13 +274,13 @@ pub fn install(cx: &mut App) {
         .filter_map(|e| std::fs::read(e.path()).ok())
         .map(std::borrow::Cow::Owned)
         .collect();
-    // Lucida Grande Mono: the Lucida set's mono where it is installed,
-    // the W1G cut first, as the family it names itself
+    // Lucida Grande Mono W1G: Humanist's mono, and whether Humanist is
+    // offered at all
     let names = cx.text_system().all_font_names();
-    let lucida = names.iter().find(|n| n.as_str() == "Lucida Grande Mono W1G").or_else(|| names.iter().find(|n| n.starts_with("Lucida Grande Mono")));
-    if let Some(name) = lucida {
+    if let Some(name) = names.iter().find(|n| n.as_str() == "Lucida Grande Mono W1G") {
         let _ = LUCIDA_MONO.set(name.clone());
     }
+    INSTALLED.store(true, Ordering::Relaxed);
     if !terminal.is_empty() && cx.text_system().add_fonts(terminal).is_ok() {
         SF_MONO.store(true, Ordering::Relaxed);
     } else if let Ok(bytes) = std::fs::read("/System/Library/Fonts/SFNSMono.ttf") {
@@ -397,30 +316,10 @@ pub fn page_css() -> String {
             if f.italic { "italic" } else { "normal" }
         ));
     }
-    // H&Co's installed faces by their own names at the weights they are,
-    // for a page's `font-weight` to find them by (WebKit's match, as
-    // gpui's, took their Bold for the regular)
-    if current() == Set::Hco {
-        for (family, ps) in [(IDEAL, "IdealSansSSm"), (OPERATOR, "OperatorMonoSSm")] {
-            for (style, weight) in [("Light", 300), ("Book", 400), ("Medium", 500), ("Semibold", 600), ("Bold", 700)] {
-                for italic in [false, true] {
-                    let name = format!("{ps}-{style}{}", if italic { "Italic" } else { "" });
-                    css.push_str(&format!("@font-face{{font-family:\"{family}\";src:local(\"{name}\");font-weight:{weight};font-style:{}}}", if italic { "italic" } else { "normal" }));
-                }
-            }
-        }
-    }
     let (sans, mono, sans_features, mono_features) = match current() {
         Set::System => ("-apple-system, BlinkMacSystemFont, sans-serif", "ui-monospace, \"SF Mono\", Menlo, monospace", "\"ss06\", \"tnum\"", "\"zero\""),
         Set::Classic => ("\"Lucida Grande\", \"Lucida Sans Unicode\", sans-serif", "Menlo, monospace", "normal", "normal"),
-        Set::Go => ("\"Go\", sans-serif", "\"Go Mono\", monospace", "normal", "normal"),
-        Set::Nova => ("-apple-system, BlinkMacSystemFont, sans-serif", "Menlo, monospace", "\"ss06\", \"tnum\"", "normal"),
-        Set::Mona => ("\"Mona Sans\", sans-serif", "\"Monaspace Xenon\", monospace", "normal", "\"calt\", \"ss02\", \"ss03\", \"ss07\", \"ss08\""),
-        Set::Hco => ("\"Ideal Sans SSm\", sans-serif", "\"Operator Mono SSm\", monospace", "normal", "normal"),
-        Set::Inter => ("\"Inter\", sans-serif", "\"JetBrains Mono\", monospace", "normal", "normal"),
-        Set::Geist => ("\"Geist\", sans-serif", "\"Geist Mono\", monospace", "normal", "normal"),
-        Set::Styrene => ("\"Styrene B LC\", sans-serif", "\"JetBrains Mono\", monospace", "normal", "normal"),
-        Set::Lucida => ("\"Lucida Grande\", \"Lucida Sans Unicode\", sans-serif", "\"Lucida Grande Mono W1G\", \"Lucida Grande Mono\", Menlo, monospace", "normal", "normal"),
+        Set::Lucida => ("\"Lucida Grande\", \"Lucida Sans Unicode\", sans-serif", "\"Lucida Grande Mono W1G\", Menlo, monospace", "normal", "normal"),
     };
     css.push_str(&format!(":root{{--apex-font:{sans};--apex-mono:{mono};--apex-font-features:{sans_features};--apex-mono-features:{mono_features}}}"));
     css
@@ -431,8 +330,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_default_set_is_classic() {
+    fn the_default_set_is_apex() {
         assert_eq!(ALL[DEFAULT_SET as usize], Set::Classic);
+        assert_eq!(Set::Classic.title(), "Apex");
         assert_eq!(current(), Set::Classic, "until one is chosen");
     }
 
@@ -446,7 +346,6 @@ mod tests {
         assert!(serve("/.apex-font/nothing.ttf").is_none());
         assert!(serve("/etc/passwd").is_none(), "only the bundled faces, nothing else by that path");
         let css = page_css();
-        assert!(css.contains("apexfile://localhost/.apex-font/Go-Regular.ttf"));
         assert!(css.contains("--apex-mono:"));
     }
 }

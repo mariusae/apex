@@ -1923,7 +1923,7 @@ text); the client paints the device pixels beyond acme's in the
 neighbour's colour (a tag reaching up, a column's contents reaching
 left), so the black that shows is acme's width.
 
-*Themes (View menu: Light, Dark, System; kept in the `theme` state
+*Themes (Settings ▸ Appearance: Match System, Light, Dark; kept in the `theme` state
 file):* acme's colours are the light theme; the dark one keeps its
 make (`theme.rs`): two tinted papers, warm for bodies and cool for
 tags, inverted to deep grounds; selections the tints lit; the mid tone

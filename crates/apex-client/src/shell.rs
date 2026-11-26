@@ -20,7 +20,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::Acme;
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWin, NewTerm, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, SwitchSession, SwitchSessionBack, PrevTab, NextTab, Goto, GotoAll, NextNotification, Find, FindNext, FindPrevious, NavBack, NavFwd, View, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleBlink, ToggleSmoothCaret, ToggleLayoutAnimations, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, FontHco, FontInter, FontGeist, FontStyrene, FontLucida, FontBigger, FontSmaller, FontActual, PaletteAlabaster, PaletteXcode, PaletteClassic, PaletteAcme, PaletteGitHub, PaletteNova, PaletteRsms, StashWindow, ShowOverview, RestartServer, Commands, OpenPath]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWin, NewTerm, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, SwitchSession, SwitchSessionBack, PrevTab, NextTab, Goto, GotoAll, NextNotification, Find, FindNext, FindPrevious, NavBack, NavFwd, View, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ToggleSidebar, FontBigger, FontSmaller, FontActual, Settings, StashWindow, ShowOverview, RestartServer, Commands, OpenPath]);
 
 /// View ▸ Theme ▸ a palette chosen: kept, and everything in its colours
 /// again, as a change of appearance does.
@@ -133,6 +133,9 @@ pub fn menus() -> Vec<Menu> {
             items: vec![
                 MenuItem::action("About Apex", About),
                 MenuItem::separator(),
+                MenuItem::action("Settings…", Settings),
+                MenuItem::action("Profile…", Profile),
+                MenuItem::separator(),
                 MenuItem::action("Install apex Command…", InstallCli),
                 MenuItem::action("Restart Server…", RestartServer),
                 MenuItem::separator(),
@@ -194,67 +197,17 @@ pub fn menus() -> Vec<Menu> {
             name: "View".into(),
             disabled: false,
             items: {
-                let m = crate::theme::mode();
-                let mark = |name: &str, mine: crate::theme::Mode| if m == mine { format!("{name} ✓") } else { name.to_string() };
-                let contrast = if crate::theme::contrast() { "Correct Terminal Contrast ✓" } else { "Correct Terminal Contrast" };
-                let blink = if crate::theme::blink() { "Blink Cursor ✓" } else { "Blink Cursor" };
-                let smooth = if crate::theme::smooth_caret() { "Smooth Cursor ✓" } else { "Smooth Cursor" };
-                let layout = if crate::theme::animate_layout() { "Layout Animations ✓" } else { "Layout Animations" };
                 let side = if crate::theme::sidebar() { "Hide Sidebar" } else { "Show Sidebar" };
+                // the appearance, the theme, the fonts and the switches are
+                // Settings' now (⌘,); the text's size stays at hand here
                 vec![
-                    MenuItem::action(mark("Light", crate::theme::Mode::Light), ThemeLight),
-                    MenuItem::action(mark("Dark", crate::theme::Mode::Dark), ThemeDark),
-                    MenuItem::action(mark("System", crate::theme::Mode::System), ThemeSystem),
-                    MenuItem::separator(),
-                    MenuItem::submenu(Menu {
-                        name: "Theme".into(),
-                        disabled: false,
-                        items: {
-                            let p = crate::theme::palette();
-                            let mark = |x: crate::theme::Palette| if p == x { format!("{} ✓", x.title()) } else { x.title().to_string() };
-                            vec![
-                                MenuItem::action(mark(crate::theme::Palette::Alabaster), PaletteAlabaster),
-                                MenuItem::action(mark(crate::theme::Palette::Xcode), PaletteXcode),
-                                MenuItem::action(mark(crate::theme::Palette::Classic), PaletteClassic),
-                                MenuItem::action(mark(crate::theme::Palette::Acme), PaletteAcme),
-                                MenuItem::action(mark(crate::theme::Palette::GitHub), PaletteGitHub),
-                                MenuItem::action(mark(crate::theme::Palette::Nova), PaletteNova),
-                                MenuItem::action(mark(crate::theme::Palette::Rsms), PaletteRsms),
-                            ]
-                        },
-                    }),
-                    MenuItem::submenu(Menu {
-                        name: "Font".into(),
-                        disabled: false,
-                        items: {
-                            let f = crate::fonts::current();
-                            let mark = |s: crate::fonts::Set| if f == s { format!("{} ✓", s.title()) } else { s.title().to_string() };
-                            vec![
-                                MenuItem::action(mark(crate::fonts::Set::System), FontSystem),
-                                MenuItem::action(mark(crate::fonts::Set::Classic), FontClassic),
-                                MenuItem::action(mark(crate::fonts::Set::Go), FontGo),
-                                MenuItem::action(mark(crate::fonts::Set::Mona), FontMona),
-                                MenuItem::action(mark(crate::fonts::Set::Nova), FontNova),
-                                MenuItem::action(mark(crate::fonts::Set::Hco), FontHco),
-                                MenuItem::action(mark(crate::fonts::Set::Inter), FontInter),
-                                MenuItem::action(mark(crate::fonts::Set::Geist), FontGeist),
-                                MenuItem::action(mark(crate::fonts::Set::Styrene), FontStyrene),
-                                MenuItem::action(mark(crate::fonts::Set::Lucida), FontLucida),
-                                MenuItem::separator(),
-                                MenuItem::action("Bigger", FontBigger),
-                                MenuItem::action("Smaller", FontSmaller),
-                                MenuItem::action("Actual Size", FontActual),
-                            ]
-                        },
-                    }),
+                    MenuItem::action("Bigger", FontBigger),
+                    MenuItem::action("Smaller", FontSmaller),
+                    MenuItem::action("Actual Size", FontActual),
                     MenuItem::separator(),
                     MenuItem::action(side, ToggleSidebar),
                     MenuItem::action("Stash Window", StashWindow),
                     MenuItem::action("Show All Sessions", ShowOverview),
-                    MenuItem::action(contrast, ToggleContrast),
-                    MenuItem::action(blink, ToggleBlink),
-                    MenuItem::action(smooth, ToggleSmoothCaret),
-                    MenuItem::action(layout, ToggleLayoutAnimations),
                 ]
             },
         },
@@ -310,7 +263,11 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-|", ShowOverview, None),
         KeyBinding::new("cmd-'", ShowOverview, None),
         KeyBinding::new("cmd-}", NextTab, None),
-        KeyBinding::new("cmd-,", Profile, None),
+        // Settings, the app's; the profile, the session's setup, beside it
+        // (shifted, macOS hands over the <)
+        KeyBinding::new("cmd-,", Settings, None),
+        KeyBinding::new("cmd-<", Profile, None),
+        KeyBinding::new("cmd-shift-,", Profile, None),
         KeyBinding::new("cmd-r", Get, None),
         KeyBinding::new("cmd-shift-r", Reconnect, None),
         KeyBinding::new("cmd-p", Goto, None),

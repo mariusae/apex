@@ -35,6 +35,7 @@ mod miniature;
 mod restart;
 mod runs;
 mod sessionkeys;
+mod settings;
 mod strips;
 mod switcher;
 mod tagedit;
@@ -900,34 +901,12 @@ fn main() {
         theme::load();
         cx.set_menus(shell::menus());
         // the View menu: the theme, the choice marked in the menu
-        cx.on_action(|_: &shell::ThemeLight, cx| shell::set_theme(theme::Mode::Light, cx));
-        cx.on_action(|_: &shell::ThemeDark, cx| shell::set_theme(theme::Mode::Dark, cx));
-        cx.on_action(|_: &shell::ThemeSystem, cx| shell::set_theme(theme::Mode::System, cx));
         cx.on_action(|_: &shell::ToggleSidebar, cx| shell::toggle_sidebar(cx));
-        cx.on_action(|_: &shell::PaletteAlabaster, cx| shell::set_palette(theme::Palette::Alabaster, cx));
-        cx.on_action(|_: &shell::PaletteXcode, cx| shell::set_palette(theme::Palette::Xcode, cx));
-        cx.on_action(|_: &shell::PaletteClassic, cx| shell::set_palette(theme::Palette::Classic, cx));
-        cx.on_action(|_: &shell::PaletteAcme, cx| shell::set_palette(theme::Palette::Acme, cx));
-        cx.on_action(|_: &shell::PaletteGitHub, cx| shell::set_palette(theme::Palette::GitHub, cx));
-        cx.on_action(|_: &shell::PaletteNova, cx| shell::set_palette(theme::Palette::Nova, cx));
-        cx.on_action(|_: &shell::PaletteRsms, cx| shell::set_palette(theme::Palette::Rsms, cx));
-        cx.on_action(|_: &shell::FontSystem, cx| shell::set_fonts(fonts::Set::System, cx));
-        cx.on_action(|_: &shell::FontClassic, cx| shell::set_fonts(fonts::Set::Classic, cx));
-        cx.on_action(|_: &shell::FontGo, cx| shell::set_fonts(fonts::Set::Go, cx));
-        cx.on_action(|_: &shell::FontMona, cx| shell::set_fonts(fonts::Set::Mona, cx));
-        cx.on_action(|_: &shell::FontNova, cx| shell::set_fonts(fonts::Set::Nova, cx));
-        cx.on_action(|_: &shell::FontHco, cx| shell::set_fonts(fonts::Set::Hco, cx));
-        cx.on_action(|_: &shell::FontInter, cx| shell::set_fonts(fonts::Set::Inter, cx));
-        cx.on_action(|_: &shell::FontGeist, cx| shell::set_fonts(fonts::Set::Geist, cx));
-        cx.on_action(|_: &shell::FontStyrene, cx| shell::set_fonts(fonts::Set::Styrene, cx));
-        cx.on_action(|_: &shell::FontLucida, cx| shell::set_fonts(fonts::Set::Lucida, cx));
+        // ⌘,: Settings, a window of the app's, whichever window has the keys
+        cx.on_action(|_: &shell::Settings, cx| settings::open(cx));
         cx.on_action(|_: &shell::FontBigger, cx| shell::resize_fonts(1, cx));
         cx.on_action(|_: &shell::FontSmaller, cx| shell::resize_fonts(-1, cx));
         cx.on_action(|_: &shell::FontActual, cx| shell::resize_fonts(0, cx));
-        cx.on_action(|_: &shell::ToggleContrast, cx| shell::toggle_contrast(cx));
-        cx.on_action(|_: &shell::ToggleBlink, cx| shell::toggle_blink(cx));
-        cx.on_action(|_: &shell::ToggleSmoothCaret, cx| shell::toggle_smooth_caret(cx));
-        cx.on_action(|_: &shell::ToggleLayoutAnimations, cx| shell::toggle_layout_animations(cx));
         cx.bind_keys(shell::bindings());
         cx.on_action(|_: &shell::Quit, cx| {
             // the action arrives while the focused window is mid-update,

@@ -11,38 +11,42 @@ windows put away out of the tiling, which is the core's
 
 ## What changed
 
-- **Look.** Six palettes to live with (View ▸ Theme, `theme.rs`; Classic
-  until another is chosen), each a light and a dark, the appearance (View:
-  Light, Dark, System; System until another is chosen) choosing which: Alabaster (tonsky's, light and dark), Xcode (Xcode's Default
-  Light and Dark, the system blue), Classic (acme's make -- cream paper,
-  pale blue tags, a yellow selection -- toned down, in the hues of
-  go.dev's playground) GitHub (Light Colorblind lifted off white,
-  and Dark Dimmed), Nova (Panic's standard Bright and Dark, sampled
-  from Panic's own preview of them) and rsms (Rasmus Andersson's Sublime
-  Text theme: its bright scheme, and dark mono for the dark -- the
-  editor's colours from its schemes, the chrome's as Sublime's Adaptive
-  UI draws round them, sampled from its screenshots). Each is a handful of key colours from which the rest
-  follows (`make`); every one keeps orange-for-red and blue-for-green
+- **Settings** (⌘,, Apex ▸ Settings…; `settings.rs`): a window of the
+  app's, as Manifold's -- the appearance (Match System, Light, Dark),
+  the theme, the fonts, the text's size and the switches that were the
+  View menu's (a terminal's colours lifted where they don't read on its
+  paper, the cursor's blink and its smooth movement, the layout's
+  animations). The session's setup, its profile, is ⌘⇧, (Apex ▸
+  Profile…). The View menu keeps the text's size (⌘+ ⌘− ⌘0), the
+  sidebar, the stash and the overview.
+- **Look.** Four palettes, each a light and a dark (Acme's the same in
+  both), the appearance choosing which (`theme.rs`; Apex until another
+  is chosen): Apex (what was Classic: acme's make -- cream paper, pale
+  blue tags, a yellow selection -- toned down, in the hues of go.dev's
+  playground), Acme (acme's own colours, for a reader who needs its
+  contrast), and Manifold's Terra (linen and walnut, a sage accent,
+  sienna and indigo for B2 and B3) and Spectrum (Claude's white pages
+  and clay, its blue for B3). Settings shows each as a small apex in its
+  colours: windows in a column, a text with a selection and B2's and
+  B3's sweeps, a terminal printing in its sixteen, the keys' window
+  ringed. Each is a handful of key colours from which the rest follows
+  (`make`); every one but Acme keeps orange-for-red and blue-for-green
   where it matters (the terminal's ANSI, apex diff's lines) and B2's and
-  B3's sweeps apart under a deuteranopia simulation. A grey header over
-  each window, hairlines for acme's black borders.
-- **Fonts** (View ▸ Font, `fonts.rs`; Classic until another is chosen),
-  one choice for text windows and
-  tags, mono windows and terminals, the sidebar, the palettes and menus, and
-  pages (previews, apex diff, as `--apex-font` and `--apex-mono`):
-  System (SF Pro with its high legibility set and tabular figures, 14/20;
-  Terminal's own SF Mono at Medium, 12/16, the Regular being thin),
-  Classic (Lucida Grande 13/17, Menlo 12/16), Nova (SF Pro legible
-  14/20 for text and the interface, Menlo 12/16), Go (Go 14/20, Go Mono
-  12/16, bundled), Mona (Mona Sans 15/21, Monaspace Xenon 12/16 with
-  Manifold's texture healing and stylistic sets 2, 3, 7 and 8, bundled)
-  Inter (Inter 14/20 and JetBrains Mono 12/16, as rsms sets his Sublime
-  theme; both bundled), Geist (Vercel's Geist 14/20 and Geist Mono
-  12/16, bundled), Styrene (Commercial Type's Styrene B 14/20 with
-  JetBrains Mono 12/16: not bundled, the installed family) and H&Co
-  (Ideal Sans 14/20, Operator Mono 12/16, the screen-smart cuts: not
-  bundled, the installed families). ⌘+ and ⌘− (View ▸ Font ▸ Bigger,
-  Smaller) take the text a pixel bigger or smaller a step, the mono
+  B3's sweeps apart under a deuteranopia simulation, as a test holds
+  them (Spectrum's own terminal red and green were 26 apart: it has the
+  colour-blind sixteen). A palette chosen before and gone since
+  (Alabaster, Xcode, GitHub, Nova, rsms) comes back as Apex. A grey
+  header over each window, hairlines for acme's black borders.
+- **Fonts** (Settings ▸ Fonts, `fonts.rs`; Apex until another is
+  chosen), one choice for text windows and tags, mono windows and
+  terminals, the sidebar, the palettes and menus, and pages (previews,
+  apex diff, as `--apex-font` and `--apex-mono`): Apex (what was
+  Classic: Lucida Grande 13/17, Menlo 12/16), System (SF Pro with its
+  high legibility set and tabular figures, 14/20; Terminal's own SF Mono
+  at Medium, 12/16, the Regular being thin) and Humanist (what was
+  Lucida: Lucida Grande with Lucida Grande Mono W1G, offered only where
+  that is installed). ⌘+ and ⌘− (View ▸ Bigger, Smaller, and in
+  Settings) take the text a pixel bigger or smaller a step, the mono
   faces in proportion, line heights to whole pixels; ⌘0 back to the
   set's own size. Kept, as the set is.
 - **Tags as title bars.** The window's name in the primary ink, a
@@ -68,8 +72,8 @@ windows put away out of the tiling, which is the core's
   pointer, else the last selected in; none while apex is not in front)
   is the accent blue, a little wider, blinking as iOS's does -- solid for
   half a second after a key, a click or the pointer coming to it, then
-  on and off every 530 ms (View ▸ Blink Cursor off: steady). View ▸
-  Smooth Cursor (off at first, to live with) has it glide where it
+  on and off every 530 ms (Settings ▸ Behaviour, the blink off: steady). Its
+  smooth movement (Settings ▸ Behaviour; off at first, to live with) has it glide where it
   moves, over 90 ms, as Neovide's and Ghostty's cursor shaders do -- the
   terminal's cursor too, where the keys go -- and go with the text at
   once when the text itself moves (a scroll, a window gliding). A
@@ -371,7 +375,7 @@ windows put away out of the tiling, which is the core's
   to cd into (`./` for the folder itself). Paths inside the directory
   are drawn in the tags from there on, unmarked (`src/main.rs`), and
   every other path whole; the directory itself is a drawn `./`.
-- **Layout Animations** (View menu, off by default): windows and columns
+- **Layout Animations** (Settings ▸ Behaviour, off by default): windows and columns
   gliding to their places, a window opening down from its top, the
   pointer riding with the window it goes to. Off, the layout is where it
   goes at once; the overview, the stash's fan, a session sliding in, the

@@ -81,6 +81,9 @@ pub struct Theme {
 /// have red and green, this one's orange (danger, attention) and blue
 /// (success): B2's sweep orange, B3's blue, the terminal's ANSI red and
 /// green the same orange and blue.
+/// (No longer offered: the contrast's tests read against it, and its
+/// dark, `DARK`, which the contrast's cache tells apart.)
+#[cfg_attr(not(test), allow(dead_code))]
 pub const LIGHT: Theme = Theme {
     body_bg: 0xF6F8FA,
     body_sel: 0xC7DBF4,
@@ -232,44 +235,6 @@ const fn make(k: Keys) -> Theme {
 const ANSI_LIGHT: [u32; 16] = [0x24292F, 0xB35900, 0x0550AE, 0x4D2D00, 0x0969DA, 0x8250DF, 0x1B7C83, 0x6E7781, 0x57606A, 0x8A4600, 0x0969DA, 0x633C01, 0x218BFF, 0xA475F9, 0x3192AA, 0x8C959F];
 const ANSI_DARK: [u32; 16] = [0x545D68, 0xF69D50, 0x539BF5, 0xC69026, 0x539BF5, 0xB083F0, 0x39C5CF, 0x909DAB, 0x636E7B, 0xFFBC6F, 0x6CB6FF, 0xDAAA3F, 0x6CB6FF, 0xDCBDFB, 0x56D4DD, 0xCDD9E5];
 
-/// tonsky's Alabaster: #f7f7f7 paper and black ink, #bfdbfe selection,
-/// its active blue (#007acc) as the accent and caret, its grey (#777)
-/// for what is secondary, its red for B2 and blue for B3.
-pub const ALABASTER_LIGHT: Theme = make(Keys {
-    paper: 0xF7F7F7, sel: 0xBFDBFE, thumb: 0xCFCFCF, header: 0xEEEEEE, header_sel: 0xBAD4F5, line: 0xDDDDDD,
-    ink: 0x000000, dim: 0x777777, faint: 0x999999, accent: 0x007ACC, chosen: 0x007ACC, column: 0xF0F0F0, sidebar: 0xE9E9E9,
-    dirty: 0x333333, stale: 0xE09A30, fenced: 0xAA3731, exec: 0xAA3731, look: 0x325CC0,
-    popover: 0xFFFFFF, hover: 0xEFEFEF, danger_hover: 0xF8E1E0, ansi: ANSI_LIGHT, diff_add: 0xE3ECFB, diff_del: 0xFFEFD6,
-});
-
-/// Alabaster Dark: #0e1415 paper, #cecece ink, #293334 selection, its
-/// amber (#cd974b) as the accent and caret, its punctuation's grey-green
-/// (#708b8d) for what is secondary.
-pub const ALABASTER_DARK: Theme = make(Keys {
-    paper: 0x0E1415, sel: 0x293334, thumb: 0x3A4A4C, header: 0x162022, header_sel: 0x2E3C3E, line: 0x243234,
-    ink: 0xCECECE, dim: 0x708B8D, faint: 0x5A6E70, accent: 0xCD974B, chosen: 0x3A6EA5, column: 0x0A0F10, sidebar: 0x121A1B,
-    dirty: 0xCECECE, stale: 0xDFDF8E, fenced: 0xCC3333, exec: 0xB03030, look: 0x3A6EA5,
-    popover: 0x162022, hover: 0x1E2A2C, danger_hover: 0x2B1D1E, ansi: ANSI_DARK, diff_add: 0x16263A, diff_del: 0x33271A,
-});
-
-/// Xcode's Default (Light): white paper, the label greys, Xcode's
-/// selection (#a4cdff), the system blue (#007aff).
-pub const XCODE_LIGHT: Theme = make(Keys {
-    paper: 0xFFFFFF, sel: 0xA4CDFF, thumb: 0xC8C8C8, header: 0xF5F5F5, header_sel: 0xB3D4FC, line: 0xDCDCDC,
-    ink: 0x1D1D1F, dim: 0x6E6E73, faint: 0x8E8E93, accent: 0x007AFF, chosen: 0x007AFF, column: 0xFAFAFA, sidebar: 0xEBEBEB,
-    dirty: 0x3A3A3C, stale: 0xE6A100, fenced: 0xFF3B30, exec: 0xD9480F, look: 0x007AFF,
-    popover: 0xFFFFFF, hover: 0xF0F0F0, danger_hover: 0xFFE5E3, ansi: ANSI_LIGHT, diff_add: 0xE6F0FF, diff_del: 0xFFF1E0,
-});
-
-/// Xcode's Default (Dark): #1f1f24 paper, its selection (#515b70), the
-/// system blue on dark (#0a84ff).
-pub const XCODE_DARK: Theme = make(Keys {
-    paper: 0x1F1F24, sel: 0x515B70, thumb: 0x4A4A50, header: 0x292A30, header_sel: 0x3F4A63, line: 0x38383D,
-    ink: 0xDFDFE0, dim: 0x98989D, faint: 0x6C6C70, accent: 0x0A84FF, chosen: 0x0A84FF, column: 0x18181C, sidebar: 0x252529,
-    dirty: 0xDFDFE0, stale: 0xFFD60A, fenced: 0xFF453A, exec: 0xC2410C, look: 0x0A6CD8,
-    popover: 0x2C2C31, hover: 0x333338, danger_hover: 0x4A2A28, ansi: ANSI_DARK, diff_add: 0x1B2A44, diff_del: 0x3A2A1C,
-});
-
 /// Classic: acme's make -- cream paper, the tags a pale blue, a yellow
 /// selection -- in the hues of go.dev's playground, toned down: its
 /// #ffffdd paper warmed only a little off white, its ink (#202224) and
@@ -316,105 +281,88 @@ pub const ACME: Theme = Theme {
     })
 };
 
-/// Panic's Nova, its standard Bright: a white editor on a #ececec
-/// sidebar, #262626 ink, Nova's keyword blue (#255ab1) and red (#bc391c)
-/// for B3 and B2, its comment grey (#69727d) for what is secondary, and
-/// the blue of its buttons (#3777ea) for the accent (as sampled from
-/// Panic's own preview of its themes).
-pub const NOVA_LIGHT: Theme = make(Keys {
-    paper: 0xFFFFFF, sel: 0xCCE0FA, thumb: 0xC8C8C8, header: 0xF5F5F5, header_sel: 0xC4D9F7, line: 0xE0E0E0,
-    ink: 0x262626, dim: 0x69727D, faint: 0x8F97A0, accent: 0x3777EA, chosen: 0x3777EA, column: 0xFAFAFA, sidebar: 0xECECEC,
-    dirty: 0x3A3A3A, stale: 0xD39B00, fenced: 0xBC391C, exec: 0xBC391C, look: 0x255AB1,
-    popover: 0xFFFFFF, hover: 0xF2F2F2, danger_hover: 0xF9E3DE, ansi: ANSI_LIGHT, diff_add: 0xE6EFFD, diff_del: 0xFDEEE0,
+/// Manifold's Terra (~/src/manifold, `Palette.terra`), grown from this
+/// palette's Classic: earthy, of natural materials -- linen and oat
+/// paper, walnut ink, a sage accent, a straw selection; B2's sweep its
+/// burnt sienna and B3's its indigo (68 apart under a deuteranopia
+/// simulation), its terminal's sixteen its own, which keep orange for
+/// red and a blue-green verdigris for green (45 apart).
+pub const TERRA_LIGHT: Theme = make(Keys {
+    paper: 0xFAF7F0, sel: 0xEFE3B8, thumb: 0xD6CDBE, header: 0xF0EBE1, header_sel: 0xE6DCC0, line: 0xDDD5C8,
+    ink: 0x2A2520, dim: 0x6B625A, faint: 0x8A8178, accent: 0x55703A, chosen: 0x55703A, column: 0xEFEAE0, sidebar: 0xF3EFE6,
+    dirty: 0x2A2520, stale: 0xC79A00, fenced: 0x9B2C4A, exec: 0xA4501F, look: 0x3B5B7A,
+    popover: 0xFDFBF6, hover: 0xEFEAE0, danger_hover: 0xF6E3E6,
+    ansi: [0x2A2520, 0xA8431E, 0x2C6A5C, 0x86621A, 0x3B5B7A, 0x7D3F6E, 0x2A6F80, 0x6B625A, 0x5A524A, 0xC0582C, 0x3B8571, 0x9A7016, 0x5876A0, 0x97568A, 0x2F7F8F, 0x8A8075],
+    diff_add: 0xE0E9F4, diff_del: 0xFBE6D8,
 });
 
-/// Nova's standard Dark: a #1b1c1d editor beside a lighter #323232
-/// sidebar, its cool white ink (#dbe5f1), its light blue (#78b1f9) for
-/// the accent and caret, the buttons' blue for a chosen row.
-pub const NOVA_DARK: Theme = make(Keys {
-    paper: 0x1B1C1D, sel: 0x23375A, thumb: 0x4A4C4E, header: 0x242628, header_sel: 0x2C3F5E, line: 0x323436,
-    ink: 0xDBE5F1, dim: 0x8A96A6, faint: 0x5E6670, accent: 0x78B1F9, chosen: 0x3777EA, column: 0x161718, sidebar: 0x323232,
-    dirty: 0xDBE5F1, stale: 0xE5B94B, fenced: 0xF09084, exec: 0xB8462E, look: 0x3777EA,
-    popover: 0x2A2B2D, hover: 0x2E3032, danger_hover: 0x4A2A24, ansi: ANSI_DARK, diff_add: 0x1A2A45, diff_del: 0x3A2A20,
+/// Terra by night, the one warm dark: warm charcoal on dark stone and
+/// smoked oak, bone-coloured ink, a muted sage; its sienna and indigo
+/// for B2 and B3 (73 apart), its terminal's sixteen (51).
+pub const TERRA_DARK: Theme = make(Keys {
+    paper: 0x221E1B, sel: 0x4A4128, thumb: 0x524B44, header: 0x2D2924, header_sel: 0x3A3324, line: 0x433D37,
+    ink: 0xEBE4DA, dim: 0xA39A8F, faint: 0x776D62, accent: 0x94A982, chosen: 0x55703A, column: 0x1C1916, sidebar: 0x282420,
+    dirty: 0xEBE4DA, stale: 0xD9B25A, fenced: 0xEE8EA2, exec: 0xB8602E, look: 0x4A6E96,
+    popover: 0x2D2924, hover: 0x37322D, danger_hover: 0x4A2A30,
+    ansi: [0x4A423A, 0xE0805A, 0x6FAFB4, 0xD9B25A, 0x8FA8CC, 0xC993B8, 0x9FCFC8, 0xB5ACA1, 0x877D72, 0xF09B74, 0x8DC4CB, 0xE8C679, 0xA8BFE0, 0xDBABCC, 0xBFE2DA, 0xF2ECE3],
+    diff_add: 0x1E2B3A, diff_del: 0x3F2A1C,
 });
 
-/// rsms's Sublime Text theme, its bright scheme (rsms/sublime-theme,
-/// `rsms-bright.sublime-color-scheme`, over Sublime's Adaptive UI as its
-/// screenshot shows it): hsl(60 30% 99%) paper and black ink; the
-/// selection its blue4 (hsl 204 100% 83%) at half over the paper; its
-/// accent and caret blue2 (hsl 224 100% 50%); comments black at 47%; the
-/// gutter's grey3 for what is faintest. The chrome as Adaptive makes it
-/// round that paper: #e9e9e8 for the sidebar, tab bar and title (the
-/// columns' ground here), a selected row #f4f4f3 (the headers), tab
-/// labels #8c8c8c (what is secondary), the sidebar's #424241 and its
-/// close marks #afafae, the status bar's #d8d8d8 (hairlines). B2's sweep
-/// its red (hsl 0 100% 30%), B3's its blue (hsl 216 100% 33%); stale a
-/// dark gold, since its yellow does not read on white.
-pub const RSMS_BRIGHT: Theme = make(Keys {
-    paper: 0xFDFDFB, sel: 0xD3EDFD, thumb: 0xCCCCCC, header: 0xF4F4F3, header_sel: 0xCDE6F6, line: 0xD8D8D8,
-    ink: 0x000000, dim: 0x8C8C8C, faint: 0xAFAFAE, accent: 0x0044FF, chosen: 0x0044FF, column: 0xE9E9E8, sidebar: 0xE9E9E8,
-    dirty: 0x424241, stale: 0xC9A000, fenced: 0x990000, exec: 0x990000, look: 0x0047A8,
-    popover: 0xFDFDFB, hover: 0xF4F4F3, danger_hover: 0xF9E0E0, ansi: ANSI_LIGHT, diff_add: 0xE3ECFB, diff_del: 0xFFEFD6,
+/// Manifold's Spectrum (`Palette.spectrum`), from Claude's desktop app:
+/// white pages on a #fafafa sidebar, #0b0b0b ink, black at 60% for what
+/// is secondary, clay (#c6613f) for the accent and B2's sweep, Claude
+/// Code's blue (#0073e6) for B3's and its blue selection (112 apart).
+/// Its terminal's own red and green were 26 apart under a deuteranopia
+/// simulation: the colour-blind sixteen here, as most palettes have.
+pub const SPECTRUM_LIGHT: Theme = make(Keys {
+    paper: 0xFFFFFF, sel: 0xBFDCF9, thumb: 0xD0D0D0, header: 0xF6F5F8, header_sel: 0xDCE9F7, line: 0xE3E3E3,
+    ink: 0x0B0B0B, dim: 0x666666, faint: 0x737373, accent: 0xC6613F, chosen: 0xC6613F, column: 0xFAFAFA, sidebar: 0xFAFAFA,
+    dirty: 0x0B0B0B, stale: 0xC79A00, fenced: 0xA4273E, exec: 0xC6613F, look: 0x0073E6,
+    popover: 0xFFFFFF, hover: 0xF2F2F2, danger_hover: 0xFBE4E8, ansi: ANSI_LIGHT, diff_add: 0xEBF4FD, diff_del: 0xFAEBE6,
 });
 
-/// rsms's dark mono (`rsms-dark-mono.sublime-color-scheme`): colourless
-/// but for its pink caret and blue selection. hsl(0 0% 8%) paper, white
-/// ink at 80% on it; the selection hsl(204 100% 70%) at 30%; the caret,
-/// and so the accent, hsl(320 90% 70%); comments white at 35%, the gutter
-/// at 30%. The chrome black, as its Adaptive UI goes (`dark_bg`: black),
-/// a selected row #3c3c3c (a chosen row here, white on it), tab labels
-/// #909090, the sidebar's labels #d8d8d8, its close marks #5e5e5e, the
-/// status bar #363636. B2's sweep a muted, brownish orange and B3's the
-/// selection's blue, darkened for white on it: a grey B2, or its pink,
-/// was barely apart from the blue under a deuteranopia simulation (34
-/// and 23 in CIELAB), this is 84. Stale a muted gold.
-pub const RSMS_DARK_MONO: Theme = make(Keys {
-    paper: 0x141414, sel: 0x2D485A, thumb: 0x5A5A5A, header: 0x1E1E1E, header_sel: 0x33505F, line: 0x2A2A2A,
-    ink: 0xD0D0D0, dim: 0x909090, faint: 0x5E5E5E, accent: 0xF76EC9, chosen: 0x3C3C3C, column: 0x000000, sidebar: 0x000000,
-    dirty: 0xD8D8D8, stale: 0xD6B656, fenced: 0xE0605A, exec: 0x9A5A2E, look: 0x2A63A8,
-    popover: 0x1E1E1E, hover: 0x2A2A2A, danger_hover: 0x3A2222, ansi: ANSI_DARK, diff_add: 0x1B2733, diff_del: 0x33271A,
+/// Spectrum by night: #1b1a1d pages, #312f34 popovers, #efefef ink, the
+/// clay lifted (#d97757) for the accent, B3's blue deepened for its
+/// wash (97 apart).
+pub const SPECTRUM_DARK: Theme = make(Keys {
+    paper: 0x1B1A1D, sel: 0x123F5E, thumb: 0x4A4A4E, header: 0x312F34, header_sel: 0x1F3E58, line: 0x3A383D,
+    ink: 0xEFEFEF, dim: 0x9C9C9C, faint: 0x7A7A7A, accent: 0xD97757, chosen: 0xC6613F, column: 0x141316, sidebar: 0x1F1F1F,
+    dirty: 0xEFEFEF, stale: 0xE6B422, fenced: 0xFF93A1, exec: 0xC6613F, look: 0x0A6FC4,
+    popover: 0x312F34, hover: 0x3A383D, danger_hover: 0x4A2230, ansi: ANSI_DARK, diff_add: 0x162B39, diff_del: 0x3F2C25,
 });
 
 /// View ▸ Theme: which palette, each with its light and dark (which of
 /// those is the appearance's to say: Light, Dark, System).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Palette {
-    Alabaster,
-    Xcode,
+    /// What was Classic (and keeps its word, `classic`): apex's own.
     Classic,
     Acme,
-    GitHub,
-    Nova,
-    Rsms,
+    Terra,
+    Spectrum,
 }
 
-pub const PALETTES: [Palette; 7] = [Palette::Alabaster, Palette::Xcode, Palette::Classic, Palette::Acme, Palette::GitHub, Palette::Nova, Palette::Rsms];
+pub const PALETTES: [Palette; 4] = [Palette::Classic, Palette::Acme, Palette::Terra, Palette::Spectrum];
 
-/// The palette until one is chosen: Classic, acme's own (its place in
-/// `PALETTES`).
-const DEFAULT_PALETTE: u8 = 2;
+/// The palette until one is chosen: Apex's own (its place in `PALETTES`),
+/// and what one chosen before, and gone since, comes back as.
+const DEFAULT_PALETTE: u8 = 0;
 
 impl Palette {
     pub fn title(self) -> &'static str {
         match self {
-            Palette::Alabaster => "Alabaster",
-            Palette::Xcode => "Xcode",
-            Palette::Classic => "Classic",
+            Palette::Classic => "Apex",
             Palette::Acme => "Acme",
-            Palette::GitHub => "GitHub",
-            Palette::Nova => "Nova",
-            Palette::Rsms => "rsms",
+            Palette::Terra => "Terra",
+            Palette::Spectrum => "Spectrum",
         }
     }
     fn word(self) -> &'static str {
         match self {
-            Palette::Alabaster => "alabaster",
-            Palette::Xcode => "xcode",
             Palette::Classic => "classic",
             Palette::Acme => "acme",
-            Palette::GitHub => "github",
-            Palette::Nova => "nova",
-            Palette::Rsms => "rsms",
+            Palette::Terra => "terra",
+            Palette::Spectrum => "spectrum",
         }
     }
 }
@@ -501,21 +449,20 @@ impl Theme {
 }
 
 pub fn theme() -> &'static Theme {
-    match (palette(), is_dark()) {
-        (Palette::Alabaster, false) => &ALABASTER_LIGHT,
-        (Palette::Alabaster, true) => &ALABASTER_DARK,
-        (Palette::Xcode, false) => &XCODE_LIGHT,
-        (Palette::Xcode, true) => &XCODE_DARK,
+    of(palette(), is_dark())
+}
+
+/// Palette `p`'s light or dark (a preview of it draws in these).
+pub fn of(p: Palette, dark: bool) -> &'static Theme {
+    match (p, dark) {
         (Palette::Classic, false) => &CLASSIC_LIGHT,
         (Palette::Classic, true) => &CLASSIC_DARK,
         // acme has no dark
         (Palette::Acme, _) => &ACME,
-        (Palette::GitHub, false) => &LIGHT,
-        (Palette::GitHub, true) => &DARK,
-        (Palette::Nova, false) => &NOVA_LIGHT,
-        (Palette::Nova, true) => &NOVA_DARK,
-        (Palette::Rsms, false) => &RSMS_BRIGHT,
-        (Palette::Rsms, true) => &RSMS_DARK_MONO,
+        (Palette::Terra, false) => &TERRA_LIGHT,
+        (Palette::Terra, true) => &TERRA_DARK,
+        (Palette::Spectrum, false) => &SPECTRUM_LIGHT,
+        (Palette::Spectrum, true) => &SPECTRUM_DARK,
     }
 }
 
@@ -548,11 +495,11 @@ pub fn set_sidebar(on: bool) {
     let _ = std::fs::write(p, if on { "shown\n" } else { "hidden\n" });
 }
 
-/// View ▸ Correct Terminal Contrast (on by default): a terminal's ink
+/// Settings ▸ Behaviour, a terminal's colours lifted (on by default): a terminal's ink
 /// that does not read on its paper is moved until it does
 /// (`contrast.rs`). Kept in the `contrast` state file.
 static CONTRAST: AtomicBool = AtomicBool::new(true);
-/// View ▸ Blink Cursor (on by default): the keys' caret (and a terminal's
+/// Settings ▸ Behaviour, the cursor blinking (on by default): the keys' caret (and a terminal's
 /// cursor) blinks, or stays on -- the key window's ring says where the
 /// keys go too.
 static BLINK: AtomicBool = AtomicBool::new(true);
@@ -570,7 +517,7 @@ pub fn set_blink(on: bool) {
     let _ = std::fs::write(p, if on { "on\n" } else { "off\n" });
 }
 
-/// View ▸ Smooth Cursor: the keys' caret (and a terminal's cursor, where
+/// Settings ▸ Behaviour, the cursor moving smoothly: the keys' caret (and a terminal's cursor, where
 /// the keys go) glides to where it moves, over a few frames, rather than
 /// jumping there -- as Neovide's and Ghostty's cursor shaders do. Off
 /// until chosen; kept in the `smoothcaret` state file.
@@ -635,8 +582,8 @@ pub fn load() {
     let layout = std::fs::read_to_string(crate::shell::state_file().with_file_name("layoutanim")).map(|s| s.trim() == "on").unwrap_or(false);
     ANIMATE_LAYOUT.store(layout, Ordering::Relaxed);
     let pal = std::fs::read_to_string(crate::shell::state_file().with_file_name("palette")).unwrap_or_default();
-    // "system" was Xcode's palette's name before it had its own
-    let pal = if pal.trim() == "system" { "xcode" } else { pal.trim() };
+    // one no longer offered (Alabaster, Xcode, GitHub, Nova, rsms): Apex's
+    let pal = pal.trim();
     if let Some(i) = PALETTES.iter().position(|p| p.word() == pal) {
         PALETTE.store(i as u8, Ordering::Relaxed);
     }
@@ -663,6 +610,48 @@ mod default_tests {
     #[test]
     fn the_defaults_are_classic_and_the_systems() {
         assert_eq!(PALETTES[DEFAULT_PALETTE as usize], Palette::Classic);
+        assert_eq!(Palette::Classic.title(), "Apex");
         assert_eq!(MODE.load(Ordering::Relaxed), 2, "the system's appearance");
+    }
+
+    /// `c` as a deuteranope sees it (Machado, Oliveira and Fernandes's
+    /// matrix, severity 1), in CIELAB.
+    fn seen(c: u32) -> [f64; 3] {
+        const M: [[f64; 3]; 3] = [[0.367322, 0.860646, -0.227968], [0.280085, 0.672501, 0.047413], [-0.011820, 0.042940, 0.968881]];
+        let lin = |v: u32| {
+            let v = v as f64 / 255.;
+            if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+        };
+        let rgb = [lin((c >> 16) & 255), lin((c >> 8) & 255), lin(c & 255)];
+        let s: Vec<f64> = M.iter().map(|row| row.iter().zip(rgb).map(|(m, v)| m * v).sum::<f64>().clamp(0., 1.)).collect();
+        let (x, y, z) = (0.4124 * s[0] + 0.3576 * s[1] + 0.1805 * s[2], 0.2126 * s[0] + 0.7152 * s[1] + 0.0722 * s[2], 0.0193 * s[0] + 0.1192 * s[1] + 0.9505 * s[2]);
+        let f = |t: f64| if t > 0.008856 { t.cbrt() } else { 7.787 * t + 16. / 116. };
+        let (fx, fy, fz) = (f(x / 0.95047), f(y), f(z / 1.08883));
+        [116. * fy - 16., 500. * (fx - fy), 200. * (fy - fz)]
+    }
+
+    fn apart(a: u32, b: u32) -> f64 {
+        let (a, b) = (seen(a), seen(b));
+        ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+    }
+
+    /// The reader is colour-blind: in every palette offered, light and
+    /// dark, B2's sweep and B3's stay apart under a deuteranopia
+    /// simulation, and so do the terminal's red and green (orange and
+    /// blue, as apex keeps them). Acme alone is acme's own red and green,
+    /// kept as acme has them for a reader who needs its contrast.
+    #[test]
+    fn every_palette_keeps_its_sweeps_and_its_red_and_green_apart() {
+        for p in PALETTES {
+            for dark in [false, true] {
+                let t = of(p, dark);
+                let sweeps = apart(t.exec_hl, t.look_hl);
+                if p != Palette::Acme {
+                    assert!(sweeps >= 60., "{} {}: B2 and B3 {sweeps:.0} apart", p.title(), if dark { "dark" } else { "light" });
+                }
+                let ansi = apart(t.ansi[1], t.ansi[2]);
+                assert!(ansi >= 40., "{} {}: red and green {ansi:.0} apart", p.title(), if dark { "dark" } else { "light" });
+            }
+        }
     }
 }
