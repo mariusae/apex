@@ -241,10 +241,13 @@ const ANSI_DARK: [u32; 16] = [0x545D68, 0xF69D50, 0x539BF5, 0xC69026, 0x539BF5, 
 /// secondary (#6e7072), Go blue (#007d9c) for the accent. B2's sweep
 /// burnt orange (#c85a00) and B3's a deeper blue (#2a5db0): Go's fuchsia
 /// and teal were 46 apart under a deuteranopia simulation, these 114.
+/// A modified window's dot acme's DMedblue (#000099), softened a little
+/// toward slate (#1f2e86): a colour of the tags', where a near-black was
+/// ink, and as far from the accent under the simulation (35) as that.
 pub const CLASSIC_LIGHT: Theme = make(Keys {
     paper: 0xFCFCF2, sel: 0xF1E9A6, thumb: 0xD4D4C4, header: 0xEAF4F7, header_sel: 0xBCE3ED, line: 0xD6DCDD,
     ink: 0x202224, dim: 0x6E7072, faint: 0x8A8C8E, accent: 0x007D9C, chosen: 0x007D9C, column: 0xF5F5EA, sidebar: 0xE8EFF1,
-    dirty: 0x2F3A40, stale: 0xC79A00, fenced: 0xCE3262, exec: 0xC85A00, look: 0x2A5DB0,
+    dirty: 0x1F2E86, stale: 0xC79A00, fenced: 0xCE3262, exec: 0xC85A00, look: 0x2A5DB0,
     popover: 0xFFFFFF, hover: 0xF0F4F5, danger_hover: 0xFBE3EA, ansi: ANSI_LIGHT, diff_add: 0xE1F3F8, diff_del: 0xFFF0DA,
 });
 
@@ -254,11 +257,12 @@ pub const CLASSIC_LIGHT: Theme = make(Keys {
 /// under white, acme's dark yellow selection; the accent go.dev's dark
 /// link blue (#50b7e0) softened toward the light's Go blue. The
 /// terminal's sixteen the colour-blind ones, their black and greys
-/// warmed to the paper.
+/// warmed to the paper. A modified window's dot the light's navy by
+/// night (#4f62b0), quieter than the ink it was, 34 from the accent.
 pub const CLASSIC_DARK: Theme = make(Keys {
     paper: 0x2A2722, sel: 0x554A1D, thumb: 0x504D46, header: 0x2A3436, header_sel: 0x2D4D55, line: 0x3E3B36,
     ink: 0xE1DED4, dim: 0x9B9890, faint: 0x77746D, accent: 0x63B1C9, chosen: 0x007D9C, column: 0x23201C, sidebar: 0x273032,
-    dirty: 0xE1DED4, stale: 0xFDDD00, fenced: 0xE0547A, exec: 0xC85A00, look: 0x2A5DB0,
+    dirty: 0x4F62B0, stale: 0xFDDD00, fenced: 0xE0547A, exec: 0xC85A00, look: 0x2A5DB0,
     popover: 0x34312B, hover: 0x3E3B35, danger_hover: 0x4A2230,
     ansi: [0x504C46, 0xF69D50, 0x539BF5, 0xC69026, 0x539BF5, 0xB083F0, 0x39C5CF, 0xA8A49C, 0x6C6862, 0xFFBC6F, 0x6CB6FF, 0xDAAA3F, 0x6CB6FF, 0xDCBDFB, 0x56D4DD, 0xEBE8DF],
     diff_add: 0x1E3540, diff_del: 0x3E2F1E,
