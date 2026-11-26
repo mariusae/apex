@@ -235,7 +235,15 @@ impl Settings {
             );
         }
         let note = if fonts::Set::Lucida.available() { "Text, the interface and pages in the first; terminals and mono windows in the second." } else { "Humanist is offered with Lucida Grande Mono W1G installed." };
-        div().flex().flex_col().gap(px(6.)).child(list).child(div().text_size(px(11.5)).text_color(rgb(t.panel_dim)).child(note))
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .child(list)
+            .when(fonts::Set::Lucida.available() && fonts::intel_one_available(), |d| {
+                d.child(self.check("intel-one", "Humanist's mono in Intel One Mono", fonts::intel_one(), cx, |cx| crate::shell::toggle_intel_one(cx)))
+            })
+            .child(div().text_size(px(11.5)).text_color(rgb(t.panel_dim)).child(note))
     }
 
     /// ⌘+ and ⌘−, here: the text's size a step, back to the set's own.
