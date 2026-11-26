@@ -140,6 +140,11 @@ struct Conn {
     /// Programs adopted at this connection's word (`Named`), forgotten
     /// when it goes.
     adopted: Vec<u32>,
+    /// Streams opened with a `Paced` header, and the bytes of their
+    /// bodies taken in all: acknowledged (`IoAck`) as they are, for the
+    /// client's pacer.
+    paced: std::collections::HashSet<u32>,
+    paced_in: u64,
 }
 
 /// An open stream on the I/O plane.
@@ -676,7 +681,7 @@ impl Daemon {
                 let _ = s.shutdown(std::net::Shutdown::Both);
             }
         });
-        self.conns.insert(id, Conn { session: None, attachment: None, kind: AttachmentKind::Tool, out, sent: HashMap::new(), streams: HashMap::new(), adopted: Vec::new() });
+        self.conns.insert(id, Conn { session: None, attachment: None, kind: AttachmentKind::Tool, out, sent: HashMap::new(), streams: HashMap::new(), adopted: Vec::new(), paced: Default::default(), paced_in: 0 });
     }
 
     fn send(&self, id: u64, m: ServerMsg) {
@@ -1155,8 +1160,33 @@ impl Daemon {
 
     // ---- the I/O plane (WEB.md §1) -------------------------------------
 
-    /// A frame from a client on one of its streams.
+    /// A frame from a client on one of its streams: a paced stream's
+    /// body acknowledged once it is taken.
     fn io(&mut self, id: u64, name: &str, stream: u32, frame: IoFrame) {
+        let mut paced = None;
+        if let Some(c) = self.conns.get_mut(&id) {
+            match &frame {
+                IoFrame::Request { headers, .. } if headers.iter().any(|(k, v)| k.eq_ignore_ascii_case("paced") && !v.is_empty() && v != "0") => {
+                    c.paced.insert(stream);
+                }
+                IoFrame::Body(b) if c.paced.contains(&stream) => paced = Some(b.len() as u64),
+                IoFrame::End | IoFrame::Reset { .. } => {
+                    c.paced.remove(&stream);
+                }
+                _ => {}
+            }
+        }
+        self.io_frame(id, name, stream, frame);
+        if let Some(n) = paced {
+            if let Some(c) = self.conns.get_mut(&id) {
+                c.paced_in += n;
+                let received = c.paced_in;
+                self.send(id, ServerMsg::IoAck { received });
+            }
+        }
+    }
+
+    fn io_frame(&mut self, id: u64, name: &str, stream: u32, frame: IoFrame) {
         // half of a relay (a page a tool serves): to the other half; the
         // tool's end or either side's reset ends both
         if let Some(&IoStream::Relay { conn, stream: other }) = self.conns.get(&id).and_then(|c| c.streams.get(&stream)) {

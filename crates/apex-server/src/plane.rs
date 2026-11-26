@@ -30,12 +30,14 @@ impl IoIds {
 
 /// Where a stream's frames go when a thread waits for them: the link's
 /// reader delivers to a registered sink instead of the owner's queue.
+/// It carries the link's pacer too, which the reader tells what the
+/// daemon has taken (`IoAck`).
 #[derive(Clone, Default)]
-pub struct IoSinks(Arc<Mutex<HashMap<u32, Sender<IoFrame>>>>);
+pub struct IoSinks(Arc<Mutex<HashMap<u32, Sender<IoFrame>>>>, pub Arc<crate::pace::Pacer>);
 
 impl IoSinks {
     pub fn new() -> IoSinks {
-        IoSinks(Arc::new(Mutex::new(HashMap::new())))
+        IoSinks(Arc::new(Mutex::new(HashMap::new())), Arc::new(crate::pace::Pacer::default()))
     }
 
     /// Deliver a frame to its sink; false if the stream has none.
@@ -82,6 +84,31 @@ impl IoPlane {
         for chunk in bytes.chunks(256 * 1024) {
             let _ = self.out.send(&ClientMsg::Io { stream, frame: IoFrame::Body(chunk.to_vec()) });
         }
+    }
+
+    /// A stream's body from `from`, `len` bytes of it, paced (the stream
+    /// opened with a `Paced` header): each piece sent only as the link
+    /// takes it, `progress` told how much has gone. Stops (an error) when
+    /// `stop` says so, the link goes, or `from` ends short.
+    pub fn send_paced(&self, stream: u32, from: &mut dyn Read, len: u64, stop: &dyn Fn() -> bool, progress: &mut dyn FnMut(u64)) -> Result<(), String> {
+        let pacer = &self.sinks.1;
+        let mut done = 0u64;
+        let mut buf = vec![0u8; crate::pace::MOST_PIECE];
+        while done < len {
+            let left = (len - done).min(usize::MAX as u64) as usize;
+            let Some(n) = pacer.room(left, stop) else {
+                return Err(if stop() { "stopped".into() } else { "the connection went".into() });
+            };
+            let k = from.read(&mut buf[..n]).map_err(|e| e.to_string())?;
+            if k == 0 {
+                return Err(format!("it ended at {done} bytes of {len}"));
+            }
+            self.out.send(&ClientMsg::Io { stream, frame: IoFrame::Body(buf[..k].to_vec()) }).map_err(|e| e.to_string())?;
+            pacer.sent(k);
+            done += k as u64;
+            progress(done);
+        }
+        Ok(())
     }
 
     pub fn end(&self, stream: u32) {

@@ -71,6 +71,14 @@ method, the body gathered until `End`, fetched with `ureq` on a thread,
 status, headers and body streamed back; statuses pass through, a
 failure before the head is a 502, after it a `Reset`). `apex io
 CONNECT HOST:PORT` is nc over the plane.
+*Pacing* (`pace.rs`, after Manifold's `Mux`): a request with a `Paced`
+header has its body acknowledged as the daemon takes it (`IoAck`, the
+paced bytes of the connection in all), and the client sends it only as
+the link takes it (`IoPlane::send_paced`): no more on the way than a
+budget steered by the queue the round trips show, as LEDBAT steers --
+grown while the queue is under 15 ms (or a fifth of the round trip),
+shrunk while over. A file on its way leaves a key behind it no more than
+that queue and a piece.
 
 ### 1.1 Why a second plane
 

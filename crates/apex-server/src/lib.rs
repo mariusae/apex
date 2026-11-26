@@ -16,6 +16,7 @@ pub mod daemon;
 pub mod persist;
 pub mod find;
 pub mod outline;
+pub mod pace;
 pub mod plane;
 pub mod proposal;
 pub mod pty;

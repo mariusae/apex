@@ -341,6 +341,7 @@ impl Link {
     pub fn handle(&mut self, node: &mut Node, log: &mut Log, m: ServerMsg) -> bool {
         match m {
             ServerMsg::Build { .. } => {} // checked before the welcome
+            ServerMsg::IoAck { .. } => {} // the reader's, for the pacer
             ServerMsg::Entries { shard, entries } => {
                 if let Shard::Buffer(b) = shard {
                     for e in &entries {
@@ -1063,6 +1064,12 @@ fn spawn_reader(stream: Box<dyn Read + Send>, tx: Sender<ServerMsg>, wake: Optio
         loop {
             match read_frame::<_, ServerMsg>(&mut r) {
                 Ok(Some(m)) => {
+                    // what the daemon has taken of the paced streams: the
+                    // pacer's to know
+                    if let ServerMsg::IoAck { received } = m {
+                        sinks.1.acked(received);
+                        continue;
+                    }
                     // a stream a thread waits on: straight to it
                     if let ServerMsg::Io { stream, frame } = &m {
                         if sinks.deliver(*stream, frame) {
@@ -1079,6 +1086,8 @@ fn spawn_reader(stream: Box<dyn Read + Send>, tx: Sender<ServerMsg>, wake: Optio
                 _ => break,
             }
         }
+        // the link gone: whatever waits to send on it stops
+        sinks.1.close();
         if let Some(w) = &wake {
             w();
         }

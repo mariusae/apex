@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 69;
+pub const PROTOCOL: u32 = 70;
 
 /// A client's terminal colours, RGB: the ink, the paper, and the
 /// sixteen ANSI colours its theme draws.
@@ -217,6 +217,9 @@ pub enum ClientMsg {
 /// server answers: `GET file:///path` (the bytes; with a `Watch` header
 /// the stream stays open and every change brings a `Body` holding a
 /// `FileFrame`), `PUT file:///path` (the body written when it ends).
+/// A request with a `Paced` header has its body acknowledged as the
+/// daemon takes it (`ServerMsg::IoAck`), and is sent only as fast as the
+/// link takes it (`pace.rs`): a key is not left behind a file.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum IoFrame {
     Request { method: String, url: String, headers: Vec<(String, String)> },
@@ -353,6 +356,10 @@ pub enum ServerMsg {
     /// many match, how many are indexed, whether the walk is done or
     /// stopped at its cap, and why it could not walk at all.
     Found { id: u64, gen: u64, items: Vec<(String, bool)>, matched: u64, indexed: u64, done: bool, capped: bool, error: Option<String> },
+    /// The bytes of paced streams (those opened with a `Paced` header) the
+    /// daemon has taken from this connection, in all: what the client's
+    /// pacer steers by (`pace.rs`).
+    IoAck { received: u64 },
 }
 
 /// Write one frame: u32 little-endian length, then postcard bytes.
