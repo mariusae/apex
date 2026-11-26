@@ -111,6 +111,73 @@ impl IoPlane {
         Ok(())
     }
 
+    /// A file of this machine's dropped on a session on the host this
+    /// plane reaches (`PUT apex-drop:NAME`, `drops.rs`), `len` bytes of it
+    /// under `key`: paced, `progress` told how much has gone, stopped
+    /// when `stop` is set. Where it landed on the host (at once, when it
+    /// is there already), or why not.
+    pub fn drop_file(&self, path: &std::path::Path, len: u64, key: &str, stop: &std::sync::atomic::AtomicBool, progress: &mut dyn FnMut(u64)) -> Result<String, String> {
+        use std::sync::atomic::Ordering;
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| format!("{}: not a file", path.display()))?;
+        let len_s = len.to_string();
+        let (stream, rx) = self.open("PUT", &format!("apex-drop:{name}"), &[("Key", key), ("Length", &len_s), ("Paced", "1")]);
+        let stopped = || stop.load(Ordering::Relaxed);
+        let r = (|| {
+            let (status, headers, body, over) = Self::answer(&rx, &stopped)?;
+            if over {
+                // there already (`Have`), or refused
+                return if status == 200 { location(&headers) } else { Err(said(status, &body)) };
+            }
+            if status != 100 {
+                return Err(said(status, &body));
+            }
+            let mut f = std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+            self.send_paced(stream, &mut f, len, &stopped, progress)?;
+            self.end(stream);
+            let (status, headers, body, _) = Self::answer(&rx, &stopped)?;
+            if status == 200 {
+                location(&headers)
+            } else {
+                Err(said(status, &body))
+            }
+        })();
+        match &r {
+            Ok(_) => self.close(stream),
+            Err(_) => self.reset(stream, "stopped"),
+        }
+        r
+    }
+
+    /// The next answer on a stream: its status, headers and body, and
+    /// whether the stream is over -- a 100 is all there is of it until the
+    /// body has gone. A reset is a failure, as is none in half a minute.
+    fn answer(rx: &Receiver<IoFrame>, stopped: &dyn Fn() -> bool) -> Result<Answered, String> {
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        let (mut head, mut body) = (None, Vec::new());
+        loop {
+            if stopped() {
+                return Err("stopped".into());
+            }
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            if left.is_zero() {
+                return Err("the host did not answer".into());
+            }
+            match rx.recv_timeout(left.min(Duration::from_millis(100))) {
+                Ok(IoFrame::Response { status: 100, headers }) => return Ok((100, headers, body, false)),
+                Ok(IoFrame::Response { status, headers }) => head = Some((status, headers)),
+                Ok(IoFrame::Body(b)) => body.extend_from_slice(&b),
+                Ok(IoFrame::End) => {
+                    let (status, headers) = head.ok_or("the host ended it unanswered")?;
+                    return Ok((status, headers, body, true));
+                }
+                Ok(IoFrame::Reset { reason }) => return Err(reason),
+                Ok(IoFrame::Request { .. }) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(_) => return Err("the connection went".into()),
+            }
+        }
+    }
+
     pub fn end(&self, stream: u32) {
         let _ = self.out.send(&ClientMsg::Io { stream, frame: IoFrame::End });
     }
@@ -161,6 +228,24 @@ impl IoPlane {
         }
         let (status, headers) = head.ok_or("no response")?;
         Ok((status, headers, body))
+    }
+}
+
+/// An answer on a stream: status, headers, body, and whether it is over.
+type Answered = (u16, Vec<(String, String)>, Vec<u8>, bool);
+
+/// Where an answer says a thing is (`Location`).
+fn location(headers: &[(String, String)]) -> Result<String, String> {
+    headers.iter().find(|(k, _)| k.eq_ignore_ascii_case("location")).map(|(_, v)| v.clone()).ok_or_else(|| "the host said nowhere".to_string())
+}
+
+/// A refusal in words: what the host said, else its status.
+fn said(status: u16, body: &[u8]) -> String {
+    let t = String::from_utf8_lossy(body).trim().to_string();
+    if t.is_empty() {
+        format!("the host answered {status}")
+    } else {
+        t
     }
 }
 

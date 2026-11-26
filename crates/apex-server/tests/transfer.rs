@@ -173,3 +173,33 @@ fn a_drop_stopped_or_refused_leaves_nothing() {
     }
     assert!(!home().join(".apex/escape").exists());
 }
+
+#[test]
+fn drop_file_sends_a_file_once_and_says_where_it_landed() {
+    let sock = daemon();
+    let r = Remote::connect(&sock, "main", "uploader").unwrap();
+    let plane = r.io_plane();
+    let src = scratch("dropfile").join("photo 1.jpg");
+    let data = bytes(900_000);
+    std::fs::write(&src, &data).unwrap();
+    let stop = std::sync::atomic::AtomicBool::new(false);
+    let mut went = 0;
+    let at = plane.drop_file(&src, data.len() as u64, "dropfile1", &stop, &mut |n| went = n).unwrap();
+    assert_eq!(at, home().join(".apex/drops/dropfile1/photo 1.jpg").display().to_string());
+    assert_eq!(went, data.len() as u64);
+    assert_eq!(std::fs::read(&at).unwrap(), data);
+    // again: there already, nothing sent
+    let mut again = 0;
+    assert_eq!(plane.drop_file(&src, data.len() as u64, "dropfile1", &stop, &mut |n| again = n), Ok(at));
+    assert_eq!(again, 0, "not a byte the second time");
+    // stopped as it goes: nothing there, and it says so
+    let mut stopped_at = 0;
+    let r = plane.drop_file(&src, data.len() as u64, "dropfile2", &stop, &mut |n| {
+        stopped_at = n;
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    });
+    assert_eq!(r, Err("stopped".into()));
+    assert!(stopped_at > 0 && stopped_at < data.len() as u64);
+    let _ = plane.fetch("GET", &format!("file://{}", home().display()), &[], None, Duration::from_secs(5));
+    assert!(!home().join(".apex/drops/dropfile2/photo 1.jpg").exists());
+}
