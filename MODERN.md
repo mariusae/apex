@@ -586,15 +586,21 @@ windows put away out of the tiling, which is the core's
   Outline lens have win's commands as they have a terminal's. A
   command's `cmdline=` is the rest of its mark, semicolons and all.
 - **A command is a thing to act on** (`runs.rs`, `outline::run_of`):
-  a shell's commands, a terminal's or win's, in the outline's list by
-  the scrollbar, take what the buttons always mean -- B1 goes there, B2
-  runs it again (typed to its shell), B3 opens its output in a window
-  of its own (`dir/+make`, the command its label) -- and so does its
-  dot: with the pointer on a prompt's row, a dot at the row's end
-  (quiet; blue while it runs, orange when it failed), where B1 selects
-  the command and its output, B2 after it (B1 still held) copies them,
-  B2 runs it again and B3 opens it. ⌘C with the pointer on a dot or a
-  list's row copies it and its output: `$ ` and the command, then
+  a shell's commands, a terminal's or win's. A row in a list of them is
+  a place, as any outline's row is: B1 or B3 goes there. The command
+  itself is its dot -- at the end of its prompt's row while the pointer
+  is on that row, and always at the end of its row in the outline's
+  list by the scrollbar -- quiet, blue while it runs, orange when it
+  failed: B1 there selects the command and its output, B2 after it (B1
+  still held) copies them, B2 runs it again (typed to its shell), B3
+  opens its output in a window of its own (`dir/+make`, the command its
+  label). A double-click on a prompt (on its characters, or at the
+  start of its line) selects the command and its output as B1 on its
+  dot does, as one by a bracket selects to its match; a selection
+  copies as it reads, its prompt and all. ⌘C with the pointer on a dot
+  or a command's row in the list, or `Snarfcmd` (B4, in a terminal or a
+  win window: the command the pointer is in, else the last), copies it
+  and its output: `$ ` and the command, then
   what it printed, whatever the prompt was. A terminal's output is read
   back from its history on the host; win's is the text between where
   its output began and ended (`OutlineItem::output`, kept with the

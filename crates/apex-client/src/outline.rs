@@ -272,6 +272,8 @@ impl Acme {
                 .child(div().flex_1().min_w_0().overflow_hidden().text_ellipsis().child(title(h)))
                 // what more it says (a command's run), quieter, at the right
                 .when_some(h.detail.clone(), |d, detail| d.child(div().flex_none().pl(px(10.)).text_size(px(12.)).font_weight(crate::fonts::weight(gpui::FontWeight::NORMAL)).text_color(rgb(if h.failed { t.text } else { t.panel_dim })).child(detail)))
+                // a command's dot: the command's own buttons, as by its prompt
+                .children(self.dot_view(w, i, cx).map(|d| d.ml(px(6.))))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |acme, _, _, cx| {
@@ -280,20 +282,14 @@ impl Acme {
                         cx.notify();
                     }),
                 )
-                // a command's (a terminal's, win's): B2 runs it again, B3
-                // opens its output in a window of its own (`runs`)
-                .on_mouse_down(
-                    MouseButton::Middle,
-                    cx.listener(move |acme, _, _, cx| {
-                        cx.stop_propagation();
-                        acme.run_again(w, i, cx);
-                    }),
-                )
+                // a row is a place: B3 goes there too, as the lens has it
+                // (a command's own buttons are its dot's, at the row's end)
                 .on_mouse_down(
                     MouseButton::Right,
                     cx.listener(move |acme, _, _, cx| {
+                        acme.outline_go(w, i);
                         cx.stop_propagation();
-                        acme.run_act(w, i, crate::runs::RunAct::Open, cx);
+                        cx.notify();
                     }),
                 )
                 .on_hover(cx.listener(move |acme, over: &bool, _, _| {

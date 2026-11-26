@@ -39,6 +39,14 @@ impl Acme {
     /// The `i`th entry of window `w`'s outline, if it is a command: its
     /// command and output, copied or opened.
     pub fn run_act(&mut self, w: WindowId, i: usize, act: RunAct, cx: &mut Context<Self>) {
+        self.run_act_now(w, i, act);
+        self.settle_snarf(cx);
+        cx.notify();
+    }
+
+    /// `run_act` where no context is at hand (a rule's ask): the
+    /// clipboard follows the snarf buffer in the poll (`settle_snarf`).
+    pub fn run_act_now(&mut self, w: WindowId, i: usize, act: RunAct) {
         let Some(run) = run_of(&self.node, w, i) else { return };
         match run.output {
             RunOutput::Text(out) => self.run_done(w, &run.cmd, &out, act),
@@ -55,8 +63,6 @@ impl Acme {
                 }
             },
         }
-        self.settle_snarf(cx);
-        cx.notify();
     }
 
     /// The `i`th entry of window `w`'s outline run again: typed to its
@@ -140,6 +146,36 @@ const DOT_HIT: f32 = 16.;
 /// In from the row's right end.
 const DOT_IN: f32 = 12.;
 
+/// A dot's ink: quiet; blue while the command runs, fixed, not the
+/// palette's accent (one palette's is a gold, by the orange), as the
+/// session's standing has it; the terminal's red, orange in every
+/// palette, when it failed. Under a deuteranopia simulation the three
+/// are ΔE 39 or more apart, the blue and the orange over 110.
+fn dot_ink(failed: bool, running: bool) -> u32 {
+    let t = crate::theme::theme();
+    if failed {
+        t.ansi[1]
+    } else if running {
+        if crate::theme::is_dark() { 0x539BF5 } else { 0x0969DA }
+    } else {
+        t.text_dim
+    }
+}
+
+/// Where a prompt ends on its line (chars): where the command it reads
+/// begins -- the whole command, found from the right (a prompt may hold
+/// its first word: `~/make % make`), else its first word; else nothing
+/// of it is known but the line's start.
+pub fn prompt_end(line: &str, cmd: &str) -> usize {
+    let cmd = cmd.trim();
+    let Some(word) = cmd.split_whitespace().next() else { return 0 };
+    let line = line.trim_end();
+    match line.rfind(cmd).filter(|&b| b + cmd.len() == line.len()).or_else(|| line.find(word)) {
+        Some(b) => line[..b].chars().count(),
+        None => 0,
+    }
+}
+
 impl RunDot {
     pub fn hit(&self, p: gpui::Point<gpui::Pixels>) -> bool {
         let d = gpui::px(DOT_HIT / 2.);
@@ -191,24 +227,14 @@ impl Acme {
         self.run_dot_near(pos).filter(|d| d.hit(pos))
     }
 
-    /// The dot of the prompt row the pointer is on, drawn: quiet, blue
-    /// while it runs, the terminal's red (orange in every palette) when
-    /// it failed; ringed with the pointer on it. The blue fixed, not the
-    /// palette's accent (one palette's is a gold, by the orange), as the
-    /// session's standing has it: under a deuteranopia simulation the
-    /// three ΔE 39 or more apart, the blue and the orange over 110.
+    /// The dot of the prompt row the pointer is on, drawn in its ink
+    /// (`dot_ink`), ringed with the pointer on it.
     pub fn run_dot_element(&self) -> Option<gpui::AnyElement> {
         use gpui::{div, prelude::*, px, rgb};
         let pos = self.last_mouse;
         let d = self.run_dot_near(pos)?;
         let t = crate::theme::theme();
-        let ink = if d.failed {
-            t.ansi[1]
-        } else if d.running {
-            if crate::theme::is_dark() { 0x539BF5 } else { 0x0969DA }
-        } else {
-            t.text_dim
-        };
+        let ink = dot_ink(d.failed, d.running);
         let on = d.hit(pos);
         let size = if on { DOT + 3. } else { DOT };
         Some(
@@ -237,23 +263,84 @@ impl Acme {
             }
         }
         let Some(d) = self.run_dot_at(pos) else { return false };
+        self.dot_button(d.window, d.entry, button, cx)
+    }
+
+    /// A button on command `i`'s dot in window `w`, wherever the dot is
+    /// drawn (its prompt's row, a list's row): B1 selects the command and
+    /// its output, B2 with B1 held from it copies them, B2 runs it again,
+    /// B3 opens it. True when the button means something there.
+    pub fn dot_button(&mut self, w: WindowId, i: usize, button: gpui::MouseButton, cx: &mut Context<Self>) -> bool {
+        use gpui::MouseButton;
+        if button == MouseButton::Middle && self.dot_held.is_some() {
+            let (hw, hi) = self.dot_held.unwrap_or((w, i));
+            self.dot_chorded = true;
+            self.run_act(hw, hi, RunAct::Copy, cx);
+            return true;
+        }
         match button {
             MouseButton::Left => {
-                self.run_select(d.window, d.entry);
-                self.dot_held = Some((d.window, d.entry));
+                self.run_select(w, i);
+                self.dot_held = Some((w, i));
                 self.dot_chorded = false;
             }
-            MouseButton::Middle => self.run_again(d.window, d.entry, cx),
-            MouseButton::Right => self.run_act(d.window, d.entry, RunAct::Open, cx),
+            MouseButton::Middle => self.run_again(w, i, cx),
+            MouseButton::Right => self.run_act(w, i, RunAct::Open, cx),
             _ => return false,
         }
         cx.notify();
         true
     }
 
+    /// How command `i` of window `w` stands, for its dot: failed, running.
+    pub fn run_state(&self, w: WindowId, i: usize) -> Option<(bool, bool)> {
+        match self.node.state.window(w).ok()?.body {
+            Body::Term(t) => {
+                let m = self.node.state.terms.get(&t)?.marks.iter().filter(|m| m.started.is_some() || m.cmd.is_some()).nth(i)?;
+                Some((m.exit.is_some_and(|x| x != 0), m.started.is_some() && m.ended.is_none()))
+            }
+            _ => {
+                let it = self.node.window_outline(w)?.items.get(i).filter(|it| it.started.is_some())?;
+                Some((it.exit.is_some_and(|x| x != 0), it.ended.is_none()))
+            }
+        }
+    }
+
+    /// Command `i`'s dot as an element of a list (the outline's by the
+    /// scrollbar, ⌘P's): always shown, its buttons the dot's anywhere.
+    pub fn dot_view(&self, w: WindowId, i: usize, cx: &Context<Self>) -> Option<gpui::Stateful<gpui::Div>> {
+        use gpui::{div, prelude::*, px, rgb, MouseButton};
+        let (failed, running) = self.run_state(w, i)?;
+        let t = crate::theme::theme();
+        let ink = dot_ink(failed, running);
+        let hit = |b: MouseButton| {
+            cx.listener(move |acme: &mut Acme, _: &gpui::MouseDownEvent, _, cx| {
+                cx.stop_propagation();
+                acme.dot_button(w, i, b, cx);
+            })
+        };
+        Some(
+            div()
+                .id(("run-dot", i))
+                .flex_none()
+                .size(px(DOT_HIT))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded_full()
+                .cursor_default()
+                .hover(move |s| s.bg(rgb(t.panel_hover)))
+                .child(div().size(px(DOT)).rounded_full().bg(rgb(ink)))
+                .on_mouse_down(MouseButton::Left, hit(MouseButton::Left))
+                .on_mouse_down(MouseButton::Middle, hit(MouseButton::Middle))
+                .on_mouse_down(MouseButton::Right, hit(MouseButton::Right)),
+        )
+    }
+
     /// A command and its output selected: a text's span, from its prompt
-    /// to its output's end; a terminal's rows.
-    fn run_select(&mut self, w: WindowId, i: usize) {
+    /// to its output's end; a terminal's rows. (A double-click on its
+    /// prompt selects so too, as one by a bracket selects to its match.)
+    pub fn run_select(&mut self, w: WindowId, i: usize) {
         match self.node.state.window(w).map(|x| x.body) {
             Ok(Body::Term(t)) => {
                 let Some(term) = self.node.state.terms.get(&t) else { return };
@@ -277,5 +364,86 @@ impl Acme {
             }
             Err(_) => {}
         }
+    }
+}
+
+impl Acme {
+    /// The command whose prompt a double-click at `off` in window `w`'s
+    /// text is on (its characters, or the start of its line): the
+    /// command and its output are the delimited thing there.
+    pub fn run_at_prompt_text(&self, w: WindowId, off: usize) -> Option<usize> {
+        let text = self.text_of(apex_core::ViewId::Body(w))?;
+        let o = self.node.window_outline(w)?;
+        o.items.iter().enumerate().filter(|(_, it)| it.started.is_some()).find_map(|(i, it)| {
+            let line_end = (it.at..text.len()).find(|&q| text.char_at(q) == '\n').unwrap_or(text.len());
+            let line = text.slice(it.at, line_end);
+            let end = it.at + prompt_end(&line, &it.title);
+            (off >= it.at && off <= end && off <= line_end).then_some(i)
+        })
+    }
+
+    /// The command whose prompt a double-click at column `col` of
+    /// terminal row `row` (of the view) is on.
+    pub fn run_at_prompt_term(&self, w: WindowId, col: usize, row: usize) -> Option<usize> {
+        let Ok(Body::Term(t)) = self.node.state.window(w).map(|x| x.body) else { return None };
+        let term = self.node.state.terms.get(&t)?;
+        let line = term.top + row as u64;
+        let (i, m) = term.marks.iter().filter(|m| m.started.is_some() || m.cmd.is_some()).enumerate().find(|(_, m)| m.prompt == line)?;
+        let text = self.term_layouts.get(&w).and_then(|l| l.rows.get(row)).cloned().unwrap_or_default();
+        let end = prompt_end(&text, m.cmd.as_deref().unwrap_or(""));
+        (col <= end).then_some(i)
+    }
+
+    /// The command the pointer is in, in window `w`: from its prompt to
+    /// where its output ends (or the next prompt); else the last.
+    fn run_under(&self, w: WindowId, pos: gpui::Point<gpui::Pixels>) -> Option<usize> {
+        match self.node.state.window(w).ok()?.body {
+            Body::Term(t) => {
+                let term = self.node.state.terms.get(&t)?;
+                let marks: Vec<_> = term.marks.iter().filter(|m| m.started.is_some() || m.cmd.is_some()).collect();
+                let line = self.term_layouts.get(&w).filter(|l| l.bounds.contains(&pos)).map(|l| term.top + l.cell_at(pos).1 as u64);
+                let here = line.and_then(|line| marks.iter().rposition(|m| m.prompt <= line));
+                here.or(marks.len().checked_sub(1))
+            }
+            _ => {
+                let o = self.node.window_outline(w)?;
+                let runs: Vec<usize> = o.items.iter().enumerate().filter(|(_, it)| it.started.is_some()).map(|(i, _)| i).collect();
+                let off = self.layouts.get(&apex_core::ViewId::Body(w)).filter(|l| l.bounds.contains(&pos)).map(|l| l.offset_at(pos));
+                let here = off.and_then(|off| runs.iter().rev().find(|&&i| o.items[i].at <= off).copied());
+                here.or(runs.last().copied())
+            }
+        }
+    }
+
+    /// `Snarfcmd` (B4, a rule's): the command the pointer is in (else the
+    /// window's last) and its output, copied as `$ ` and the command, then
+    /// the output -- what its dot copies.
+    pub fn snarfcmd(&mut self, id: u64, w: WindowId) {
+        let result = match self.run_under(w, self.last_mouse) {
+            Some(i) => {
+                self.run_act_now(w, i, RunAct::Copy);
+                Ok(None)
+            }
+            None => Err("Snarfcmd: no command the shell marked here".to_string()),
+        };
+        self.send(ClientMsg::Applied { id, result });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::prompt_end;
+
+    #[test]
+    fn a_prompt_ends_where_its_command_begins() {
+        assert_eq!(prompt_end("% make test", "make test"), 2);
+        assert_eq!(prompt_end("marius@airy ~/src/apex % git status", "git status"), 25);
+        // its first word found, whatever the rest became (rc's lines joined)
+        assert_eq!(prompt_end("% for(i in a){", "for(i in a){ echo $i }"), 2);
+        // not found (the line scrolled, or another's): only the line's start
+        assert_eq!(prompt_end("garbage", "make"), 0);
+        assert_eq!(prompt_end("% ", ""), 0);
+        // the prompt holding the command's word: the command at the end
+        assert_eq!(prompt_end("~/make % make", "make"), 9);
     }
 }

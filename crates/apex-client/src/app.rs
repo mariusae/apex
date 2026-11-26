@@ -1273,6 +1273,22 @@ impl Acme {
                 win: None, to: None,
             };
             link.send(&ClientMsg::RuleAdd { rule, priority: -10, mine: true });
+            // and Snarfcmd: the command the pointer is in and its output,
+            // copied as its dot copies them (`runs`)
+            let rule = PlumbRule { start: None,
+                verb: "Snarfcmd".into(),
+                owner: if kind == WinKind::File { Some("win-.*".to_string()) } else { None },
+                unlisted: false,
+                tag: false,
+                text: None,
+                file: None,
+                kind: Some(kind),
+                isfile: None,
+                isdir: None,
+                action: RuleAction::Client { verb: "snarfcmd".into(), args: "$win".into() },
+                win: None, to: None,
+            };
+            link.send(&ClientMsg::RuleAdd { rule, priority: -10, mine: true });
         }
     }
 
@@ -1345,6 +1361,10 @@ impl Acme {
                 "snarfout" => match args.trim().parse::<u64>() {
                     Ok(n) => self.snarfout(id, WindowId(n)),
                     Err(_) => self.send(ClientMsg::Applied { id, result: Err(format!("snarfout: {args}: not a window")) }),
+                },
+                "snarfcmd" => match args.trim().parse::<u64>() {
+                    Ok(n) => self.snarfcmd(id, WindowId(n)),
+                    Err(_) => self.send(ClientMsg::Applied { id, result: Err(format!("snarfcmd: {args}: not a window")) }),
                 },
                 other => {
                     self.send(ClientMsg::Applied { id, result: Err(format!("apex-ui cannot {other}")) });
@@ -2910,7 +2930,7 @@ impl Acme {
         let _ = self.node.reveal(&mut self.log, w); // textshow: a window with no lines grows
     }
 
-    fn send(&self, m: ClientMsg) {
+    pub(crate) fn send(&self, m: ClientMsg) {
         if let Backend::Remote(link) = &self.backend {
             link.send(&m);
         }
@@ -3613,7 +3633,15 @@ impl Acme {
                 Region::Text(off) => {
                     self.typed_start.remove(&v);
                     self.node.activecol = self.column_of_view(v); // button 1 only
-                    if e.click_count >= 2 {
+                    // double-clicked on a command's prompt (win's): the
+                    // command and its output, delimited by the prompts
+                    let run = match v {
+                        ViewId::Body(w) if e.click_count >= 2 => self.run_at_prompt_text(w, off).map(|i| (w, i)),
+                        _ => None,
+                    };
+                    if let Some((w, i)) = run {
+                        self.run_select(w, i);
+                    } else if e.click_count >= 2 {
                         if let Some(t) = self.text_of(v) {
                             let (a, z) = apex_core::node::double_click(&t, off);
                             let _ = self.node.select(&mut self.log, v, a, z);
@@ -3648,19 +3676,21 @@ impl Acme {
             (Target::Term(w, t), button) => match (region, button) {
                 (Region::Term(c, r), MouseButton::Left) => {
                     let top = self.term_top(w);
-                    match self.term_layouts.get(&w).filter(|_| e.click_count >= 2) {
+                    // double-clicked on a command's prompt: the command
+                    // and its output, delimited by the prompts
+                    let run = (e.click_count >= 2).then(|| self.run_at_prompt_term(w, c, r)).flatten();
+                    if let Some(i) = run {
+                        self.run_select(w, i);
+                    } else if let Some(l) = self.term_layouts.get(&w).filter(|_| e.click_count >= 2) {
                         // double-clicked: what acme's text windows select,
                         // over the rows on screen -- the word, the line at
                         // either end of it, what brackets or quotes enclose
-                        Some(l) => {
-                            let ((c0, r0), (c1, r1)) = term_double_click(&l.rows, c, r);
-                            self.term_sel = Some((w, (c0, top + r0 as u64), (c1, top + r1 as u64)));
-                        }
-                        None => {
-                            let p = (c, top + r as u64);
-                            self.term_sel = Some((w, p, p));
-                            self.mouse.term_drag = Some(w);
-                        }
+                        let ((c0, r0), (c1, r1)) = term_double_click(&l.rows, c, r);
+                        self.term_sel = Some((w, (c0, top + r0 as u64), (c1, top + r1 as u64)));
+                    } else {
+                        let p = (c, top + r as u64);
+                        self.term_sel = Some((w, p, p));
+                        self.mouse.term_drag = Some(w);
                     }
                     self.node.activecol = self.column_of_view(ViewId::Tag(w));
                 }
