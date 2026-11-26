@@ -248,14 +248,20 @@ pub const CLASSIC_LIGHT: Theme = make(Keys {
     popover: 0xFFFFFF, hover: 0xF0F4F5, danger_hover: 0xFBE3EA, ansi: ANSI_LIGHT, diff_add: 0xE1F3F8, diff_del: 0xFFF0DA,
 });
 
-/// Classic's dark: go.dev's own (#202224 paper, the playground's output ink
-/// #e6e6e6, its dark link blue #50b7e0 as the accent), acme's dark
-/// yellow selection.
+/// Classic's dark: the light's make by lamplight -- a warm grey paper
+/// (cream's hue turned toward Terra's, short of olive), the tags a dark
+/// slate teal as the light's are a pale one, a cream-tinted ink a little
+/// under white, acme's dark yellow selection; the accent go.dev's dark
+/// link blue (#50b7e0) softened toward the light's Go blue. The
+/// terminal's sixteen the colour-blind ones, their black and greys
+/// warmed to the paper.
 pub const CLASSIC_DARK: Theme = make(Keys {
-    paper: 0x202224, sel: 0x4A4526, thumb: 0x4A4C4E, header: 0x2B2D2F, header_sel: 0x1F4B5A, line: 0x3A3C3E,
-    ink: 0xE6E6E6, dim: 0x9A9C9E, faint: 0x6E7072, accent: 0x50B7E0, chosen: 0x007D9C, column: 0x1A1B1D, sidebar: 0x26282A,
-    dirty: 0xE6E6E6, stale: 0xFDDD00, fenced: 0xE0547A, exec: 0xC85A00, look: 0x2A5DB0,
-    popover: 0x2B2D2F, hover: 0x333537, danger_hover: 0x4A2230, ansi: ANSI_DARK, diff_add: 0x16323D, diff_del: 0x3A2C1C,
+    paper: 0x2A2722, sel: 0x554A1D, thumb: 0x504D46, header: 0x2A3436, header_sel: 0x2D4D55, line: 0x3E3B36,
+    ink: 0xE1DED4, dim: 0x9B9890, faint: 0x77746D, accent: 0x63B1C9, chosen: 0x007D9C, column: 0x23201C, sidebar: 0x273032,
+    dirty: 0xE1DED4, stale: 0xFDDD00, fenced: 0xE0547A, exec: 0xC85A00, look: 0x2A5DB0,
+    popover: 0x34312B, hover: 0x3E3B35, danger_hover: 0x4A2230,
+    ansi: [0x504C46, 0xF69D50, 0x539BF5, 0xC69026, 0x539BF5, 0xB083F0, 0x39C5CF, 0xA8A49C, 0x6C6862, 0xFFBC6F, 0x6CB6FF, 0xDAAA3F, 0x6CB6FF, 0xDCBDFB, 0x56D4DD, 0xEBE8DF],
+    diff_add: 0x1E3540, diff_del: 0x3E2F1E,
 });
 
 /// Acme's own, as plan9port's acme.c (`iconinit`) and libdraw's
