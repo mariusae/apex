@@ -5396,6 +5396,18 @@ impl Acme {
     /// before any key event) does: acme's rule, the text under the
     /// pointer, else the last selected text.
     pub fn menu_edit(&mut self, what: &str, window: &mut Window, cx: &mut Context<Self>) {
+        // ⌘C in ⌘P with a command's section chosen (and nothing selected
+        // in its field): the command and its output (`runs`)
+        if what == "copy" {
+            let chosen = self.finder.as_ref().filter(|f| f.filter.selection().is_none()).and_then(|f| match f.picks().get(f.cursor) {
+                Some(crate::finder::Pick::Section(s)) => Some((s.window, s.entry)),
+                _ => None,
+            });
+            if let Some((w, i)) = chosen.filter(|&(w, i)| self.run_state(w, i).is_some()) {
+                self.run_act(w, i, crate::runs::RunAct::Copy, cx);
+                return;
+            }
+        }
         // ⌘C with the pointer on a command's dot: the command and its
         // output, as the chord there copies them
         if what == "copy" {

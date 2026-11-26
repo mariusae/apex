@@ -263,15 +263,20 @@ impl Acme {
             }
         }
         let Some(d) = self.run_dot_at(pos) else { return false };
-        self.dot_button(d.window, d.entry, button, cx)
+        self.dot_button(d.window, d.entry, button, false, cx)
     }
 
     /// A button on command `i`'s dot in window `w`, wherever the dot is
     /// drawn (its prompt's row, a list's row): B1 selects the command and
     /// its output, B2 with B1 held from it copies them, B2 runs it again,
-    /// B3 opens it. True when the button means something there.
-    pub fn dot_button(&mut self, w: WindowId, i: usize, button: gpui::MouseButton, cx: &mut Context<Self>) -> bool {
+    /// B3 opens it. A dot in a list (`listed`: the outline's, ⌘P's) is
+    /// away from its command: B1 there goes to it too, and ⌘P goes, as
+    /// choosing in it does. True when the button means something there.
+    pub fn dot_button(&mut self, w: WindowId, i: usize, button: gpui::MouseButton, listed: bool, cx: &mut Context<Self>) -> bool {
         use gpui::MouseButton;
+        if listed && self.finder.is_some() {
+            self.close_finder(cx);
+        }
         if button == MouseButton::Middle && self.dot_held.is_some() {
             let (hw, hi) = self.dot_held.unwrap_or((w, i));
             self.dot_chorded = true;
@@ -280,6 +285,9 @@ impl Acme {
         }
         match button {
             MouseButton::Left => {
+                if listed {
+                    self.outline_go(w, i);
+                }
                 self.run_select(w, i);
                 self.dot_held = Some((w, i));
                 self.dot_chorded = false;
@@ -316,7 +324,7 @@ impl Acme {
         let hit = |b: MouseButton| {
             cx.listener(move |acme: &mut Acme, _: &gpui::MouseDownEvent, _, cx| {
                 cx.stop_propagation();
-                acme.dot_button(w, i, b, cx);
+                acme.dot_button(w, i, b, true, cx);
             })
         };
         Some(

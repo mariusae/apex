@@ -92,6 +92,9 @@ pub struct Section {
     pub at: apex_server::outline::At,
     /// The window, as a row names it: its file's last part, or its label.
     pub file: String,
+    /// Its place among its window's outline's entries: a command's, for
+    /// its dot (`runs`).
+    pub entry: usize,
 }
 
 /// A choice: a window or a file, or a section of a window.
@@ -372,7 +375,7 @@ impl Acme {
             if Some(w) == within {
                 current = now_at.map(|i| sections.len() + i);
             }
-            sections.extend(heads.into_iter().map(|(level, title, detail, failed, at)| Rc::new(Section { window: w, level, title, detail, failed, at, file: file.clone() })));
+            sections.extend(heads.into_iter().enumerate().map(|(entry, (level, title, detail, failed, at))| Rc::new(Section { window: w, level, title, detail, failed, at, file: file.clone(), entry })));
         }
         self.finder = Some(Finder::new(entries, sections, within, current, all, Some(self.tab)));
         cx.spawn(async move |this, cx| loop {
@@ -618,6 +621,8 @@ impl Acme {
                         .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(if s.failed { format!("✗ {}", s.title) } else { s.title.clone() }))
                         .child(div().flex_1().min_w_0().whitespace_nowrap().overflow_hidden().text_ellipsis().text_size(px(12.)).text_color(dim).child(s.detail.clone().unwrap_or_default()))
                         .when(typed, |d| d.child(div().flex_none().max_w(px(220.)).overflow_hidden().text_ellipsis().whitespace_nowrap().text_size(px(11.5)).text_color(dim).child(s.file.clone())))
+                        // a command's dot: its own buttons, as by its prompt
+                        .children(self.dot_view(s.window, s.entry, cx))
                         .on_mouse_down(
                             MouseButton::Left,
                             cx.listener(move |this, _, window, cx| {
@@ -745,7 +750,7 @@ mod tests {
     }
 
     fn section(w: u64, level: u8, title: &str, at: usize, file: &str) -> Rc<Section> {
-        Rc::new(Section { window: WindowId(w), level, title: title.into(), detail: None, failed: false, at: apex_server::outline::At::Text(at), file: file.into() })
+        Rc::new(Section { window: WindowId(w), level, title: title.into(), detail: None, failed: false, at: apex_server::outline::At::Text(at), file: file.into(), entry: 0 })
     }
 
     /// Nothing typed: the windows, the one the keys are in with its
