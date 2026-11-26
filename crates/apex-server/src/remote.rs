@@ -102,6 +102,12 @@ pub struct Link {
     pub term_found: Vec<(TermId, Option<((u16, u64), (u16, u64))>)>,
     /// Texts programs put on the clipboard (OSC 52), for the UI's.
     pub clips: Vec<String>,
+    /// Clipboard reads asked of us, a UI, by programs in the session
+    /// (`clip.rs`): (id, what), to answer on `PUT apex-clip-answer:ID`.
+    pub clip_asks: Vec<(u64, String)>,
+    /// What programs put on the clipboard that is not text (an image):
+    /// (what, its bytes), for the UI's.
+    pub clip_puts: Vec<(String, Vec<u8>)>,
     /// What completes a path, as `Candidates` asked (^F).
     pub candidates: Vec<crate::proto::Candidates>,
     /// ⌘O's matches as they came (`ServerMsg::Found`), for the UI to take.
@@ -261,7 +267,7 @@ impl Link {
         for shard in log.shards() {
             sent.insert(shard, log.last_seq(shard));
         }
-        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), outputs: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbed: None, plumbs: Vec::new(), asks: Vec::new(), answers_navigation: false, answered: Vec::new(), window_events: Vec::new(), wants_window_events: false, page_posts: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, term_lines: Vec::new(), term_found: Vec::new(), candidates: Vec::new(), found: Vec::new(), clips: Vec::new(), last_pong: None, ended: None, error: None, foreign_end: HashMap::new(), pending_ack: HashMap::new(), ack_ms: None, next_id: 1, closer }, log, node))
+        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), outputs: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbed: None, plumbs: Vec::new(), asks: Vec::new(), answers_navigation: false, answered: Vec::new(), window_events: Vec::new(), wants_window_events: false, page_posts: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, term_lines: Vec::new(), term_found: Vec::new(), candidates: Vec::new(), found: Vec::new(), clips: Vec::new(), clip_asks: Vec::new(), clip_puts: Vec::new(), last_pong: None, ended: None, error: None, foreign_end: HashMap::new(), pending_ack: HashMap::new(), ack_ms: None, next_id: 1, closer }, log, node))
     }
 
     pub fn send(&self, m: &ClientMsg) {
@@ -440,6 +446,8 @@ impl Link {
             ServerMsg::TermLines { term, text } => self.term_lines.push((term, text)),
             ServerMsg::TermFound { term, at } => self.term_found.push((term, at)),
             ServerMsg::Clipboard { text } => self.clips.push(text),
+            ServerMsg::ClipboardAsk { id, want } => self.clip_asks.push((id, want)),
+            ServerMsg::ClipboardPut { want, bytes } => self.clip_puts.push((want, bytes)),
             ServerMsg::Candidates(c) => self.candidates.push(c),
             m @ ServerMsg::Found { .. } => self.found.push(m),
             ServerMsg::Ack { shard, seq } => {

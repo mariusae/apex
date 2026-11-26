@@ -12,6 +12,7 @@
 pub const BUILD_ID: &str = env!("APEX_BUILD_ID");
 
 pub mod agent;
+pub mod clip;
 pub mod daemon;
 pub mod drops;
 pub mod persist;

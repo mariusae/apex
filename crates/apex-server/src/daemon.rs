@@ -80,9 +80,19 @@ pub fn default_socket() -> std::path::PathBuf {
 
 /// The session's commands (and its shells) find our own command and
 /// `rc`: `~/.apex/bin`, where a remote install puts them, and the
-/// directory we run from (the app bundle's) go on the PATH.
+/// directory we run from (the app bundle's) go on the PATH. On a host
+/// that is not a Mac, `~/.apex/clip` leads it: xclip, xsel, wl-paste and
+/// wl-copy as apex, the Mac's clipboard (`clip.rs`).
 pub fn put_apex_on_path() {
     let mut dirs = Vec::new();
+    let off = std::env::var("APEX_CLIPBOARD").is_ok_and(|v| matches!(v.as_str(), "0" | "off" | "no"));
+    if !cfg!(target_os = "macos") && !off {
+        if let (Ok(home), Some(exe)) = (std::env::var("HOME"), crate::self_exe().filter(|e| e.file_name().and_then(|n| n.to_str()) == Some("apex"))) {
+            if let Ok(d) = clip_links(std::path::Path::new(&home), &exe) {
+                dirs.push(d);
+            }
+        }
+    }
     if let Ok(home) = std::env::var("HOME") {
         dirs.push(std::path::Path::new(&home).join(".apex/bin"));
     }
@@ -98,6 +108,22 @@ pub fn put_apex_on_path() {
     std::env::set_var("PATH", path);
 }
 
+/// `HOME/.apex/clip`, its links to `exe` as each clipboard tool apex
+/// stands in for (made anew where they point elsewhere: a newer apex).
+pub fn clip_links(home: &std::path::Path, exe: &std::path::Path) -> std::io::Result<PathBuf> {
+    let dir = home.join(".apex").join("clip");
+    std::fs::create_dir_all(&dir)?;
+    for name in crate::clip::TOOLS {
+        let link = dir.join(name);
+        if std::fs::read_link(&link).ok().as_deref() != Some(exe) {
+            let _ = std::fs::remove_file(&link);
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(exe, &link)?;
+        }
+    }
+    Ok(dir)
+}
+
 enum Event {
     Accept(UnixStream),
     Msg(u64, ClientMsg),
@@ -108,6 +134,8 @@ enum Event {
     PlumbTimeout(u64),
     /// An `Ask` a client sent a window's owner went unanswered.
     AskTimeout(u64),
+    /// A UI asked for its clipboard has not answered in time.
+    ClipTimeout(u64),
     /// A tool started for what waits on it has not attached in time.
     StartTimeout(u64, String),
     /// From a stream's thread on the I/O plane (a tunnel, a fetch).
@@ -165,6 +193,12 @@ enum IoStream {
     /// `PUT apex-drop:NAME`: a file dropped on another machine, coming in
     /// (`drops.rs`); gone unfinished, nothing of it stays.
     Drop(crate::drops::Part),
+    /// `PUT apex-clip:WANT`: what a program puts on the clipboard, for
+    /// the app's (`clip.rs`), gathered until its end.
+    ClipPut { want: String, body: Vec<u8> },
+    /// `PUT apex-clip-answer:ID`: a UI's answer to a clipboard read, for
+    /// the program that asked, gathered until its end.
+    ClipAnswer { ask: u64, status: u16, body: Vec<u8> },
 }
 
 /// What waits for a tool being started (`PlumbRule::start`).
@@ -195,6 +229,10 @@ struct Session {
     view: Node,
     /// The UI connection currently leading (single-player mode).
     leader: Option<u64>,
+    /// The UI connection that last sent a terminal a key, and when: the
+    /// one whose clipboard a program here may read, just after it
+    /// (`clip.rs`).
+    last_key: Option<(u64, std::time::Instant)>,
 }
 
 /// Something in flight at the leader, by our id for it.
@@ -235,6 +273,10 @@ pub struct Daemon {
     asks: HashMap<u64, (u64, u64)>,
     /// The next stream number opened on a tool's connection (`RELAYED`).
     next_relay: u32,
+    /// Clipboard reads a UI was asked for, by the id it was given: the
+    /// asker's connection and stream (`clip.rs`).
+    clip_asks: HashMap<u64, (u64, u32)>,
+    next_clip_ask: u64,
     /// What waits for a tool being started (`PlumbRule::start`), by the
     /// session and the tool's name, in the order it came.
     held: HashMap<(u64, String), Vec<Held>>,
@@ -306,7 +348,7 @@ impl Daemon {
                 }
             });
         }
-        let mut d = Daemon { socket: path.to_path_buf(), host_profile, sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, tool_plumbs: HashMap::new(), next_tool_plumb: 1, asks: HashMap::new(), next_relay: RELAYED, held: HashMap::new(), finds: HashMap::new(), dumps, saved: HashMap::new(), rx, tx };
+        let mut d = Daemon { socket: path.to_path_buf(), host_profile, sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, tool_plumbs: HashMap::new(), next_tool_plumb: 1, asks: HashMap::new(), next_relay: RELAYED, clip_asks: HashMap::new(), next_clip_ask: 1, held: HashMap::new(), finds: HashMap::new(), dumps, saved: HashMap::new(), rx, tx };
         if d.dumps.is_some() {
             d.restore_sessions();
             d.keep_saving();
@@ -353,6 +395,11 @@ impl Daemon {
                 }
                 Event::PlumbTimeout(tid) => d.tool_failed(tid, "no answer in time".into()),
                 Event::AskTimeout(aid) => d.ask_over(aid, None),
+                Event::ClipTimeout(cid) => {
+                    if let Some((conn, stream)) = d.clip_asks.remove(&cid) {
+                        d.io_finish(conn, stream, 504, b"the app did not answer".to_vec());
+                    }
+                }
                 Event::StartTimeout(sid, tool) => d.start_failed(sid, &tool),
             }
         }
@@ -415,7 +462,7 @@ impl Daemon {
         // where it is: the host, and the directory it starts in
         log.meta(server.place());
         view.catch_up(&log).expect("fresh log");
-        self.sessions.insert(key.clone(), Session { id: sid, label: label.to_string(), log, server, view, leader: None });
+        self.sessions.insert(key.clone(), Session { id: sid, label: label.to_string(), log, server, view, leader: None, last_key: None });
         eprintln!("apexd: session {label} ({key}) made");
         // its init runs now, as a command of the session
         let s = self.sessions.get_mut(&key).unwrap();
@@ -508,7 +555,7 @@ impl Daemon {
         view.load_dump(&mut log, d, &mut crate::persist::Loader { server: &mut server, shell, scrollback }).map_err(|e| e.to_string())?;
         log.meta(server.place());
         view.catch_up(&log).map_err(|e| e.to_string())?;
-        self.sessions.insert(key.clone(), Session { id: sid, label: d.label.clone(), log, server, view, leader: None });
+        self.sessions.insert(key.clone(), Session { id: sid, label: d.label.clone(), log, server, view, leader: None, last_key: None });
         eprintln!("apexd: session {} ({key}) restored", d.label);
         self.after(&key, Vec::new());
         Ok(())
@@ -876,8 +923,18 @@ impl Daemon {
                 let _ = s.log.delete_shard(shard);
                 let _ = s.view.catch_up(&s.log);
             }
-            ClientMsg::TermKey { term, key } => s.server.term_key(&mut s.log, term, &key),
-            ClientMsg::TermPaste { term, text } => s.server.term_paste(&mut s.log, term, &text),
+            ClientMsg::TermKey { term, key } => {
+                if self.conns.get(&id).is_some_and(|c| c.kind == AttachmentKind::Ui) {
+                    s.last_key = Some((id, std::time::Instant::now()));
+                }
+                s.server.term_key(&mut s.log, term, &key)
+            }
+            ClientMsg::TermPaste { term, text } => {
+                if self.conns.get(&id).is_some_and(|c| c.kind == AttachmentKind::Ui) {
+                    s.last_key = Some((id, std::time::Instant::now()));
+                }
+                s.server.term_paste(&mut s.log, term, &text)
+            }
             ClientMsg::TermType { term, text } => s.server.term_type(&mut s.log, term, &text),
             ClientMsg::TermText { term, p0, p1 } => {
                 if let Some(p) = s.server.term_text(term, p0, p1) {
@@ -1220,6 +1277,7 @@ impl Daemon {
             IoFrame::Body(bytes) => match self.conns.get_mut(&id).and_then(|c| c.streams.get_mut(&stream)) {
                 Some(IoStream::Put { body, .. }) | Some(IoStream::Fetch { body, .. }) => body.extend_from_slice(&bytes),
                 Some(IoStream::Drop(part)) => part.write(&bytes),
+                Some(IoStream::ClipPut { body, .. }) | Some(IoStream::ClipAnswer { body, .. }) => body.extend_from_slice(&bytes),
                 Some(IoStream::Tunnel { sock: Some(sock), .. }) => {
                     use std::io::Write;
                     let _ = sock.write_all(&bytes);
@@ -1264,6 +1322,13 @@ impl Daemon {
                         }
                         Err(e) => self.io_finish(id, stream, 500, e.into_bytes()),
                     },
+                    IoStream::ClipPut { want, body } => self.clip_put(id, name, stream, want, body),
+                    IoStream::ClipAnswer { ask, status, body } => {
+                        if let Some((conn, asked)) = self.clip_asks.remove(&ask) {
+                            self.io_finish(conn, asked, status, body);
+                        }
+                        self.io_finish(id, stream, 200, Vec::new());
+                    }
                     IoStream::Tunnel { .. } | IoStream::Fetch { .. } | IoStream::Relay { .. } => {}
                 }
             }
@@ -1286,6 +1351,17 @@ impl Daemon {
         }
         if let Some(file) = url.strip_prefix("apex-drop:") {
             return self.io_drop_request(id, stream, method, file, headers);
+        }
+        if let Some(ask) = url.strip_prefix("apex-clip-answer:") {
+            let status = headers.iter().find(|(k, _)| k.eq_ignore_ascii_case("status")).and_then(|(_, v)| v.parse().ok()).unwrap_or(200);
+            let ask = ask.parse().unwrap_or(0);
+            if let Some(c) = self.conns.get_mut(&id) {
+                c.streams.insert(stream, IoStream::ClipAnswer { ask, status, body: Vec::new() });
+            }
+            return;
+        }
+        if let Some(want) = url.strip_prefix("apex-clip:") {
+            return self.clip_request(id, name, stream, method, want);
         }
         if url.starts_with("http://") || url.starts_with("https://") {
             let bodyless = matches!(method, "GET" | "HEAD" | "DELETE" | "OPTIONS");
@@ -1365,6 +1441,66 @@ impl Daemon {
             }
             Err(e) => self.io_finish(id, stream, 400, e.into_bytes()),
         }
+    }
+
+    /// `GET apex-clip:WANT` (`clip.rs`): the clipboard of the app that
+    /// last sent a key to a terminal here, read for a program here --
+    /// only just after that key (`clip::FRESH`), so that a program can
+    /// read it when the user pastes (^V) and not behind their back. The
+    /// app is asked; its answer goes to the asker as it comes. `PUT`:
+    /// what the program puts there, for every app attached here.
+    fn clip_request(&mut self, id: u64, name: &str, stream: u32, method: &str, want: &str) {
+        if !crate::clip::valid_want(want) {
+            return self.io_finish(id, stream, 400, format!("apex-clip:{want}: not a kind of content").into_bytes());
+        }
+        match method {
+            "GET" => {
+                let Some(s) = self.sessions.get(name) else { return };
+                let sid = s.id;
+                let ui = match s.last_key {
+                    Some((ui, at)) if at.elapsed() <= crate::clip::FRESH && self.conns.contains_key(&ui) => ui,
+                    _ if self.conns.values().any(|c| c.session == Some(sid) && c.kind == AttachmentKind::Ui) => {
+                        return self.io_finish(id, stream, 403, b"the clipboard is read only just after a key in a terminal".to_vec());
+                    }
+                    _ => return self.io_finish(id, stream, 503, b"no app is attached to read the clipboard of".to_vec()),
+                };
+                let ask = self.next_clip_ask;
+                self.next_clip_ask += 1;
+                self.clip_asks.insert(ask, (id, stream));
+                self.send(ui, ServerMsg::ClipboardAsk { id: ask, want: want.to_string() });
+                let tx = self.tx.clone();
+                thread::spawn(move || {
+                    thread::sleep(crate::clip::ANSWER_WAIT);
+                    let _ = tx.send(Event::ClipTimeout(ask));
+                });
+            }
+            "PUT" => {
+                if let Some(c) = self.conns.get_mut(&id) {
+                    c.streams.insert(stream, IoStream::ClipPut { want: want.to_string(), body: Vec::new() });
+                }
+            }
+            _ => self.io_finish(id, stream, 405, format!("{method} apex-clip:{want}: GET or PUT").into_bytes()),
+        }
+    }
+
+    /// A program's `PUT apex-clip:WANT`, whole: on every app attached to
+    /// the session, for its clipboard -- text as a terminal's OSC 52 puts
+    /// it, the snarf buffer's too; an image as it is.
+    fn clip_put(&mut self, id: u64, name: &str, stream: u32, want: String, body: Vec<u8>) {
+        let Some(sid) = self.sessions.get(name).map(|s| s.id) else { return };
+        let uis: Vec<u64> = self.conns.iter().filter(|(_, c)| c.session == Some(sid) && c.kind == AttachmentKind::Ui).map(|(k, _)| *k).collect();
+        if want == "text" {
+            let text = String::from_utf8_lossy(&body).into_owned();
+            for ui in &uis {
+                self.send(*ui, ServerMsg::Clipboard { text: text.clone() });
+            }
+            self.after(name, vec![Proposal::Snarf { text }]);
+        } else {
+            for ui in &uis {
+                self.send(*ui, ServerMsg::ClipboardPut { want: want.clone(), bytes: body.clone() });
+            }
+        }
+        self.io_finish(id, stream, 200, Vec::new());
     }
 
     /// `CONNECT host:port`: a thread connects and reads; the daemon

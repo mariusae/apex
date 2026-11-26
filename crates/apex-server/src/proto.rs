@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 70;
+pub const PROTOCOL: u32 = 71;
 
 /// A client's terminal colours, RGB: the ink, the paper, and the
 /// sixteen ANSI colours its theme draws.
@@ -360,6 +360,16 @@ pub enum ServerMsg {
     /// daemon has taken from this connection, in all: what the client's
     /// pacer steers by (`pace.rs`).
     IoAck { received: u64 },
+    /// A program in a terminal reads the clipboard (`clip.rs`: a stand-in
+    /// for xclip, wl-paste, xsel): the app's, which answers on a stream of
+    /// its own, `PUT apex-clip-answer:ID` with a `Status` (200, or 404
+    /// when there is none of `want`), paced. `want` is `TARGETS` (what
+    /// there is, a line each: `image/png`, `image/jpeg`, `text`), `text`,
+    /// `image/png` or `image/jpeg`.
+    ClipboardAsk { id: u64, want: String },
+    /// A program in a terminal put this on the clipboard (`want` as for
+    /// `ClipboardAsk`): the app puts it on its own.
+    ClipboardPut { want: String, bytes: Vec<u8> },
 }
 
 /// Write one frame: u32 little-endian length, then postcard bytes.

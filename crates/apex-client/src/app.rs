@@ -2854,6 +2854,14 @@ impl Acme {
         let ended = link.ended.take();
         self.clips.append(&mut link.clips);
         self.candidates.append(&mut link.candidates);
+        // programs in the session's terminals reading the clipboard, or
+        // putting an image there (`clipboard`)
+        for (id, want) in std::mem::take(&mut link.clip_asks) {
+            crate::clipboard::answer(link.io_plane(), id, &want);
+        }
+        for (want, bytes) in std::mem::take(&mut link.clip_puts) {
+            crate::clipboard::put(&want, &bytes);
+        }
         if self.connected && !alive {
             crate::shell::log_line(&format!("link to {} ended", self.url));
         }

@@ -641,6 +641,20 @@ windows put away out of the tiling, which is the core's
   key the image's -- and dropped as that file: gpui's windows take only
   files, so they are registered for images too and its drag methods
   wrapped, a drag with files going to gpui as ever.
+- **The Mac's clipboard on any host** (`apex_server::clip`, `apex-cli`'s
+  `clip.rs`, the app's `clipboard.rs`): on a host that is not a Mac,
+  apex stands in for xclip, xsel, wl-paste and wl-copy (links in
+  `~/.apex/clip`, ahead on the session's PATH; `APEX_CLIPBOARD=0` for
+  none), each answering as the tool does -- its options, its output byte
+  for byte, its errors and exit status -- from the Mac's clipboard,
+  through the daemon. So ^V in Claude Code there (`xclip -selection
+  clipboard -t TARGETS -o`, then `-t image/png -o`) pastes the Mac's
+  screenshot, a TIFF made a PNG. The daemon asks the app that last sent
+  a terminal a key, and only within five seconds of it: a program reads
+  the clipboard when the user pastes into it, not behind their back. The
+  app answers on a paced stream of its own, so an image keeps no key
+  waiting. What a program puts there (xclip -i, wl-copy) goes on the
+  Mac's: text as OSC 52 does, the snarf buffer's too; an image as it is.
 - **Transfers in the sidebar** (`transfers.rs`, as Manifold's): each
   file on its way at the foot of the sidebar's card -- its name, where
   to, a bar, how much of how much, how fast and how long to go, an × to

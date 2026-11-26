@@ -26,6 +26,7 @@ mod shell;
 mod sidebar;
 mod bunny;
 mod commands;
+mod clipboard;
 mod completion;
 mod cwdbar;
 mod dragdata;

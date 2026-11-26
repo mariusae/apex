@@ -178,6 +178,22 @@ impl IoPlane {
         }
     }
 
+    /// A whole request whose body goes paced (`Paced` added to its
+    /// headers): its status and what the answer said, or why not.
+    pub fn put_paced(&self, method: &str, url: &str, headers: &[(&str, &str)], body: &[u8], timeout: Duration) -> Result<(u16, Vec<u8>), String> {
+        let mut hs = headers.to_vec();
+        hs.push(("Paced", "1"));
+        let (stream, rx) = self.open(method, url, &hs);
+        if let Err(e) = self.send_paced(stream, &mut &body[..], body.len() as u64, &|| false, &mut |_| {}) {
+            self.reset(stream, &e);
+            return Err(e);
+        }
+        self.end(stream);
+        let r = Self::collect(&rx, timeout);
+        self.close(stream);
+        r.map(|(status, _, said)| (status, said))
+    }
+
     pub fn end(&self, stream: u32) {
         let _ = self.out.send(&ClientMsg::Io { stream, frame: IoFrame::End });
     }

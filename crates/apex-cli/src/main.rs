@@ -19,6 +19,8 @@ use apex_server::proto::{ClientMsg, ServerMsg};
 use apex_server::remote::Remote;
 use apex_server::Proposal;
 
+mod clip;
+
 const TIMEOUT: Duration = Duration::from_secs(10);
 
 type R = Result<(), String>;
@@ -806,6 +808,9 @@ fn main() {
     let argv0 = std::env::args().next().unwrap_or_default();
     match argv0.rsplit('/').next() {
         Some("apex-editor") => args.insert(0, "editor".into()),
+        // xclip, xsel, wl-paste, wl-copy: the Mac's clipboard, through the
+        // session's daemon (`clip`)
+        Some(tool @ ("xclip" | "xsel" | "wl-paste" | "wl-copy")) => std::process::exit(clip::main(tool, &args)),
         // `xdg-open URL-or-FILE`, the link $BROWSER names and programs
         // call to open things: plumbed, as B3 on it would
         Some("xdg-open") => {

@@ -27,7 +27,7 @@ extern "C" {
     fn method_setImplementation(m: *mut Method, imp: Imp) -> Imp;
 }
 
-type Id = *mut Object;
+pub(crate) type Id = *mut Object;
 type NSUInteger = usize;
 
 #[repr(C)]
@@ -63,14 +63,14 @@ static mut PERFORM: Option<Perform> = None;
 /// NSWindow), at a place in it.
 static DROPPED: Mutex<Vec<(usize, PathBuf, Point<Pixels>)>> = Mutex::new(Vec::new());
 
-fn ns(s: &str) -> Id {
+pub(crate) fn ns(s: &str) -> Id {
     let c = CString::new(s).unwrap_or_default();
     // SAFETY: a plain NSString from a C string, autoreleased
     unsafe { msg_send![class!(NSString), stringWithUTF8String: c.as_ptr()] }
 }
 
 /// Whether the drag's pasteboard has one of `types`.
-unsafe fn has(pb: Id, types: &[&str]) -> bool {
+pub(crate) unsafe fn has(pb: Id, types: &[&str]) -> bool {
     let list: Id = msg_send![pb, types];
     if list.is_null() {
         return false;
@@ -94,7 +94,7 @@ unsafe fn ours(info: Id) -> bool {
     !pb.is_null() && !has(pb, &FILE_TYPES) && has(pb, &IMAGE_TYPES)
 }
 
-unsafe fn bytes(data: Id) -> Option<Vec<u8>> {
+pub(crate) unsafe fn bytes(data: Id) -> Option<Vec<u8>> {
     if data.is_null() {
         return None;
     }
@@ -113,22 +113,26 @@ unsafe fn image(pb: Id) -> Option<(Vec<u8>, &'static str)> {
         return Some((b, "jpg"));
     }
     for t in ["public.tiff", "NSTIFFPboardType"] {
-        let tiff: Id = msg_send![pb, dataForType: ns(t)];
-        if tiff.is_null() {
-            continue;
-        }
-        let rep: Id = msg_send![class!(NSBitmapImageRep), imageRepWithData: tiff];
-        if rep.is_null() {
-            continue;
-        }
-        let props: Id = msg_send![class!(NSDictionary), dictionary];
-        // NSBitmapImageFileTypePNG
-        let png: Id = msg_send![rep, representationUsingType: 4usize properties: props];
-        if let Some(b) = bytes(png) {
+        if let Some(b) = as_png(msg_send![pb, dataForType: ns(t)]) {
             return Some((b, "png"));
         }
     }
     None
+}
+
+/// An image's data (TIFF, JPEG, anything AppKit reads) as a PNG's bytes.
+pub(crate) unsafe fn as_png(data: Id) -> Option<Vec<u8>> {
+    if data.is_null() {
+        return None;
+    }
+    let rep: Id = msg_send![class!(NSBitmapImageRep), imageRepWithData: data];
+    if rep.is_null() {
+        return None;
+    }
+    let props: Id = msg_send![class!(NSDictionary), dictionary];
+    // NSBitmapImageFileTypePNG
+    let png: Id = msg_send![rep, representationUsingType: 4usize properties: props];
+    bytes(png)
 }
 
 /// What the drag says the image is called: the last part of its URL's
