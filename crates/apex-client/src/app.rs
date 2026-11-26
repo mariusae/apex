@@ -153,7 +153,7 @@ impl Info for ClientInfo {
 }
 
 #[derive(Clone, Copy, Debug)]
-enum Region {
+pub(crate) enum Region {
     Text(usize),
     /// A part of a window tag's head: its path's, its label, a verb.
     Atom(Atom),
@@ -166,7 +166,7 @@ enum Region {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Target {
+pub(crate) enum Target {
     View(ViewId),
     Term(WindowId, TermId),
     /// A page's window, where apex draws on it: its scrollbar.
@@ -714,7 +714,7 @@ pub struct Acme {
     /// ⌘ or ⌥ held over text: what a click would take there.
     pub hint: Option<(ViewId, usize, usize, HlKind)>,
     mouse: Mouse,
-    want_visible: HashSet<ViewId>,
+    pub(crate) want_visible: HashSet<ViewId>,
     typed_start: HashMap<ViewId, usize>,
     /// acme's `iq1`: where the last typing in each view ended, shifted
     /// by a program's output before it; Home and End go back to it.
@@ -2998,7 +2998,7 @@ impl Acme {
         }
     }
 
-    fn term_paste(&mut self, t: TermId, text: String) {
+    pub(crate) fn term_paste(&mut self, t: TermId, text: String) {
         self.input_to(t);
         match &mut self.backend {
             Backend::Local(server) => server.term_paste(&mut self.log, t, &text),
@@ -3255,7 +3255,7 @@ impl Acme {
 
     // ---- hit testing ---------------------------------------------------------
 
-    fn locate(&self, pos: Point<Pixels>) -> Option<(Target, Region)> {
+    pub(crate) fn locate(&self, pos: Point<Pixels>) -> Option<(Target, Region)> {
         // the stash's preview lies over everything: over it, only the
         // window it shows is there
         let only = self.shelf.peeking().filter(|_| self.shelf.preview_at.get().is_some_and(|b| b.contains(&pos)));

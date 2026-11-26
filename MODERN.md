@@ -619,6 +619,14 @@ windows put away out of the tiling, which is the core's
   in its strip filters, ↩ going to the first match; Outline or ⌘↩ gives
   the window back. A tool like any other: `Tool::outline` reads any
   window's, `Tool::reveal` goes to an entry.
+- **Files dropped from the Finder** (`drops.rs`; a screenshot's
+  thumbnail is one): their paths where they land. On a terminal, as
+  Terminal.app types them -- each escaped for a shell with backslashes,
+  a space between and after, pasted -- so an agent there takes a path to
+  an image for the image (Claude Code's `[Image #1]`); on a text at the
+  place under the pointer, selected as a paste is, escaped the same where
+  the text goes to a shell (a live window, an input strip), a line each
+  anywhere else. A session on another host is given the files first.
 - **⌘↑ ⌘↓ go from entry to entry** (`outline_jump`): in any window
   with an outline, to the entry before or after the line at the top
   (⌘↑ to the start of the one the view is in, when that is scrolled

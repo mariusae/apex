@@ -28,6 +28,7 @@ mod bunny;
 mod commands;
 mod completion;
 mod cwdbar;
+mod drops;
 mod glide;
 mod look;
 mod outline;
@@ -234,6 +235,10 @@ impl Render for Acme {
             // B5, a mouse's forward button: Back
             .on_mouse_down(MouseButton::Navigate(gpui::NavigationDirection::Forward), cx.listener(Self::b5_down))
             .on_mouse_move(cx.listener(Self::mouse_move))
+            // files from the Finder: their paths where they land (`drops`)
+            .on_drop(cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| {
+                this.drop_paths(paths.paths(), window.mouse_position(), cx);
+            }))
             .on_modifiers_changed(cx.listener(Self::modifiers_changed))
             .on_scroll_wheel(cx.listener(Self::scroll_wheel));
         // full screen: acme's area is the whole screen, no title bar
