@@ -346,7 +346,9 @@ impl Acme {
                     .flex_col()
                     .pb(px(6.))
                     .pt(px(6.))
-                    .child(list),
+                    .child(list)
+                    // files on their way (`transfers`)
+                    .children(self.transfers_foot(cx)),
             )
             // a click in the sidebar is the sidebar's, not acme's
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())

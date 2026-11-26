@@ -626,7 +626,20 @@ windows put away out of the tiling, which is the core's
   an image for the image (Claude Code's `[Image #1]`); on a text at the
   place under the pointer, selected as a paste is, escaped the same where
   the text goes to a shell (a live window, an input strip), a line each
-  anywhere else. A session on another host is given the files first.
+  anywhere else.
+  On a session on another host, the files go there first, each to
+  `~/.apex/drops/KEY/NAME` (its own name; the key of the file, so the
+  same file dropped again goes no second time), paced so keys are not
+  left behind them, and their paths there are put in once all are
+  there. Meanwhile the window is held, as if the drop took that long: its
+  keys and clicks thrown away, a panel over it saying how far the files
+  have got; Escape, its Stop or the sidebar's × stops them, nothing put
+  in and nothing left there. Folders are not sent.
+- **Transfers in the sidebar** (`transfers.rs`, as Manifold's): each
+  file on its way at the foot of the sidebar's card -- its name, where
+  to, a bar, how much of how much, how fast and how long to go, an × to
+  stop it. One shows once it has taken a moment; a finished one stays a
+  few seconds, a failed one (saying why) until its × puts it away.
 - **⌘↑ ⌘↓ go from entry to entry** (`outline_jump`): in any window
   with an outline, to the entry before or after the line at the top
   (⌘↑ to the start of the one the view is in, when that is scrolled

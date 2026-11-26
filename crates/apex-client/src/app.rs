@@ -371,7 +371,7 @@ fn unrubber(over: f32, h: f32) -> f32 {
 
 impl Target {
     /// The window this is part of, if any (not the session's own row).
-    fn window(self) -> Option<WindowId> {
+    pub(crate) fn window(self) -> Option<WindowId> {
         match self {
             Target::View(v) => v.window(),
             Target::Term(w, _) | Target::Web(w) => Some(w),
@@ -571,6 +571,9 @@ pub struct Acme {
     pub native_bar_hidden: bool,
     /// Positions to bring on screen (new errors text), by view.
     pub(crate) show_at: HashMap<ViewId, (usize, usize)>,
+    /// Windows held while what was dropped on them goes to the host
+    /// (`drops`): their keys thrown away, Escape stopping it.
+    pub(crate) held: HashMap<WindowId, crate::drops::Held>,
     /// A place to go once its file is open (asked of the server).
     pub pending_goto: Option<Loc>,
     /// A notification in a tab still attaching (⌘G): taken once it is
@@ -1927,6 +1930,7 @@ impl Acme {
             term_ran: None,
             fullscreen: false,
             show_at: HashMap::new(),
+            held: HashMap::new(),
             pending_goto: None,
             pending_note: None,
             pending_switch: None,
@@ -3451,6 +3455,11 @@ impl Acme {
     }
 
     pub fn mouse_down(&mut self, e: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        // a window held while a drop goes to the host takes no clicks
+        // (its panel's Stop is its own)
+        if self.locate(e.position).and_then(|(t, _)| t.window()).is_some_and(|w| self.held.contains_key(&w)) {
+            return;
+        }
         // B1 on a window's status's pill: the status cleared
         if e.button == MouseButton::Left {
             let on = self.status_pills.borrow().iter().find(|(_, b)| b.contains(&e.position)).map(|(w, _)| *w);
@@ -5242,6 +5251,15 @@ impl Acme {
             None => return,
             Some((t, _)) => t,
         };
+        // a window held while a drop goes to the host: its keys thrown
+        // away, Escape stopping the drop (`drops`)
+        if let Some(h) = target.window().and_then(|w| self.held.get(&w)) {
+            if e.keystroke.key == "escape" {
+                crate::transfers::stop(h.transfer);
+                cx.notify();
+            }
+            return;
+        }
         // a key in a window attends to it: its notification goes
         if let Some(w) = target.window() {
             self.attend(w);
@@ -5438,6 +5456,11 @@ impl Acme {
             },
             Some((t, _)) => t,
         };
+        // a window held while a drop goes to the host: nothing goes into
+        // it or out of it meanwhile but a copy
+        if what != "copy" && target.window().is_some_and(|w| self.held.contains_key(&w)) {
+            return;
+        }
         match target {
             Target::Term(w, t) => match what {
                 "paste" => {

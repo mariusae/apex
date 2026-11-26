@@ -12,13 +12,22 @@
 //!   they are anywhere else.
 //!
 //! A session on this Mac has the files where they are; one on another
-//! host is given them first (`transfers`).
+//! host is given them first, each to `~/.apex/drops/KEY/NAME` there (its
+//! own name, so an agent sees an image for what it is), and the paths
+//! there put in once they are all there. Meanwhile the window is held, as
+//! if the drop took that long: its keys thrown away (nothing typed lands
+//! before the paths, or among them), its clicks too; a panel over it says
+//! how far the files have got, and Escape (or its Stop, or the sidebar's
+//! ×) stops them -- nothing put in, nothing left there. Other windows go
+//! on as ever. The sidebar lists the transfer too (`transfers`).
 
 use std::path::PathBuf;
+use std::sync::mpsc::{Receiver, TryRecvError};
+use std::time::Duration;
 
-use gpui::{Context, Pixels, Point};
+use gpui::{anchored, deferred, div, point, prelude::*, px, rgb, AnyElement, Context, MouseButton, Pixels, Point};
 
-use apex_core::ViewId;
+use apex_core::{ViewId, WindowId};
 
 use crate::app::{Acme, Region, Target};
 
@@ -47,6 +56,12 @@ pub fn words(paths: &[String], shell: bool) -> String {
     }
 }
 
+/// A window held while what was dropped on it goes to the host.
+pub struct Held {
+    /// Its transfer (`transfers`).
+    pub transfer: u64,
+}
+
 impl Acme {
     /// Files dropped at `pos`: their paths where they land (above). Whether
     /// anything took them.
@@ -56,15 +71,138 @@ impl Acme {
             return false;
         }
         let Some((target, region)) = self.locate(pos) else { return false };
-        // this Mac's paths mean nothing on another host
+        // this Mac's paths mean nothing on another host: the files go
+        // there first
         if !self.url.is_local() {
-            return false;
+            let files: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
+            return self.drop_remote(target, region, files, cx);
         }
         let took = self.put_paths(target, region, &paths);
         if took {
             cx.notify();
         }
         took
+    }
+
+    /// Files dropped on a session on another host: sent there, the window
+    /// held until they are (above). Whether the drop was taken.
+    fn drop_remote(&mut self, target: Target, region: Region, files: Vec<PathBuf>, cx: &mut Context<Self>) -> bool {
+        // only where the paths could go
+        let w = match (target, region) {
+            (Target::Term(w, _), _) | (Target::View(ViewId::Body(w) | ViewId::Tag(w) | ViewId::Input(w)), Region::Text(_)) => w,
+            _ => return false,
+        };
+        if self.held.contains_key(&w) {
+            return false;
+        }
+        if let Some(f) = files.iter().find(|f| !f.is_file()) {
+            self.notice(&format!("{}: only files go to another host, not folders\n", f.display()));
+            cx.notify();
+            return false;
+        }
+        let crate::app::Backend::Remote(link) = &self.backend else { return false };
+        let (transfer, rx) = crate::transfers::upload(link.io_plane(), files, &self.url.arg);
+        self.held.insert(w, Held { transfer });
+        self.watch_held(w, target, region, rx, cx);
+        cx.notify();
+        true
+    }
+
+    /// Until the files are there: drawn again as they go (the panel, the
+    /// sidebar); then the window let go and the paths put in where they
+    /// were dropped -- or, stopped, nothing; failed, why, in the errors.
+    /// Drawn on a while after, as the sidebar says it finished.
+    fn watch_held(&mut self, w: WindowId, target: Target, region: Region, rx: Receiver<crate::transfers::Landed>, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            let mut waiting = true;
+            loop {
+                cx.background_executor().timer(Duration::from_millis(if waiting { 50 } else { 250 })).await;
+                let go_on = this.update(cx, |this, cx| {
+                    cx.notify();
+                    if !waiting {
+                        return crate::transfers::live();
+                    }
+                    let landed = match rx.try_recv() {
+                        Ok(r) => r,
+                        Err(TryRecvError::Empty) => return true,
+                        Err(TryRecvError::Disconnected) => Err("the upload ended unanswered".into()),
+                    };
+                    waiting = false;
+                    this.held.remove(&w);
+                    match landed {
+                        Ok(paths) if this.node.state.window(w).is_ok() => {
+                            this.put_paths(target, region, &paths);
+                        }
+                        Ok(_) => {}
+                        Err(e) if e == "stopped" => {}
+                        Err(e) => this.notice(&format!("drop: {e}\n")),
+                    }
+                    true
+                });
+                if !go_on.unwrap_or(false) {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Over each window held: what is going, how far it has got, and how
+    /// to stop it.
+    pub fn held_panels(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let t = crate::theme::theme();
+        let now = std::time::Instant::now();
+        let mut out = Vec::new();
+        for (w, h) in &self.held {
+            let bounds = self.term_layouts.get(w).map(|l| l.bounds).or_else(|| self.layouts.get(&ViewId::Body(*w)).map(|l| l.bounds));
+            let (Some(b), Some(it)) = (bounds, crate::transfers::item(h.transfer)) else { continue };
+            let id = h.transfer;
+            let width = (f32::from(b.size.width) - 24.).clamp(160., 380.);
+            let stop = div()
+                .id(("held-stop", id))
+                .flex_none()
+                .px(px(8.))
+                .h(px(20.))
+                .rounded(px(5.))
+                .flex()
+                .items_center()
+                .border_1()
+                .border_color(rgb(t.panel_border))
+                .text_size(px(12.))
+                .cursor_default()
+                .hover(move |s| s.bg(rgb(t.panel_hover)))
+                .child("Stop")
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |_, _, _, cx| {
+                        crate::transfers::stop(id);
+                        cx.stop_propagation();
+                        cx.notify();
+                    }),
+                );
+            let panel = crate::shell::popover()
+                .id(("held", id))
+                .w(px(width))
+                .p(px(10.))
+                .flex()
+                .flex_col()
+                .gap(px(6.))
+                .text_color(rgb(t.panel_text))
+                .child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap(px(8.))
+                        .child(div().flex_1().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().text_size(px(13.)).child(format!("Sending {}", it.title)))
+                        .child(stop),
+                )
+                .child(div().h(px(3.)).w_full().rounded(px(2.)).bg(rgb(t.panel_hover)).child(div().h_full().rounded(px(2.)).w(gpui::relative(it.fraction())).bg(rgb(t.accent))))
+                .child(div().overflow_hidden().text_ellipsis().whitespace_nowrap().text_size(px(11.)).text_color(rgb(t.panel_dim)).child(format!("{} · esc to stop", it.said(now))));
+            let at = point(b.left() + (b.size.width - px(width)) / 2., b.top() + px(12.));
+            out.push(deferred(anchored().anchor(gpui::Anchor::TopLeft).position(at).child(panel)).with_priority(2).into_any_element());
+        }
+        out
     }
 
     /// The paths (each on the host the session is on) put into `target`
@@ -79,6 +217,8 @@ impl Acme {
             }
             Target::View(v) => {
                 let Region::Text(at) = region else { return false };
+                // (the text may have changed while the files went)
+                let at = self.text_of(v).map_or(0, |t| at.min(t.len()));
                 let shell = matches!(v, ViewId::Input(_)) || v.window().is_some_and(|w| self.node.window_live(w));
                 let text = words(paths, shell);
                 if self.node.select(&mut self.log, v, at, at).is_err() || self.node.replace_selection(&mut self.log, v, &text).is_err() {

@@ -29,6 +29,7 @@ mod commands;
 mod completion;
 mod cwdbar;
 mod drops;
+mod transfers;
 mod glide;
 mod look;
 mod outline;
@@ -763,6 +764,8 @@ impl Render for Acme {
         let root = root.children(self.proc_card());
         // a page's outline, out beside its scrollbar
         let root = root.children(self.outline_panel(cx));
+        // a window held while a drop goes to the host: how far it has got
+        let root = root.children(self.held_panels(cx));
         // the title bar's crumbs' folders
         let root = root.children(self.cwd_panel(cx));
         // the overview (⌘⇧\), over everything
