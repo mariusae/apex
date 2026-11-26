@@ -12,6 +12,9 @@
 //! keeps the entries whose titles have its letters in order, the first
 //! selected, and ↩ (or ⌘↩, Send) goes to the selected one. It is kept as
 //! the outline changes (a command run, a turn taken, a symbol added).
+//! Its lines are its own outline too, each standing for the entry it
+//! shows (`OutlineItem::of`): a command's line has its dot at its end,
+//! as by its prompt, its buttons the command's.
 //!
 //! A tool like any other, using only the tool API (`apex_tool`): it
 //! reads the outline (`Tool::outline`), shows it, and goes to an entry
@@ -24,7 +27,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use apex_tool::{Event, OutlineEntry, Plumb, Rule, RuleId, Tool, WindowId};
+use apex_tool::{Event, OutlineEntry, OutlineItem, Plumb, Rule, RuleId, Tool, WindowId};
 
 /// How long the tool stays with no lens open.
 const IDLE: Duration = Duration::from_secs(60);
@@ -122,6 +125,7 @@ fn open(t: &mut Tool, lenses: &mut BTreeMap<WindowId, Lens>, base: WindowId) -> 
     // the filter, where typing goes
     let _ = t.set_input(w, Some(""));
     let _ = t.set_clean(w);
+    mirror(t, w, &l);
     l.select(t, w);
     lenses.insert(w, l);
     Ok(())
@@ -200,8 +204,25 @@ fn keep(t: &mut Tool, lenses: &mut BTreeMap<WindowId, Lens>, w: WindowId) -> Res
     let len = t.read(w).map(|s| s.chars().count()).unwrap_or(0);
     t.replace(w, 0, len, &l.text).map_err(|e| e.to_string())?;
     let _ = t.set_clean(w);
+    mirror(t, w, l);
     l.select(t, w);
     Ok(())
+}
+
+/// Lens `w`'s lines as its own outline, each standing for the entry it
+/// shows (`OutlineItem::of`): what the UI does to a line's entry -- a
+/// command's dot at its end, its buttons -- it does to the entry, in the
+/// window under the lens. Written with the lines, which a rewrite moves.
+fn mirror(t: &mut Tool, w: WindowId, l: &Lens) {
+    let mut at = 0;
+    let mut items = Vec::new();
+    for (k, line) in l.text.split_inclusive('\n').enumerate() {
+        if let Some(&i) = l.shown.get(k) {
+            items.push(OutlineItem { level: l.entries[i].level, title: l.entries[i].title.clone(), at, of: Some(i), ..Default::default() });
+        }
+        at += line.chars().count();
+    }
+    let _ = t.set_outline(w, Some(items));
 }
 
 impl Lens {

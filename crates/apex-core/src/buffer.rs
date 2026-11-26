@@ -66,6 +66,11 @@ pub struct OutlineItem {
     /// put in at its start goes in, as more output does, and at its end
     /// after it, as the next prompt does).
     pub output: Option<(usize, Option<usize>)>,
+    /// A lens's line standing for an entry of the window under it (the
+    /// outline lens's): that entry's place in that window's outline. Such
+    /// items are no outline of their own; what is done to one (a
+    /// command's dot) is done to the entry.
+    pub of: Option<usize>,
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]

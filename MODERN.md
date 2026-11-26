@@ -590,8 +590,9 @@ windows put away out of the tiling, which is the core's
   a place, as any outline's row is: B1 or B3 goes there. The command
   itself is its dot -- at the end of its prompt's row while the pointer
   is on that row, and always at the end of its row in the outline's
-  list by the scrollbar and in ⌘P's sections (where B1 on it goes there
-  too, as choosing does) -- quiet, blue while it runs, orange when it
+  list by the scrollbar, in ⌘P's sections and at the end of its line in
+  the Outline lens while the pointer is on it (where B1 on it goes there
+  too, as choosing does, the lens or ⌘P going) -- quiet, blue while it runs, orange when it
   failed: B1 there selects the command and its output, B2 after it (B1
   still held) copies them, B2 runs it again (typed to its shell), B3
   opens its output in a window of its own (`dir/+make`, the command its

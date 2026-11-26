@@ -1533,3 +1533,30 @@ fn b3_on_a_manual_pages_name_reads_the_page() {
         assert!(all.contains(&format!("would run MANPAGER=cat man {page} | col -b |")), "{all}");
     }
 }
+
+/// An outline lens's lines stand for the entries of the window under it
+/// (`OutlineItem::of`): no outline of their own, and a command done
+/// from one is the command it shows -- its output the window's.
+#[test]
+fn a_lens_line_is_the_command_it_shows() {
+    let (mut log, mut node, col, _server, _rx) = session();
+    let w = node.new_window(&mut log, col, "/tmp/-win", "% make\nbuilt\n% ").unwrap();
+    let b = node.state.window(w).unwrap().body_buffer().unwrap();
+    let (by, _) = log.attach(AttachmentKind::Tool, "win");
+    node.catch_up(&log).unwrap();
+    let run = OutlineItem { level: 1, title: "make".into(), at: 0, started: Some(1), ended: Some(2), exit: Some(2), output: Some((7, Some(13))), ..Default::default() };
+    node.set_outline(&mut log, b, by, Some(vec![run])).unwrap();
+    // the lens, a line for the command
+    let (lby, _) = log.attach(AttachmentKind::Tool, "outline");
+    node.catch_up(&log).unwrap();
+    let lens = apex_server::perform(&mut node, &mut log, vec![Proposal::Lens { base: w, by: lby, body: apex_server::LensBody::Scratch { name: "/tmp/-win+Outline".into(), text: "✗ make\n".into() } }]).unwrap();
+    let lb = node.state.window(lens).unwrap().body_buffer().unwrap();
+    node.set_outline(&mut log, lb, lby, Some(vec![OutlineItem { level: 1, title: "make".into(), at: 0, of: Some(0), ..Default::default() }])).unwrap();
+    assert_eq!(node.state.layout.base_of(lens), Some(w));
+    // no outline of its own: no stops, no sections, no lens of the lens
+    assert!(apex_server::outline::of(&node, lens, 3).is_none());
+    // the command, from its line: the window's, its output the window's
+    let r = apex_server::outline::run_of(&node, lens, 0).unwrap();
+    assert_eq!(r.cmd, "make");
+    assert_eq!(r.output, apex_server::outline::RunOutput::Text("built\n".into()));
+}

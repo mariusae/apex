@@ -52,9 +52,12 @@ pub fn of(node: &Node, w: WindowId, now_ms: u64) -> Option<Vec<Entry>> {
         Body::Text(b) => {
             let o = node.window_outline(w)?;
             let len = node.state.buffer(b).ok()?.text.len();
-            // a command among them (win's) says how it ran, as a terminal's
+            // a command among them (win's) says how it ran, as a terminal's;
+            // a lens's lines standing for its window's entries are not
+            // an outline of their own
             o.items
                 .iter()
+                .filter(|it| it.of.is_none())
                 .map(|it| Entry { level: it.level.clamp(1, 4), title: it.title.clone(), detail: crate::run_said_of(it.started, it.ended, it.exit, now_ms), failed: it.exit.is_some_and(|x| x != 0), at: At::Text(it.at.min(len)) })
                 .collect()
         }
@@ -102,6 +105,10 @@ pub fn run_of(node: &Node, w: WindowId, i: usize) -> Option<Run> {
     match win.body {
         Body::Text(b) => {
             let it = node.window_outline(w)?.items.get(i)?;
+            // a lens's line: the entry under it it stands for
+            if let (Some(j), Some(base)) = (it.of, node.state.layout.base_of(w)) {
+                return run_of(node, base, j);
+            }
             it.started?;
             let text = &node.state.buffer(b).ok()?.text;
             let len = text.len();

@@ -47,6 +47,10 @@ impl Acme {
     /// `run_act` where no context is at hand (a rule's ask): the
     /// clipboard follows the snarf buffer in the poll (`settle_snarf`).
     pub fn run_act_now(&mut self, w: WindowId, i: usize, act: RunAct) {
+        // a lens's line: the command it stands for, in the window under it
+        if let Some((base, j)) = self.run_home(w, i) {
+            return self.run_act_now(base, j, act);
+        }
         let Some(run) = run_of(&self.node, w, i) else { return };
         match run.output {
             RunOutput::Text(out) => self.run_done(w, &run.cmd, &out, act),
@@ -69,6 +73,9 @@ impl Acme {
     /// shell, a terminal's with a return after it; win's as B2 on an old
     /// command line types it (its rule takes the window's commands).
     pub fn run_again(&mut self, w: WindowId, i: usize, cx: &mut Context<Self>) {
+        if let Some((base, j)) = self.run_home(w, i) {
+            return self.run_again(base, j, cx);
+        }
         let Some(run) = run_of(&self.node, w, i) else { return };
         if run.cmd.trim().is_empty() {
             return;
@@ -209,12 +216,14 @@ impl Acme {
             if !l.bounds.contains(&pos) || l.scrollbar.is_some_and(|b| b.contains(&pos)) {
                 continue;
             }
+            // a win's commands, or a lens's lines standing for commands
             let o = self.node.window_outline(w)?;
-            for (entry, it) in o.items.iter().enumerate().filter(|(_, it)| it.started.is_some()) {
+            for (entry, it) in o.items.iter().enumerate() {
                 let Some(at) = l.point_of(it.at) else { continue };
                 if pos.y >= at.y && pos.y < at.y + l.line_height {
+                    let (failed, running) = self.run_state(w, entry)?;
                     let center = gpui::point(l.bounds.right() - px(DOT_IN), at.y + l.line_height / 2.);
-                    return Some(RunDot { window: w, entry, center, failed: it.exit.is_some_and(|x| x != 0), running: it.ended.is_none() });
+                    return Some(RunDot { window: w, entry, center, failed, running });
                 }
             }
             return None;
@@ -274,6 +283,18 @@ impl Acme {
     /// choosing in it does. True when the button means something there.
     pub fn dot_button(&mut self, w: WindowId, i: usize, button: gpui::MouseButton, listed: bool, cx: &mut Context<Self>) -> bool {
         use gpui::MouseButton;
+        // a lens's line: its entry in the window under it, the lens a list
+        // of them, gone when B1 goes there (as B1 on the line goes)
+        let (w, i, lens) = match self.run_home(w, i) {
+            Some((base, j)) => {
+                if button == MouseButton::Left {
+                    self.execute(ExecCtx::Window(w), "Outline", cx);
+                }
+                (base, j, true)
+            }
+            None => (w, i, false),
+        };
+        let listed = listed || lens;
         if listed && self.finder.is_some() {
             self.close_finder(cx);
         }
@@ -300,8 +321,18 @@ impl Acme {
         true
     }
 
+    /// Where entry `i` of lens `w`'s outline stands for an entry of the
+    /// window under it (`OutlineItem::of`): that window and entry.
+    pub fn run_home(&self, w: WindowId, i: usize) -> Option<(WindowId, usize)> {
+        let j = self.node.window_outline(w)?.items.get(i)?.of?;
+        Some((self.node.state.layout.base_of(w)?, j))
+    }
+
     /// How command `i` of window `w` stands, for its dot: failed, running.
     pub fn run_state(&self, w: WindowId, i: usize) -> Option<(bool, bool)> {
+        if let Some((base, j)) = self.run_home(w, i) {
+            return self.run_state(base, j);
+        }
         match self.node.state.window(w).ok()?.body {
             Body::Term(t) => {
                 let m = self.node.state.terms.get(&t)?.marks.iter().filter(|m| m.started.is_some() || m.cmd.is_some()).nth(i)?;

@@ -592,7 +592,7 @@ impl Win {
                 let at = self.prompt_at.take().unwrap_or(self.p);
                 let title = cmd.map(|c| c.split_whitespace().collect::<Vec<_>>().join(" ")).filter(|c| !c.is_empty()).unwrap_or_else(|| "a command".into());
                 // its output from here, the output point, as it comes
-                self.cmds.push(OutlineItem { level: 1, title, at, started: Some(now_ms()), ended: None, exit: None, output: Some((self.p, None)) });
+                self.cmds.push(OutlineItem { level: 1, title, at, started: Some(now_ms()), ended: None, exit: None, output: Some((self.p, None)), of: None });
                 if self.cmds.len() > MOST_CMDS {
                     self.cmds.drain(..self.cmds.len() - MOST_CMDS);
                 }
