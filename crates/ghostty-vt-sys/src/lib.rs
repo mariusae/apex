@@ -88,6 +88,7 @@ extern "C" {
     fn apex_vt_mode(vt: *mut ApexVt, which: i32) -> bool;
     fn apex_vt_set_colors(vt: *mut ApexVt, fg: u32, bg: u32, palette: *const u32);
     fn apex_vt_size(vt: *mut ApexVt, scrollback: *mut u64, total: *mut u64, at_bottom: *mut i32);
+    fn apex_vt_wrapped(vt: *mut ApexVt, y: u32) -> i32;
     fn apex_vt_text(vt: *mut ApexVt, x0: u16, y0: u32, x1: u16, y1: u32, out: *mut u8, cap: usize) -> isize;
     fn apex_vt_next_event(vt: *mut ApexVt, data: *mut *const u8, len: *mut usize) -> i32;
 }
@@ -212,8 +213,17 @@ impl Terminal {
         Screen { cols, rows, cells: &self.cells[..cols as usize * rows as usize], cursor: (cx, cy), cursor_visible: visible != 0, top, links }
     }
 
+    /// Whether row `y` of the whole screen (the history first) was
+    /// soft-wrapped, its line going on in the row below; false for a
+    /// hard line end, or a row that is not there.
+    pub fn wrapped(&mut self, y: u32) -> bool {
+        // SAFETY: the handle is ours.
+        unsafe { apex_vt_wrapped(self.vt, y) != 0 }
+    }
+
     /// The text between two places on the whole screen (the history
-    /// first), the end exclusive.
+    /// first), both ends included; rows are joined by a newline, except
+    /// where one soft-wrapped, and none follows the last.
     pub fn text(&mut self, from: (u16, u32), to: (u16, u32)) -> String {
         let mut buf = vec![0u8; 4096];
         loop {
@@ -379,6 +389,21 @@ mod tests {
         assert_eq!(t.text((0, 0), (4, 0)), "line0");
         assert_eq!(t.text((1, 0), (2, 0)), "in");
         assert_eq!(t.text((0, 0), (4, 1)), "line0\nline1");
+    }
+
+    #[test]
+    fn a_row_in_the_history_says_whether_it_wrapped() {
+        let mut t = Terminal::new(8, 3, 100).unwrap();
+        t.write(b"abcdefghij\r\nxy\r\n");
+        for i in 0..6 {
+            t.write(format!("l{i}\r\n").as_bytes());
+        }
+        let (sb, total, _) = t.size();
+        assert!(sb >= 2, "the wrapped line went into the history");
+        assert!(t.wrapped(0), "the row the text ran off");
+        assert!(!t.wrapped(1), "a hard newline is not a wrap");
+        assert!(!t.wrapped(2));
+        assert!(!t.wrapped(total as u32 + 5), "no such row");
     }
 
     #[test]

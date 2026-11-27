@@ -548,7 +548,7 @@ fn terminal_selection_follows_the_scrollback_and_keys_scroll_to_the_bottom() {
     let n: u64 = shown[r][5..].parse().unwrap();
     let line = top + r as u64;
     let Some(Proposal::Snarf { text }) = server.term_text(t, (0, line), (0, line + 2)) else { panic!("no text") };
-    assert_eq!(text, format!("line-{n}\nline-{}", n + 1));
+    assert_eq!(text, format!("line-{n}\nline-{}\n", n + 1), "through the line end, as in a body");
     let Some(Proposal::Snarf { text }) = server.term_text(t, (5, line), (7, line)) else { panic!("no text") };
     assert_eq!(text, shown[r][5..7]);
     assert!(server.term_text(t, (3, line), (3, line)).is_none());

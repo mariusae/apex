@@ -481,8 +481,21 @@ void apex_vt_size(ApexVt *vt, uint64_t *out_scrollback, uint64_t *out_total, int
   *out_at_bottom = at_bottom;
 }
 
-// The text between two points of the whole screen (history first), the
-// end exclusive; `out` holds it, and the length is returned, or -1.
+// Whether row `y` of the whole screen (history first) was soft-wrapped:
+// its line goes on in the row below. 0 for a hard line end or no such row.
+int apex_vt_wrapped(ApexVt *vt, uint32_t y) {
+  GhosttyGridRef ref = GHOSTTY_INIT_SIZED(GhosttyGridRef);
+  GhosttyPoint p = {.tag = GHOSTTY_POINT_TAG_SCREEN, .value = {.coordinate = {.x = 0, .y = y}}};
+  GhosttyRow row = 0;
+  bool wrap = false;
+  if (ghostty_terminal_grid_ref(vt->term, p, &ref) != GHOSTTY_SUCCESS) return 0;
+  if (ghostty_grid_ref_row(&ref, &row) != GHOSTTY_SUCCESS) return 0;
+  if (ghostty_row_get(row, GHOSTTY_ROW_DATA_WRAP, &wrap) != GHOSTTY_SUCCESS) return 0;
+  return wrap;
+}
+
+// The text between two points of the whole screen (history first), both
+// ends included; `out` holds it, and the length is returned, or -1.
 intptr_t apex_vt_text(ApexVt *vt, uint16_t x0, uint32_t y0, uint16_t x1, uint32_t y1, uint8_t *out, size_t cap) {
   GhosttyGridRef start = GHOSTTY_INIT_SIZED(GhosttyGridRef);
   GhosttyGridRef end = GHOSTTY_INIT_SIZED(GhosttyGridRef);

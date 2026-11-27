@@ -426,25 +426,7 @@ impl TermHost {
     /// term shard numbers them, the end exclusive; wrapped lines join.
     pub fn text(&self, p0: (u16, u64), p1: (u16, u64)) -> String {
         let Ok(mut t) = self.term.lock() else { return String::new() };
-        let (_, total, _) = t.size();
-        let last_col = self.cols.saturating_sub(1);
-        let last_row = total.saturating_sub(1) as u32;
-        let (p0, p1) = if (p0.1, p0.0) <= (p1.1, p1.0) { (p0, p1) } else { (p1, p0) };
-        // an exclusive end, as an inclusive one on the cell before it
-        let end = if p1.0 == 0 {
-            if p1.1 <= p0.1 {
-                return String::new();
-            }
-            (last_col, p1.1 - 1)
-        } else {
-            (p1.0 - 1, p1.1)
-        };
-        let at = |(c, l): (u16, u64)| (c.min(last_col), (l.min(u32::MAX as u64) as u32).min(last_row));
-        let (a, b) = (at(p0), at(end));
-        if (a.1, a.0) > (b.1, b.0) {
-            return String::new();
-        }
-        t.text(a, b)
+        grid_text(&mut t, self.cols, p0, p1)
     }
 
     pub fn scroll(&mut self, delta: isize) {
@@ -904,6 +886,38 @@ pub fn default_color(index: usize) -> Rgb8 {
     }
 }
 
+/// The text of `t` (`cols` wide) between two positions, `(column,
+/// history line)`, the end exclusive; wrapped lines join. An end at
+/// column 0 of a later line takes the line end before it, a newline
+/// where that row ended hard, as a body's selection through a line does.
+fn grid_text(t: &mut Terminal, cols: u16, p0: (u16, u64), p1: (u16, u64)) -> String {
+    let (_, total, _) = t.size();
+    let last_col = cols.saturating_sub(1);
+    let last_row = total.saturating_sub(1) as u32;
+    let (p0, p1) = if (p0.1, p0.0) <= (p1.1, p1.0) { (p0, p1) } else { (p1, p0) };
+    // an exclusive end, as an inclusive one on the cell before it; ghostty
+    // puts no newline after the last row, so one ending hard gets it here
+    let (end, nl) = if p1.0 == 0 {
+        if p1.1 <= p0.1 {
+            return String::new();
+        }
+        let row = p1.1 - 1;
+        ((last_col, row), row <= last_row as u64 && !t.wrapped(row as u32))
+    } else {
+        ((p1.0 - 1, p1.1), false)
+    };
+    let at = |(c, l): (u16, u64)| (c.min(last_col), (l.min(u32::MAX as u64) as u32).min(last_row));
+    let (a, b) = (at(p0), at(end));
+    if (a.1, a.0) > (b.1, b.0) {
+        return String::new();
+    }
+    let mut s = t.text(a, b);
+    if nl {
+        s.push('\n');
+    }
+    s
+}
+
 #[cfg(test)]
 mod scroll_tests {
     use super::*;
@@ -931,6 +945,28 @@ mod scroll_tests {
         // a key brings it back to the live screen
         assert!(h.scroll_to_bottom());
         assert_ne!(first_row(&h), row);
+    }
+
+    /// A selection's text ends as a body's does: through a line end
+    /// (an end at column 0 of a later line) it takes the newline, but
+    /// not where the row soft-wrapped, nor past the last row.
+    #[test]
+    fn a_selection_through_a_line_end_takes_its_newline() {
+        let mut t = Terminal::new(8, 4, 100).unwrap();
+        // "abcdefghij" wraps after h; the history holds the first rows
+        t.write(b"alpha\r\nbeta\r\nabcdefghij\r\ngamma\r\ndelta\r\nend");
+        let (sb, total, _) = t.size();
+        assert!(sb >= 2, "the first lines went into the history");
+        let mut text = |p0, p1| grid_text(&mut t, 8, p0, p1);
+        assert_eq!(text((0, 0), (0, 1)), "alpha\n", "a whole line, in the history");
+        assert_eq!(text((0, 0), (0, 2)), "alpha\nbeta\n", "lines");
+        assert_eq!(text((0, 2), (0, 4)), "abcdefghij\n", "a wrapped line, both rows");
+        assert_eq!(text((0, 2), (0, 3)), "abcdefgh", "its first row: no newline at the wrap");
+        assert_eq!(text((0, 3), (0, 4)), "ij\n", "its second row");
+        assert_eq!(text((0, 0), (3, 1)), "alpha\nbet", "an end mid-line");
+        assert_eq!(text((1, 0), (3, 0)), "lp");
+        assert_eq!(text((0, 1), (0, 1)), "");
+        assert_eq!(text((0, 6), (0, total + 3)), "end", "an end past the last row");
     }
 
     /// A line longer than the terminal is wide comes in the shard as
