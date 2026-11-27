@@ -2002,7 +2002,14 @@ impl Element for TextElement {
                 // acme's wintaglines counts the rows of text and adds the
                 // line a trailing newline leaves the caret on; the text's
                 // lines have that empty one already, counted once here
-                acme.tag_need.insert(view, (wrapped - usize::from(trailing), trailing));
+                // the tiling sized this tag from the last frame's count (or
+                // none, a new tag): one that changed (the picker closed, a
+                // rename) is laid out again in the next frame, as acme's
+                // winresize does at once
+                let need = (wrapped - usize::from(trailing), trailing);
+                if acme.tag_need.insert(view, need) != Some(need) {
+                    window.request_animation_frame();
+                }
             } else if kind == Kind::Body {
                 // acme's frame: from the origin, which may be anywhere in a
                 // line -- the view starts at the row it is on, the line
