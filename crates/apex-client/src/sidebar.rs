@@ -335,7 +335,7 @@ impl Acme {
                 div()
                     .relative()
                     .size_full()
-                    .rounded_b(px(10.))
+                    .rounded_b(px(crate::card_radius()))
                     .bg(rgb(card))
                     .border_l_1()
                     .border_r_1()

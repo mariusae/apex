@@ -1098,13 +1098,10 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
             titlebar: Some(TitlebarOptions {
                 title: Some(title.into()),
                 appears_transparent: true,
-                // the lights on the bar's centre line: their own height is
-                // 13 as AppKit draws them, so the room above is what is
-                // left of the bar (measured on screen, not by the book)
-                // on the sidebar card's top row, as Manifold puts them: the
-                // close button's middle 20 in from the card's edge and half
-                // the row down (the card is 6 in from the window's)
-                traffic_light_position: Some(gpui::point(px(14.), px(main_lights_y()))),
+                // the lights on the bar's centre line, LIGHTS_X in: the
+                // sidebar's card goes round them as far from them above as
+                // beside them (`card_top`, `card_radius`)
+                traffic_light_position: Some(gpui::point(px(LIGHTS_X), px(main_lights_y()))),
             }),
             // the title bar is ours: AppKit must not take a drag there as a
             // window move (a tab dragged reorders the tabs); the strip's
@@ -1298,12 +1295,56 @@ fn offline_window(cx: &mut gpui::Context<Acme>, url: &SessionUrl, files: Vec<Str
     acme
 }
 
-/// How far down the window's buttons stand on the title bar.
+/// How far in the window's buttons stand: the close button's left.
+const LIGHTS_X: f32 = 14.;
+
+/// How big a window's button is, as AppKit makes them (14 square on
+/// macOS 26; asked, not assumed, as it has changed).
+fn lights_size() -> f32 {
+    static SIZE: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
+    *SIZE.get_or_init(|| {
+        use objc::runtime::Object;
+        use objc::{class, msg_send, sel, sel_impl};
+        #[repr(C)]
+        #[derive(Clone, Copy)]
+        struct Rect {
+            x: f64,
+            y: f64,
+            w: f64,
+            h: f64,
+        }
+        // NSWindowStyleMaskTitled | Closable | Miniaturizable | Resizable
+        const MASK: u64 = 1 | 2 | 4 | 8;
+        // SAFETY: a class method making a button not in any window, on the
+        // main thread at launch; its frame read, then it goes
+        unsafe {
+            let b: *mut Object = msg_send![class!(NSWindow), standardWindowButton: 0u64 forStyleMask: MASK];
+            if b.is_null() {
+                return 14.;
+            }
+            let f: Rect = msg_send![b, frame];
+            if f.h > 0. { f.h as f32 } else { 14. }
+        }
+    })
+}
+
+/// How far down the window's buttons stand on the title bar: centred on
+/// it, as the sidebar's button and the top tag are.
 pub(crate) fn main_lights_y() -> f32 {
-    // AppKit's buttons are 16 high in their frames (the circle in the
-    // middle of it): centred on the bar, as the sidebar's button and the
-    // top tag are
-    (title_h() - 16.) / 2.
+    ((title_h() - lights_size()) / 2.).round()
+}
+
+/// The sidebar card's top: as far above the close button as its edge is
+/// beside it (the card `sidebar::INSET` in from the window's side).
+pub(crate) fn card_top() -> f32 {
+    (main_lights_y() - (LIGHTS_X - sidebar::INSET)).max(2.)
+}
+
+/// The sidebar card's corners: round the window's buttons, the gap to
+/// them and a button's half -- the corner and the close button one
+/// curve, as a Mac sidebar's are.
+pub(crate) fn card_radius() -> f32 {
+    LIGHTS_X - sidebar::INSET + lights_size() / 2.
 }
 
 /// The title bar's height: a Mac title bar's with a toolbar's air, or the
@@ -1542,6 +1583,7 @@ impl app::Acme {
         // is the rest's
         let card_top = side.then(|| {
             let inset = sidebar::INSET;
+            let top = card_top();
             let toggle = div()
                 .id("title-sidebar-card")
                 .flex_none()
@@ -1568,10 +1610,10 @@ impl app::Acme {
                     div()
                         .absolute()
                         .left(px(inset))
-                        .top(px(inset))
+                        .top(px(top))
                         .w(px(shell::SIDEBAR_W - 2. * inset))
-                        .h(px(h - inset))
-                        .rounded_t(px(10.))
+                        .h(px(h - top))
+                        .rounded_t(px(card_radius()))
                         .bg(gpui::rgb(t.strip))
                         .border_t_1()
                         .border_l_1()
@@ -1581,11 +1623,13 @@ impl app::Acme {
                         .flex_row()
                         .items_center()
                         .child(bare("title-lights").w(px(lights - inset)))
-                        .child(toggle)
+                        // centred on the bar, as the window's buttons are,
+                        // not on the card, which starts lower
+                        .child(toggle.mt(px(-top)))
                         .child(bare("title-card-rest").flex_1()),
                 )
                 // the ground round the card's top, a title bar's too
-                .child(bare("title-card-edge").absolute().top(px(0.)).left(px(0.)).w_full().h(px(inset)))
+                .child(bare("title-card-edge").absolute().top(px(0.)).left(px(0.)).w_full().h(px(top)))
         });
         div()
             .id("title-bar")
