@@ -76,6 +76,9 @@ pub struct TagEdit {
     pub caret_since: Instant,
     /// Where what it edits is drawn.
     pub at: Bounds<Pixels>,
+    /// B1 pressed in the field and still held: B2 cuts its selection,
+    /// B3 pastes over it, acme's chords.
+    pub b1: bool,
 }
 
 /// A row of the picker: a window open on the folder or a file in it
@@ -182,7 +185,8 @@ impl Acme {
             // the picker at once; a second click, a double-click, takes it
             // away for the field (`mouse_down`, `picker_opened`)
             // (and B2 while it is held, the 1-2 chord, snarfs the path to
-            // there: `snarf_head`)
+            // there: `snarf_head`; B3, the 1-3 chord, renames the window
+            // to the snarf buffer: `paste_head`)
             (MouseButton::Left, Atom::Dir(_) | Atom::Name) => {
                 self.open_path_picker(w, atom, cx);
                 self.picker_opened = Some((w, Instant::now()));
@@ -224,6 +228,28 @@ impl Acme {
         }
         let _ = self.node.append(&mut self.log, apex_core::Shard::Layout, apex_core::Op::Layout(apex_core::LayoutOp::Snarf { text: text.clone() }));
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+    }
+
+    /// The 1-3 chord on a part of a tag's path, as acme's over the name
+    /// at the start of its tag (swept with B1, pasted over with B3)
+    /// would rename the window: its name the snarf buffer's, all of it
+    /// (there is no sweep over part of the path), resolved as a name
+    /// typed in the field is and taken as the field's is on return. A
+    /// snarf of more than a line, or of nothing, is not a name: nothing
+    /// happens. The picker the B1 press brought down goes, and nothing
+    /// is plumbed.
+    pub fn paste_head(&mut self, w: WindowId, cx: &mut Context<Self>) {
+        self.picker = None;
+        self.picker_opened = None;
+        let snarf = cx.read_from_clipboard().and_then(|c| c.text()).unwrap_or_else(|| self.node.state.layout.snarf.clone());
+        let name = snarf.trim();
+        if name.contains('\n') || self.node.state.window(w).is_err() {
+            return;
+        }
+        if let Some(p) = self.rename_to(w, name) {
+            apex_server::perform(&mut self.node, &mut self.log, vec![p]);
+            self.after();
+        }
     }
 
     /// The button come up where it went down on a verb: run it.
@@ -286,7 +312,7 @@ impl Acme {
             }
         }
         self.picker = None;
-        self.tag_edit = Some(TagEdit { window: w, part, field, caret_since: Instant::now(), at });
+        self.tag_edit = Some(TagEdit { window: w, part, field, caret_since: Instant::now(), at, b1: false });
         cx.notify();
     }
 
@@ -305,6 +331,17 @@ impl Acme {
         cx.notify();
     }
 
+    /// B2 or B3 pressed on the field: with B1 held in it, a chord, which
+    /// cuts (`cut`) or pastes (`paste`) as the Edit menu does there; else
+    /// a click off it, for `mouse_down`.
+    fn tag_edit_chord(&mut self, what: &str, cx: &mut Context<Self>) {
+        if !self.tag_edit.as_ref().is_some_and(|e| e.b1) {
+            return;
+        }
+        cx.stop_propagation();
+        self.overlay_edit(what, cx);
+    }
+
     /// The field put away, what it says taken: the window moved to the
     /// path typed, or its label changed -- on return, and as well when
     /// the user goes on to something else (a click anywhere, a command
@@ -317,11 +354,7 @@ impl Acme {
         }
         let text = e.field.trim().to_string();
         let proposal = match e.part {
-            Part::Path if text.is_empty() => None,
-            Part::Path => {
-                let path = self.absolute_for(e.window, &text);
-                (path != self.node.window_path(e.window)).then_some(Proposal::SetPath { window: e.window, path })
-            }
+            Part::Path => self.rename_to(e.window, &text),
             Part::Label => {
                 let label = Some(text).filter(|t| !t.is_empty());
                 (label != self.node.window_label(e.window)).then_some(Proposal::SetLabel { window: e.window, label })
@@ -331,6 +364,16 @@ impl Acme {
             apex_server::perform(&mut self.node, &mut self.log, vec![p]);
             self.after();
         }
+    }
+
+    /// The window moved to a path typed (or pasted) for it: nothing for
+    /// nothing typed, or for the path it has.
+    fn rename_to(&self, w: WindowId, text: &str) -> Option<Proposal> {
+        if text.is_empty() {
+            return None;
+        }
+        let path = self.absolute_for(w, text);
+        (path != self.node.window_path(w)).then_some(Proposal::SetPath { window: w, path })
     }
 
     /// A path typed for window `w`, absolute: a relative one is in the
@@ -614,7 +657,18 @@ impl Acme {
                 .text_color(rgb(t.text))
                 .child(self.overlay_mark_by(px(4.)))
                 .child(crate::field::field_view(&e.field, caret_on(e.caret_since), hint, true))
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _, _, cx| {
+                        if let Some(e) = this.tag_edit.as_mut() {
+                            e.b1 = true;
+                        }
+                        cx.stop_propagation();
+                    }),
+                )
+                // B2 or B3 while B1 is held in it: the chords, cut and paste
+                .on_mouse_down(MouseButton::Middle, cx.listener(|this, _, _, cx| this.tag_edit_chord("cut", cx)))
+                .on_mouse_down(MouseButton::Right, cx.listener(|this, _, _, cx| this.tag_edit_chord("paste", cx)));
             out.push(deferred(anchored().position(point(e.at.left() - px(5.), e.at.top())).child(field)).with_priority(2).into_any_element());
         }
         if let Some(p) = &self.picker {

@@ -3810,12 +3810,21 @@ impl Acme {
     /// textselect acts on its text for as long as a button is held.
     /// True if it was one.
     fn chord(&mut self, button: MouseButton, cx: &mut Context<Self>) -> bool {
-        // B1 held on a tag's path: B2 snarfs it
+        // B1 held on a tag's path: B2 snarfs it, B3 renames the window
+        // to the snarf buffer
         if let Some((w, atom)) = self.head_b1 {
-            if button == MouseButton::Middle {
-                self.head_b1 = None;
-                self.snarf_head(w, atom, cx);
-                return true;
+            match button {
+                MouseButton::Middle => {
+                    self.head_b1 = None;
+                    self.snarf_head(w, atom, cx);
+                    return true;
+                }
+                MouseButton::Right => {
+                    self.head_b1 = None;
+                    self.paste_head(w, cx);
+                    return true;
+                }
+                _ => {}
             }
         }
         // B2 held on a tag's path: B1 gives it the selection, as in text
@@ -4074,6 +4083,9 @@ impl Acme {
         self.last_mouse = e.position;
         if e.button == MouseButton::Left {
             self.head_b1 = None;
+            if let Some(t) = self.tag_edit.as_mut() {
+                t.b1 = false;
+            }
         }
         // a button let go anywhere but on the outline's row it went down
         // on (which takes it first): that row done with it, B2 not sent
@@ -4292,11 +4304,16 @@ impl Acme {
             }
             return;
         }
-        // B1 held on a tag's path: option snarfs it, as B2 would
+        // B1 held on a tag's path: option snarfs it, as B2 would;
+        // command renames the window to the snarf buffer, as B3 would
         if let Some((w, atom)) = self.head_b1 {
             if e.modifiers.alt && !prev.alt {
                 self.head_b1 = None;
                 self.snarf_head(w, atom, cx);
+                cx.notify();
+            } else if e.modifiers.platform && !prev.platform {
+                self.head_b1 = None;
+                self.paste_head(w, cx);
                 cx.notify();
             }
             return;
