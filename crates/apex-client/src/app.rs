@@ -5687,7 +5687,13 @@ impl Acme {
                 }
                 "tab" => self.type_text(v, "\t"),
                 "escape" => {
-                    if let Some(s) = self.typed_start.remove(&v) {
+                    // acme's texttype cuts a non-empty selection (with
+                    // snarf) before Kesc, which then finds nothing typed;
+                    // otherwise Esc selects what was typed
+                    if q0 < q1 {
+                        self.typed_start.remove(&v);
+                        self.cut(v, cx);
+                    } else if let Some(s) = self.typed_start.remove(&v) {
                         let _ = self.node.select(&mut self.log, v, s.min(q1), q1);
                     }
                     typed = false;
