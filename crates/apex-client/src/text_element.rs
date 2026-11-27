@@ -860,10 +860,24 @@ pub struct TextLayout {
 impl TextLayout {
     /// Map a window position to a rune offset.
     pub fn offset_at(&self, pos: Point<Pixels>) -> usize {
+        self.offset_in(pos, self.padded)
+    }
+
+    /// Where a sweep with the pointer at `pos` ends: as `offset_at`, but
+    /// off a tag's card, above or below it, the pad no longer counts, so
+    /// the sweep runs to the text's start or end -- as acme's frcharofpt
+    /// gives the frame's end for any point below its last line.
+    pub fn sweep_offset_at(&self, pos: Point<Pixels>) -> usize {
+        self.offset_in(pos, self.padded && pos.y >= self.bounds.top() && pos.y <= self.bounds.bottom())
+    }
+
+    /// The rune offset at `pos`; with `pad`, a point over the first row or
+    /// under the last is taken to be on it.
+    fn offset_in(&self, pos: Point<Pixels>, pad: bool) -> usize {
         let Some(first) = self.lines.first() else { return self.text_len };
         let x = pos.x - self.text_origin.x;
         let mut y = pos.y - self.text_origin.y;
-        if self.padded {
+        if pad {
             let last = self.lines.last().unwrap();
             y = y.max(first.y).min(last.y + last.height(self.line_height) - px(0.5));
         }

@@ -3956,7 +3956,7 @@ impl Acme {
         // paste's selection) stays, whatever the pointer does before release
         if let Some(d) = self.mouse.b1.filter(|_| !self.mouse.chorded) {
             if let Some(l) = self.layouts.get(&d.view) {
-                let off = l.offset_at(pos);
+                let off = l.sweep_offset_at(pos);
                 let above = pos.y < l.bounds.top();
                 let below = pos.y > l.bounds.bottom();
                 let _ = self.node.select(&mut self.log, d.view, d.anchor.min(off), d.anchor.max(off));
@@ -3993,7 +3993,7 @@ impl Acme {
         for (drag, kind) in [(self.mouse.b2, HlKind::Exec), (self.mouse.b3, HlKind::Look)] {
             if let Some(d) = drag {
                 if let Some(l) = self.layouts.get(&d.view) {
-                    let off = l.offset_at(pos);
+                    let off = l.sweep_offset_at(pos);
                     self.hl = Some((d.view, d.anchor.min(off), d.anchor.max(off), kind));
                     changed = true;
                 }
@@ -4447,7 +4447,9 @@ impl Acme {
         self.sync();
         if let Some(l) = self.layouts.get(&v) {
             let edge = point(pos.x, if dir < 0 { l.bounds.top() } else { l.bounds.bottom() - px(1.) });
-            let off = l.offset_at(edge);
+            // a tag's pad is inside its edge: the pointer, off the card,
+            // takes the sweep to the text's start or end
+            let off = if l.padded { l.sweep_offset_at(pos) } else { l.offset_at(edge) };
             let _ = self.node.select(&mut self.log, v, d.anchor.min(off), d.anchor.max(off));
         }
         true
