@@ -55,6 +55,11 @@ pub enum ServerEvent {
     /// A shell command started, as `pid`: the session's record of it
     /// (`MetaOp::ProcStart`). Sent before its `Shell`, on the same channel.
     ProcStarted { pid: u32, name: String, cmd: String, dir: String, ctx: ExecCtx, kind: ProcKind, out: ProcOut },
+    /// A command an Edit program ran ended, as `status` (acme's wait
+    /// message). Sent after its `ProcStarted`, before the program's `Edit`.
+    ProcEnded { pid: u32, status: String },
+    /// An Edit program with file or shell commands finished (`run_edit`).
+    Edit(Box<EditRun>),
     /// A watched directory reported this path.
     File(PathBuf),
     /// Time to look again without being told (`Server::rescan`).
@@ -74,6 +79,103 @@ pub enum ShellMode {
     Errors { dir: Option<String> },
     /// Output replaces a range of a buffer (`|cmd`, `<cmd`).
     Replace { dir: Option<String>, buffer: BufferId, version: Version, q0: usize, q1: usize },
+}
+
+/// An Edit program the server ran (`Server::run_edit`), as it ended.
+pub struct EditRun {
+    ctx: ExecCtx,
+    exec: Seq,
+    window: WindowId,
+    buffer: BufferId,
+    /// The body's version the program ran over.
+    version: Version,
+    /// Where its errors go.
+    dir: String,
+    outcome: Result<apex_edit::Outcome, String>,
+    /// The interpreter, with the last pattern the program left.
+    edit: apex_edit::Edit,
+    /// The files it wrote, with their contents' hashes.
+    written: Vec<(PathBuf, String)>,
+    /// The hash of the window's own file as the program last read or
+    /// wrote it.
+    own_hash: Option<String>,
+    /// `w` refused to write over the file changed under the buffer.
+    refused_stale: bool,
+}
+
+/// The world as an Edit program run by the server reaches it: commands
+/// run as B2 runs them (rc, acme's environment, in the window's
+/// directory, the session's processes while they run), names relative to
+/// the window's directory.
+struct EditHost {
+    ctx: ExecCtx,
+    dir: PathBuf,
+    env: Vec<(String, String)>,
+    /// The buffer's file, absolute.
+    own: Option<String>,
+    modified: bool,
+    /// The file changed under the buffer, and `w` has not been refused
+    /// once for it: acme's putfile refuses, then writes the next time.
+    stale: bool,
+    tx: UnboundedSender<ServerEvent>,
+    running: std::sync::Arc<std::sync::Mutex<Vec<Running>>>,
+    written: Vec<(PathBuf, String)>,
+    own_hash: Option<String>,
+    refused_stale: bool,
+}
+
+impl apex_edit::Host for EditHost {
+    fn path(&self, name: &str) -> String {
+        resolve(&self.dir, name).to_string_lossy().to_string()
+    }
+
+    fn modified(&self) -> bool {
+        self.modified
+    }
+
+    fn run(&mut self, cmd: &str, input: Option<String>) -> apex_edit::Result<apex_edit::Ran> {
+        let name = command_name(cmd);
+        let (tx, n, c, d, ctx) = (self.tx.clone(), name.clone(), cmd.to_string(), self.dir.display().to_string(), self.ctx);
+        let started: Box<dyn FnOnce(u32) + Send> = Box::new(move |pid| {
+            let _ = tx.unbounded_send(ServerEvent::ProcStarted { pid, name: n, cmd: c, dir: d, ctx, kind: ProcKind::Command, out: ProcOut::Errors { dir: None } });
+        });
+        let (out, err, exit, name, pid) = shell_in_started(&name, self.ctx, cmd, &self.dir, input, Some(self.running.clone()), &self.env, Some(started));
+        if let Some(pid) = pid {
+            let _ = self.tx.unbounded_send(ServerEvent::ProcEnded { pid, status: exit.clone() });
+        }
+        let mut errors = err;
+        if !exit.is_empty() {
+            errors.push_str(&format!("{name}: exit {exit}\n"));
+        }
+        Ok(apex_edit::Ran { out, errors })
+    }
+
+    fn read(&mut self, path: &str) -> apex_edit::Result<String> {
+        if Path::new(path).is_dir() {
+            return Err(apex_edit::Error::new(format!("{path} is a directory")));
+        }
+        let bytes = std::fs::read(path).map_err(|e| apex_edit::Error::new(format!("can't open {path}: {e}")))?;
+        let text = String::from_utf8_lossy(&bytes).to_string();
+        if self.own.as_deref() == Some(path) {
+            self.own_hash = Some(Text::new(&text).content_hash());
+        }
+        Ok(text)
+    }
+
+    fn write(&mut self, path: &str, text: &str) -> apex_edit::Result<()> {
+        let own = self.own.as_deref() == Some(path);
+        if own && self.stale {
+            self.refused_stale = true;
+            return Err(apex_edit::Error::new(format!("{path}: modified since last read")));
+        }
+        std::fs::write(path, text).map_err(|e| apex_edit::Error::new(format!("{path}: {e}")))?;
+        let hash = Text::new(text).content_hash();
+        self.written.push((PathBuf::from(path), hash.clone()));
+        if own {
+            self.own_hash = Some(hash);
+        }
+        Ok(())
+    }
 }
 
 /// A command the server started and has not seen finish: `Kill name`
@@ -143,6 +245,9 @@ pub struct Server {
     watches: watch::Watches,
     /// Stale buffers `Put` has refused once (acme: the second Put writes).
     put_warned: BTreeSet<BufferId>,
+    /// The Edit interpreter for the programs run here, which keeps the
+    /// last pattern across them.
+    edit: apex_edit::Edit,
     running: std::sync::Arc<std::sync::Mutex<Vec<Running>>>,
     /// The session's record of its processes, to go into the metalog
     /// (`flush_procs`): what started, was renamed, or ended.
@@ -223,6 +328,7 @@ impl Server {
             clips: Vec::new(),
             watches,
             put_warned: BTreeSet::new(),
+            edit: apex_edit::Edit::new(),
             running: Default::default(),
             procs: Vec::new(),
             plumbs: HashMap::new(),
@@ -839,6 +945,10 @@ impl Server {
             ServerEvent::ProcStarted { pid, name, cmd, dir, ctx, kind, out } => {
                 self.procs.push(MetaOp::ProcStart { pid, name, cmd, dir, origin: ctx, kind, out, started: now_secs() });
             }
+            ServerEvent::ProcEnded { pid, status } => {
+                self.procs.push(MetaOp::ProcExit { pid, status, ended: now_secs() });
+            }
+            ServerEvent::Edit(run) => props.append(&mut self.edit_done(view, *run)),
             ServerEvent::Shell { ctx, exec, out, err, mode, name, exit, pid } => {
                 let dir = mode_dir(&mode);
                 // acme's waitthread: the process ends, then any exit
@@ -1160,6 +1270,12 @@ impl Server {
         }
         let mut props = Vec::new();
         match cmd {
+            "Edit" => {
+                // one with file or shell commands (`Node::edit_is_servers`)
+                let w = win.ok_or("Edit needs a window")?;
+                self.run_edit(view, w, seq, text[cmd.len()..].trim(), dir)?;
+                return Ok(None);
+            }
             "Put" => {
                 let w = win.ok_or("Put needs a window")?;
                 props.append(&mut self.put(view, w, arg)?);
@@ -1263,6 +1379,125 @@ impl Server {
             }
         }
         Ok(Some(props))
+    }
+
+    /// Run an Edit program over window `w`'s body on a thread of its own:
+    /// the commands it runs and the files it reads and writes are done as
+    /// the program reaches them (`EditHost`), so they happen in its order,
+    /// as in acme, and its changes all come back at the end, to be made
+    /// only if the body is still the text the program ran over.
+    fn run_edit(&mut self, view: &Node, w: WindowId, seq: Seq, program: &str, dir: PathBuf) -> Result<(), String> {
+        let cmds = apex_edit::commands(program).map_err(|e| e.0)?;
+        // u acts on the leader's history at once, and that is not here
+        if cmds.contains(&'u') {
+            return Err("Edit: u cannot be used with file and shell commands".into());
+        }
+        let ctx = ExecCtx::Window(w);
+        let b = view.state.window(w).map_err(|e| e.to_string())?.body_buffer().ok_or("Edit: not a text window")?;
+        let buf = view.state.buffer(b).map_err(|e| e.to_string())?;
+        let v = buf.view(ViewId::Body(w));
+        let own = match buf.name.as_str() {
+            "" => None,
+            n if n.starts_with('/') => Some(n.to_string()),
+            n => Some(resolve(&dir, n).to_string_lossy().to_string()),
+        };
+        let mut host = EditHost {
+            ctx,
+            dir: dir.clone(),
+            env: self.command_env(view, ctx),
+            own: own.clone(),
+            modified: buf.dirty() && buf.kind == WinKind::File && !buf.scratch,
+            stale: buf.stale && !self.put_warned.contains(&b),
+            tx: self.tx.clone(),
+            running: self.running.clone(),
+            written: Vec::new(),
+            own_hash: None,
+            refused_stale: false,
+        };
+        let (text, dot, version, program) = (buf.text.clone(), (v.q0, v.q1), buf.version, program.to_string());
+        let mut edit = self.edit.clone();
+        let tx = self.tx.clone();
+        std::thread::spawn(move || {
+            let outcome = edit.run_with(&text, dot, own.as_deref(), &program, &mut host).map_err(|e| e.0);
+            let run = EditRun { ctx, exec: seq, window: w, buffer: b, version, dir: dir.to_string_lossy().to_string(), outcome, edit, written: host.written, own_hash: host.own_hash, refused_stale: host.refused_stale };
+            let _ = tx.unbounded_send(ServerEvent::Edit(Box::new(run)));
+        });
+        Ok(())
+    }
+
+    /// An Edit program's end: what it printed to the errors window, its
+    /// changes to the leader (`Proposal::EditDone`), then what it did to
+    /// the window's name and the windows it opened or closed.
+    fn edit_done(&mut self, view: &Node, run: EditRun) -> Vec<Proposal> {
+        let EditRun { ctx, exec, window: w, buffer: b, version, dir, outcome, edit, written, own_hash, refused_stale } = run;
+        self.edit = edit;
+        for (path, hash) in written {
+            self.watches.written.insert(path, hash);
+        }
+        if refused_stale {
+            self.put_warned.insert(b);
+        } else if own_hash.is_some() {
+            self.put_warned.remove(&b);
+        }
+        let mut props = Vec::new();
+        let errdir = Some(dir.clone());
+        let out = match outcome {
+            Ok(out) => out,
+            Err(reason) => {
+                props.push(Proposal::Errors { dir: errdir, text: format!("{reason}\n") });
+                props.push(Proposal::Status { ctx, exec, status: ExecStatusOp::Failed(reason) });
+                return props;
+            }
+        };
+        let output = out.output_string();
+        if !output.is_empty() {
+            props.push(Proposal::Errors { dir: errdir.clone(), text: output });
+        }
+        for wmsg in &out.warnings {
+            props.push(Proposal::Errors { dir: errdir.clone(), text: format!("{wmsg}\n") });
+        }
+        let clean = if out.clean == Some(true) { own_hash } else { None };
+        let mark = out.clean == Some(false);
+        let changes: Vec<(usize, usize, String)> = out.changes.iter().map(|c| (c.q0, c.nd, c.text.iter().collect())).collect();
+        if changes.is_empty() && clean.is_none() && !mark {
+            // nothing to hold to the text it ran over: dot, wherever it is
+            props.push(Proposal::Select { view: ViewId::Body(w), q0: out.dot.0, q1: out.dot.1 });
+        } else {
+            props.push(Proposal::EditDone { window: w, version, changes, dot: out.dot, clean, mark });
+        }
+        if let Some(name) = out.name {
+            props.push(Proposal::SetPath { window: w, path: name });
+        }
+        let path = Path::new(&dir);
+        for i in out.intents {
+            match i {
+                apex_edit::Intent::Open { names } => {
+                    let col = column_of(view, ctx).ok().or_else(|| view.state.layout.cols.last().map(|c| c.id));
+                    for name in names {
+                        match col.ok_or_else(|| "no column".to_string()).and_then(|col| self.open_file(col, Some(w), path, &name, None)) {
+                            Ok(p) => props.push(p),
+                            Err(e) => props.push(Proposal::Errors { dir: errdir.clone(), text: format!("{e}\n") }),
+                        }
+                    }
+                }
+                apex_edit::Intent::Delete { names } if names.is_empty() => props.push(Proposal::Exec { ctx, text: "Del".into() }),
+                apex_edit::Intent::Delete { names } => {
+                    // acme's D1 on each window on the file: Del's rule
+                    for name in names {
+                        let wins: Vec<WindowId> = view.state.windows.keys().copied().filter(|x| view.window_path(*x) == name).collect();
+                        if wins.is_empty() {
+                            props.push(Proposal::Errors { dir: errdir.clone(), text: format!("no such file \"{name}\"\n") });
+                        }
+                        for x in wins {
+                            props.push(Proposal::Exec { ctx: ExecCtx::Window(x), text: "Del".into() });
+                        }
+                    }
+                }
+                apex_edit::Intent::Undo { .. } => {} // refused before it ran
+            }
+        }
+        props.push(Proposal::Status { ctx, exec, status: ExecStatusOp::Done });
+        props
     }
 
     fn spawn_shell(&mut self, ctx: ExecCtx, exec: Seq, cmd: String, dir: PathBuf, stdin: Option<String>, mode: ShellMode, env: Vec<(String, String)>) {

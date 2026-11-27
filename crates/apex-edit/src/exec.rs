@@ -25,38 +25,89 @@ impl Rg {
     }
 }
 
-/// `> cmd`, `< cmd`, `| cmd`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PipeKind {
-    /// `>`: send the range to the command's standard input
-    To,
-    /// `<`: replace the range with the command's output
-    From,
-    /// `|`: replace the range with the command's output given the range
-    Through,
-}
-
-/// Something the caller has to do; the crate itself has no effects.
+/// Something the caller has to do after the run; the crate itself has
+/// no effects but those its [`Host`] performs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Intent {
     /// `u n`: undo the last `n` changes (`n < 0` redoes).
     Undo { n: i64 },
-    /// `w [name]`: write the range to the file.
-    Write { name: Option<String>, q0: usize, q1: usize },
-    /// `r [name]`: replace the range with the file's contents.
-    Read { name: Option<String>, q0: usize, q1: usize },
-    /// `e [name]`: replace the whole buffer with the file's contents.
-    Load { name: Option<String> },
-    /// `f [name]`: set (or print) the buffer's name.
-    SetName { name: Option<String> },
-    /// `b name`: make that buffer current.
-    Browse { name: String },
-    /// `B list`: open windows on the named files.
-    Open { list: String },
-    /// `D list`: delete windows on the named files (the current one if empty).
-    Delete { list: String },
-    /// `< | >`: run a shell command over the range.
-    Pipe { kind: PipeKind, cmd: String, q0: usize, q1: usize },
+    /// `B list`: open windows on the named files, as the host names them
+    /// ([`Host::path`]).
+    Open { names: Vec<String> },
+    /// `D list`: close the windows on the named files; the current one if
+    /// `names` is empty.
+    Delete { names: Vec<String> },
+}
+
+/// What a command run by a [`Host`] gave back.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Ran {
+    /// Its standard output.
+    pub out: String,
+    /// What goes to `+Errors` beside it: its standard error, how it ended.
+    pub errors: String,
+}
+
+/// The world, as the file and shell commands (`< | > e r w`, `B <cmd`)
+/// reach it: acme's `runpipe`, `loadfile` and `putfile`. Each call is
+/// synchronous, so a program's commands happen in the order it gives
+/// them, as in acme.
+pub trait Host {
+    /// A file name as a program gave it, made into the buffer's kind of
+    /// name (acme's `dirname`: relative to the window's directory).
+    fn path(&self, name: &str) -> String {
+        name.to_string()
+    }
+    /// Whether the buffer has changes its file has not (`f` says so).
+    fn modified(&self) -> bool {
+        false
+    }
+    /// Run shell command `cmd` with `input` (if any) as its standard input.
+    fn run(&mut self, cmd: &str, input: Option<String>) -> Result<Ran>;
+    /// The contents of file `path`.
+    fn read(&mut self, path: &str) -> Result<String>;
+    /// Write `text` to file `path`.
+    fn write(&mut self, path: &str, text: &str) -> Result<()>;
+}
+
+/// No world at all: every file and shell command fails.
+pub struct NoHost;
+
+impl Host for NoHost {
+    fn run(&mut self, _cmd: &str, _input: Option<String>) -> Result<Ran> {
+        err("shell commands are not supported here")
+    }
+    fn read(&mut self, _path: &str) -> Result<String> {
+        err("file commands are not supported here")
+    }
+    fn write(&mut self, _path: &str, _text: &str) -> Result<()> {
+        err("file commands are not supported here")
+    }
+}
+
+/// Commands that need a [`Host`]: the file and shell commands, and `B`
+/// and `D`, which act on other windows.
+pub const WORLDLY: &[char] = &['<', '|', '>', 'e', 'r', 'w', 'f', 'b', 'B', 'D'];
+
+/// The commands in `program`, nested ones too, without running it. `//`
+/// parses whatever the last pattern was.
+pub fn commands(program: &str) -> Result<Vec<char>> {
+    fn walk(c: &Cmd, out: &mut Vec<char>) {
+        out.push(c.cmdc);
+        if let Arg::Cmd(sub) = &c.arg {
+            walk(sub, out);
+        }
+        if let Some(n) = &c.next {
+            walk(n, out);
+        }
+    }
+    let mut pat = vec!['x'];
+    let mut parser = Parser::new(program, &mut pat);
+    let mut out = Vec::new();
+    while let Some(cmd) = parser.parsecmd(0)? {
+        walk(&cmd, &mut out);
+    }
+    Ok(out)
 }
 
 /// Something a program printed.
@@ -80,6 +131,13 @@ pub struct Outcome {
     pub intents: Vec<Intent>,
     /// acme's warnings (changes out of sequence).
     pub warnings: Vec<String>,
+    /// How the file commands left the buffer against its file:
+    /// `Some(true)` clean (`e` or `r` of its own file over all of it, or
+    /// `w` of all of it to its own file with nothing changed), `Some(false)`
+    /// changed (only part of it written to its own file).
+    pub clean: Option<bool>,
+    /// The name `e` or `f` gave the buffer.
+    pub name: Option<String>,
 }
 
 impl Outcome {
@@ -96,7 +154,7 @@ impl Outcome {
 
 /// An `Edit` interpreter. Keeps the last regular expression, which the
 /// empty pattern `//` refers to, across programs.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Edit {
     last_pat: Vec<char>,
 }
@@ -107,7 +165,8 @@ impl Edit {
     }
 
     /// Run `program` over `text` with the given dot. `name` is the buffer's
-    /// file name, used by `=` and the file commands.
+    /// file name, used by `=` and the file commands, which fail: there is
+    /// no [`Host`].
     pub fn run(
         &mut self,
         text: &dyn Text,
@@ -115,10 +174,24 @@ impl Edit {
         name: Option<&str>,
         program: &str,
     ) -> Result<Outcome> {
+        self.run_with(text, dot, name, program, &mut NoHost)
+    }
+
+    /// [`Edit::run`], with the file and shell commands done by `host` as
+    /// the program reaches them.
+    pub fn run_with(
+        &mut self,
+        text: &dyn Text,
+        dot: (usize, usize),
+        name: Option<&str>,
+        program: &str,
+        host: &mut dyn Host,
+    ) -> Result<Outcome> {
         let mut parser = Parser::new(program, &mut self.last_pat);
         let mut ex = Exec {
             t: text,
-            name,
+            name: name.map(String::from),
+            host,
             dot: Rg::new(dot.0.min(text.len()), dot.1.min(text.len())),
             addr: Rg::default(),
             elog: Elog::new(),
@@ -126,19 +199,31 @@ impl Edit {
             intents: Vec::new(),
             nest: 0,
             re: None,
+            nowin: false,
+            renamed: false,
+            editclean: false,
+            wrote: None,
         };
         while let Some(cmd) = parser.parsecmd(0)? {
             ex.cmdexec(&cmd)?;
         }
         let (changes, warnings) = ex.elog.finish();
         let dot = adjust_dot((ex.dot.q0, ex.dot.q1), &changes, text.len());
-        Ok(Outcome { changes, dot, output: ex.out, intents: ex.intents, warnings })
+        let clean = match (ex.editclean, ex.wrote) {
+            (true, _) => Some(true),
+            (_, Some(true)) if changes.is_empty() => Some(true),
+            (_, Some(false)) => Some(false),
+            _ => None,
+        };
+        let name = if ex.renamed { ex.name } else { None };
+        Ok(Outcome { changes, dot, output: ex.out, intents: ex.intents, warnings, clean, name })
     }
 }
 
 struct Exec<'a> {
     t: &'a dyn Text,
-    name: Option<&'a str>,
+    name: Option<String>,
+    host: &'a mut dyn Host,
     /// the current selection (acme's `t->q0`, `t->q1`)
     dot: Rg,
     /// the address of the command being executed (acme's global `addr`)
@@ -149,6 +234,14 @@ struct Exec<'a> {
     nest: i32,
     /// the last compiled regular expression
     re: Option<Regex>,
+    /// `B` ran: no window is current (acme's `clearcurtext`)
+    nowin: bool,
+    /// `e` or `f` changed `name`
+    renamed: bool,
+    /// acme's `editclean`: the buffer is its file's contents
+    editclean: bool,
+    /// `w` wrote to the buffer's own file: all of it (`true`) or part
+    wrote: Option<bool>,
 }
 
 fn err<T>(s: impl Into<String>) -> Result<T> {
@@ -181,6 +274,9 @@ impl<'a> Exec<'a> {
     }
 
     fn cmdexec(&mut self, cp: &Cmd) -> Result<()> {
+        if self.nowin && !matches!(cp.cmdc, 'b' | 'B') && !(cp.cmdc == 'D' && !skipbl(cp.text()).is_empty()) {
+            return err("no current window");
+        }
         let ct = lookup(cp.cmdc);
         if let Some(ct) = ct {
             if ct.defaddr != DefAddr::No {
@@ -261,81 +357,147 @@ impl<'a> Exec<'a> {
                 self.intents.push(Intent::Undo { n: cp.num });
                 Ok(())
             }
-            'w' => {
-                if self.elog.is_modified() {
-                    return err("can't write file with pending modifications");
-                }
-                let Some(name) = self.cmdname(cp.text()) else {
-                    return err("no name specified for 'w' command");
-                };
-                let a = self.addr;
-                self.intents.push(Intent::Write { name: Some(name), q0: a.q0, q1: a.q1 });
-                Ok(())
-            }
-            'e' => {
-                let name = self.cmdname(cp.text());
-                if name.is_none() {
-                    return err("no file name given");
-                }
-                self.intents.push(Intent::Load { name });
-                Ok(())
-            }
-            'r' => {
-                let name = self.cmdname(cp.text());
-                if name.is_none() {
-                    return err("no file name given");
-                }
-                let a = self.addr;
-                self.intents.push(Intent::Read { name, q0: a.q0, q1: a.q1 });
-                Ok(())
-            }
-            'f' => {
-                let name = to_string(skipbl(cp.text()));
-                let name = if name.is_empty() { None } else { Some(name) };
-                self.intents.push(Intent::SetName { name });
-                Ok(())
-            }
-            'b' => {
-                let name = to_string(skipbl(cp.text()));
-                if name.is_empty() {
-                    return err("no such file\"\"");
-                }
-                self.intents.push(Intent::Browse { name });
-                Ok(())
-            }
+            'w' => self.w_cmd(cp),
+            'e' | 'r' => self.e_cmd(cp),
+            'f' => self.f_cmd(cp),
+            'b' => err("b command is not supported"),
             'B' => {
-                let list = to_string(skipbl(cp.text()));
-                if list.is_empty() {
+                let names = self.filelist(cp.text())?;
+                if names.is_empty() {
                     return err("no file name given");
                 }
-                self.intents.push(Intent::Open { list });
+                self.intents.push(Intent::Open { names });
+                self.nowin = true;
                 Ok(())
             }
             'D' => {
-                self.intents.push(Intent::Delete { list: to_string(skipbl(cp.text())) });
+                let names = self.filelist(cp.text())?;
+                self.intents.push(Intent::Delete { names });
                 Ok(())
             }
             'X' | 'Y' => err(format!("{} command is not supported", cp.cmdc)),
-            '<' | '|' | '>' => {
-                let cmd = to_string(skipbl(cp.text()));
-                if cmd.is_empty() {
-                    return err(format!("no command specified for {}", cp.cmdc));
-                }
-                let kind = match cp.cmdc {
-                    '<' => PipeKind::From,
-                    '|' => PipeKind::Through,
-                    _ => PipeKind::To,
-                };
-                let a = self.addr;
-                self.dot = a;
-                self.intents.push(Intent::Pipe { kind, cmd, q0: a.q0, q1: a.q1 });
-                Ok(())
-            }
+            '<' | '|' | '>' => self.pipe_cmd(cp),
             c => err(format!("unknown command {c} in cmdexec")),
         }
     }
 
     // ---- commands ---------------------------------------------------------
+
+    /// acme's `runpipe`: `<` and `|` replace the range with the command's
+    /// output, `>` sends it to `+Errors`.
+    fn pipe_cmd(&mut self, cp: &Cmd) -> Result<()> {
+        let cmd = to_string(skipbl(cp.text()));
+        if cmd.is_empty() {
+            return err(format!("no command specified for {}", cp.cmdc));
+        }
+        let a = self.addr;
+        let input = if cp.cmdc == '<' { None } else { Some(self.t.read(a.q0, a.q1).into_iter().collect()) };
+        let ran = self.host.run(&cmd, input)?;
+        if cp.cmdc == '>' {
+            self.print(ran.out);
+        } else {
+            let out: Vec<char> = ran.out.chars().collect();
+            self.elog.replace(self.t, a.q0, a.q1, &out)?;
+        }
+        self.print(ran.errors);
+        self.dot = a;
+        Ok(())
+    }
+
+    /// acme's `e_cmd`, for `e` and `r`: the range (all of it for `e`)
+    /// replaced with the file's contents. `e` names the buffer after the
+    /// file, and the buffer is clean if it now holds its own file.
+    fn e_cmd(&mut self, cp: &Cmd) -> Result<()> {
+        let (mut q0, mut q1) = (self.addr.q0, self.addr.q1);
+        if cp.cmdc == 'e' {
+            (q0, q1) = (0, self.len());
+        }
+        let allreplaced = q0 == 0 && q1 == self.len();
+        let Some(name) = self.cmdname(cp.text()) else {
+            return err("no file name given");
+        };
+        let samename = self.name.as_deref() == Some(name.as_str());
+        let mut text = self.host.read(&name)?;
+        if cp.cmdc == 'e' && !samename {
+            self.setname(name.clone());
+        }
+        let nulls = text.contains('\0');
+        if nulls {
+            text.retain(|c| c != '\0');
+        }
+        let r: Vec<char> = text.chars().collect();
+        self.elog.replace(self.t, q0, q1, &r)?;
+        if nulls {
+            self.print(format!("{name}: NUL bytes elided\n"));
+        } else if allreplaced && samename {
+            self.editclean = true;
+        }
+        Ok(())
+    }
+
+    /// acme's `w_cmd` and `putfile`: written to its own file, all of the
+    /// buffer leaves it clean, part of it leaves it changed.
+    fn w_cmd(&mut self, cp: &Cmd) -> Result<()> {
+        if self.elog.is_modified() {
+            return err("can't write file with pending modifications");
+        }
+        let Some(name) = self.cmdname(cp.text()) else {
+            return err("no name specified for 'w' command");
+        };
+        let a = self.addr;
+        let text: String = self.t.read(a.q0, a.q1).into_iter().collect();
+        self.host.write(&name, &text)?;
+        if self.name.as_deref() == Some(name.as_str()) {
+            self.wrote = Some(a.q0 == 0 && a.q1 == self.len());
+        }
+        Ok(())
+    }
+
+    /// acme's `f_cmd`: the buffer renamed if a name is given, and its name
+    /// and state printed as acme's `pfilename` does.
+    fn f_cmd(&mut self, cp: &Cmd) -> Result<()> {
+        let s = skipbl(cp.text());
+        if !s.is_empty() {
+            let name = self.host.path(&to_string(s));
+            if self.name.as_deref() != Some(name.as_str()) {
+                self.setname(name);
+            }
+        }
+        let dirty = self.renamed || self.host.modified();
+        let name = self.name.clone().unwrap_or_default();
+        self.print(format!("{}+. {name}\n", if dirty { '\'' } else { ' ' }));
+        Ok(())
+    }
+
+    /// acme's `filelist`: the names in the text, or in the output of the
+    /// command after a `<`.
+    fn filelist(&mut self, text: &[char]) -> Result<Vec<String>> {
+        let s = skipbl(text);
+        let list = match s.split_first() {
+            Some(('<', cmd)) => {
+                let cmd = to_string(skipbl(cmd));
+                if cmd.is_empty() {
+                    return err("no command specified for <");
+                }
+                let ran = self.host.run(&cmd, None)?;
+                self.print(ran.errors);
+                ran.out
+            }
+            _ => to_string(s),
+        };
+        Ok(list.split_whitespace().map(|n| self.host.path(n)).collect())
+    }
+
+    fn setname(&mut self, name: String) {
+        self.name = Some(name);
+        self.renamed = true;
+    }
+
+    fn print(&mut self, s: String) {
+        if !s.is_empty() {
+            self.out.push(Printed::Text(s));
+        }
+    }
 
     fn append(&mut self, cp: &Cmd, p: usize) -> Result<()> {
         let text = cp.text();
@@ -394,7 +556,7 @@ impl<'a> Exec<'a> {
             _ => return err("newline expected"),
         };
         let mut line = String::new();
-        if let Some(name) = self.name {
+        if let Some(name) = &self.name {
             line.push_str(name);
             line.push(':');
         }
@@ -636,15 +798,17 @@ impl<'a> Exec<'a> {
         Ok(())
     }
 
+    /// acme's `cmdname`: the name given, as the host names files, else
+    /// the buffer's own.
     fn cmdname(&self, s: &[char]) -> Option<String> {
         if s.is_empty() {
-            return self.name.map(|n| n.to_string());
+            return self.name.clone();
         }
         let s = skipbl(s);
         if s.is_empty() {
             return None;
         }
-        Some(to_string(s))
+        Some(self.host.path(&to_string(s)))
     }
 
     // ---- addresses --------------------------------------------------------

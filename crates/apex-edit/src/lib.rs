@@ -5,12 +5,15 @@
 //! Everything is in *runes* (`char`), never bytes. The crate is pure: it reads
 //! a [`Text`], runs a program, and returns a validated list of [`Change`]s in
 //! original coordinates plus the new dot, printed output, and any
-//! [`Intent`]s for commands with effects (`e r w b B D u < | >`), which the
-//! caller carries out.
+//! [`Intent`]s for commands with effects on the session (`u B D`), which
+//! the caller carries out. The file and shell commands (`e r w f < | >`)
+//! reach the world through a [`Host`] the caller supplies
+//! ([`Edit::run_with`]), synchronously, as in acme.
 //!
 //! Known, deliberate departures from acme:
 //! - the fixed-size tables of the C code (NLIST, NPROG, NSTACK) are dynamic;
-//! - `X`/`Y` (loops over files) are not supported: apex has no file menu.
+//! - `X`/`Y` (loops over files) are not supported: apex has no file menu;
+//! - nor is `b`: a program edits one window's text.
 
 pub mod elog;
 pub mod exec;
@@ -18,7 +21,7 @@ pub mod parse;
 pub mod regx;
 
 pub use elog::Change;
-pub use exec::{Edit, Intent, Outcome, PipeKind, Printed};
+pub use exec::{commands, Edit, Host, Intent, NoHost, Outcome, Printed, Ran, WORLDLY};
 pub use regx::{Range, Rangeset, Regex};
 
 /// Read-only, rune-indexed text.

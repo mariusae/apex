@@ -240,6 +240,23 @@ fn edit_language_is_lowered_into_entries() {
 }
 
 #[test]
+fn edit_programs_that_reach_the_world_are_the_servers() {
+    for p in ["Edit ,|sort", "Edit ,>diff $% -", "Edit <date", "Edit w", "Edit 2r f", "Edit e", "Edit f x", "Edit B a.c", "Edit D", "Edit ,x/a/ { c/b/\n|tr a-z A-Z\n}"] {
+        assert_eq!(Node::resolve(p), Handler::Server, "{p}");
+    }
+    // text commands stay the leader's, and so does a program that does
+    // not parse, to say why
+    for p in ["Edit ,x/foo/ c/bar/", "Edit ,p", "Edit u", "Edit ,q"] {
+        assert_eq!(Node::resolve(p), Handler::Leader, "{p}");
+    }
+    // the leader cannot run one: it fails, and nothing before is applied
+    let (mut log, mut node, col) = session();
+    let w = node.new_window(&mut log, col, "f", "abc\n").unwrap();
+    assert!(node.run_edit(&mut log, w, ",x/b/ c/B/\n,|sort").is_err());
+    assert_eq!(text(&node, w), "abc\n");
+}
+
+#[test]
 fn commands_are_logged_with_their_handler() {
     let (mut log, mut node, col) = session();
     let w = node.new_window(&mut log, col, "f", "hello world").unwrap();

@@ -4,7 +4,7 @@
 
 mod common;
 
-use apex_edit::{Intent, PipeKind};
+use apex_edit::Intent;
 use common::ours;
 
 struct Case {
@@ -232,24 +232,17 @@ fn intents() {
     assert_eq!(r.intents, vec![Intent::Undo { n: 3 }]);
     let r = ours("abc\n", (0, 4), "u-1");
     assert_eq!(r.intents, vec![Intent::Undo { n: -1 }]);
-    let r = ours("abc\n", (1, 2), "|sort");
-    assert_eq!(r.intents, vec![Intent::Pipe { kind: PipeKind::Through, cmd: "sort".into(), q0: 1, q1: 2 }]);
-    let r = ours("abc\n", (1, 2), ",>wc -l");
-    assert_eq!(r.intents, vec![Intent::Pipe { kind: PipeKind::To, cmd: "wc -l".into(), q0: 0, q1: 4 }]);
-    let r = ours("abc\n", (1, 2), "<date");
-    assert_eq!(r.intents, vec![Intent::Pipe { kind: PipeKind::From, cmd: "date".into(), q0: 1, q1: 2 }]);
-    let r = ours("abc\n", (1, 2), "w /tmp/x");
-    assert_eq!(r.intents, vec![Intent::Write { name: Some("/tmp/x".into()), q0: 0, q1: 4 }]);
-    let r = ours("abc\n", (1, 2), "2,3w /tmp/x");
-    assert!(r.error.is_some()); // address out of range on a one-line file
-    let r = ours("abc\n", (1, 2), "e /tmp/x");
-    assert_eq!(r.intents, vec![Intent::Load { name: Some("/tmp/x".into()) }]);
-    let r = ours("abc\n", (1, 2), "r /tmp/x");
-    assert_eq!(r.intents, vec![Intent::Read { name: Some("/tmp/x".into()), q0: 1, q1: 2 }]);
     let r = ours("abc\n", (1, 2), "B a.c b.c");
-    assert_eq!(r.intents, vec![Intent::Open { list: "a.c b.c".into() }]);
+    assert_eq!(r.intents, vec![Intent::Open { names: vec!["a.c".into(), "b.c".into()] }]);
     let r = ours("abc\n", (1, 2), "D");
-    assert_eq!(r.intents, vec![Intent::Delete { list: "".into() }]);
+    assert_eq!(r.intents, vec![Intent::Delete { names: vec![] }]);
+    // with no host, the file and shell commands fail, and nothing before
+    // them is applied
+    let r = ours("abc\n", (1, 2), ",x/b/ c/B/\n,|sort");
+    assert_eq!(r.error.as_deref(), Some("shell commands are not supported here"));
+    assert_eq!(r.text, "abc\n");
+    fails("abc\n", (1, 2), "2,3w /tmp/x", "address out of range"); // a one-line file
+    fails("abc\n", (1, 2), "e /tmp/x", "file commands are not supported here");
     fails("abc\n", (0, 1), "|", "no command specified for |");
     fails("abc\n", (0, 1), "d\nw", "can't write file with pending modifications");
     fails("abc\n", (0, 1), "w", "no name specified for 'w' command");

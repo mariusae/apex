@@ -1898,7 +1898,9 @@ impl Node {
     }
 
     /// Run an Edit program on a window's body as leader and lower its
-    /// changes into entries. Effects come back as intents.
+    /// changes into entries. Effects come back as intents. A program with
+    /// file or shell commands is the server's (`edit_is_servers`); here
+    /// they fail, before anything is changed.
     pub fn run_edit(&mut self, log: &mut Log, window: WindowId, program: &str) -> Result<EditRun> {
         self.end_typing();
         let view = ViewId::Body(window);
@@ -1910,12 +1912,8 @@ impl Node {
         };
         let name = if buf_name.is_empty() { None } else { Some(buf_name.as_str()) };
         let out = self.edit.run(&text, dot, name, program)?;
-        let group = self.new_group();
-        for c in &out.changes {
-            let t: String = c.text.iter().collect();
-            self.edit_op(log, b, c.q0, c.nd, &t, group)?;
-        }
-        self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::Select { view, q0: out.dot.0, q1: out.dot.1 }))?;
+        let changes: Vec<(usize, usize, String)> = out.changes.iter().map(|c| (c.q0, c.nd, c.text.iter().collect())).collect();
+        self.lower_edit(log, view, &changes, out.dot)?;
         let output = out.output_string();
         let warnings = out.warnings.clone();
         let mut intents = Vec::new();
@@ -1930,6 +1928,50 @@ impl Node {
             }
         }
         Ok(EditRun { output, intents, warnings })
+    }
+
+    /// An Edit program's changes (in original coordinates, in application
+    /// order) made to a view's buffer as one undo step, and its dot.
+    fn lower_edit(&mut self, log: &mut Log, view: ViewId, changes: &[(usize, usize, String)], dot: (usize, usize)) -> Result<()> {
+        let b = self.view_buffer(view)?;
+        let group = self.new_group();
+        for (q0, nd, t) in changes {
+            self.edit_op(log, b, *q0, *nd, t, group)?;
+        }
+        self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::Select { view, q0: dot.0, q1: dot.1 }))?;
+        Ok(())
+    }
+
+    /// An Edit program the server ran (`edit_is_servers`), its changes
+    /// made to the window's body: only if the body is still at `version`,
+    /// the text the program ran over. Then the buffer is clean at the
+    /// version that leaves, with `clean` on disk, if its file commands
+    /// left it so, or marked changed (`mark`).
+    pub fn apply_edit(&mut self, log: &mut Log, window: WindowId, version: Version, changes: &[(usize, usize, String)], dot: (usize, usize), clean: Option<String>, mark: bool) -> Result<()> {
+        self.end_typing();
+        let view = ViewId::Body(window);
+        let b = self.view_buffer(view)?;
+        let now = self.state.buffer(b)?.version;
+        if now != version {
+            return Err(CoreError::Missing("Edit: not applied: the window changed while it ran".into()));
+        }
+        self.lower_edit(log, view, changes, dot)?;
+        if let Some(hash) = clean {
+            let version = self.state.buffer(b)?.version;
+            self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::Clean { version, disk_hash: Some(hash) }))?;
+        } else if mark {
+            self.mark(log, view)?;
+        }
+        Ok(())
+    }
+
+    /// Is this Edit program the server's to run? One with file or shell
+    /// commands, or that acts on other windows, reaches the world, which
+    /// is the server's: it runs the whole program there, each command as
+    /// the program reaches it, as acme does. One that does not parse is
+    /// the leader's, to say why.
+    pub fn edit_is_servers(program: &str) -> bool {
+        apex_edit::commands(program).map(|cs| cs.iter().any(|c| apex_edit::WORLDLY.contains(c))).unwrap_or(false)
     }
 
     /// acme's `errorwin`: the directory a window's errors go to -- its
@@ -2185,7 +2227,11 @@ impl Node {
         if t.starts_with('|') || t.starts_with('<') || t.starts_with('>') {
             return Handler::Server;
         }
-        match t.split_whitespace().next().unwrap_or("") {
+        let verb = t.split_whitespace().next().unwrap_or("");
+        if verb == "Edit" && Node::edit_is_servers(&t[verb.len()..]) {
+            return Handler::Server;
+        }
+        match verb {
             "Cut" | "Paste" | "Snarf" | "Undo" | "Redo" | "Look" | "Edit" | "Newcol" | "Delcol" | "Del" | "Delete" | "Zerox"
             | "Stash" | "Font" | "Sort" | "Exit" | "Tab" | "Indent" | "ID" | "Send" | "View" => Handler::Leader,
             "New" if t.split_whitespace().nth(1).is_none() => Handler::Leader,
@@ -2231,6 +2277,14 @@ impl Node {
                 if len > 0 && self.window_kind(w) != WinKind::Dir && !self.winclean(log, w, true)? {
                     return Ok(Executed::Done(0));
                 }
+            }
+        }
+        // acme's e_cmd: a dirty window is asked once before it is loaded
+        // over (the server runs the program; the asking is here)
+        if let (ExecCtx::Window(w), Some(prog)) = (ctx, text.trim().strip_prefix("Edit")) {
+            let loads = apex_edit::commands(prog).map(|cs| cs.contains(&'e')).unwrap_or(false);
+            if loads && !prog.starts_with(|c: char| !c.is_whitespace()) && !self.winclean(log, w, true)? {
+                return Ok(Executed::Done(0));
             }
         }
         self.end_typing();
@@ -2342,7 +2396,7 @@ impl Node {
                     self.errors(log, dir.as_deref(), &format!("{wmsg}\n"))?;
                 }
                 if !run.intents.is_empty() {
-                    return Err(CoreError::Missing("Edit: file and pipe commands are not supported here yet".into()));
+                    return Err(CoreError::Missing("Edit: B and D are not supported here".into()));
                 }
             }
             "New" => {

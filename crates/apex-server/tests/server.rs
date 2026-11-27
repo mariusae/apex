@@ -284,6 +284,124 @@ fn shell_commands_and_pipes() {
     assert_eq!(f.state.hash(), node.state.hash());
 }
 
+fn tempdir(tag: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("apex-server-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+fn dirty(node: &Node, w: WindowId) -> bool {
+    node.state.buffer(node.state.window(w).unwrap().body_buffer().unwrap()).unwrap().dirty()
+}
+
+#[test]
+fn edit_shell_commands_run_on_the_server_in_program_order() {
+    let (mut log, mut node, col, mut server, mut rx) = session();
+    let dir = tempdir("edit-pipes");
+    std::fs::write(dir.join("f.txt"), "line one\nline two\nline three\n").unwrap();
+    let w = open(&server, &mut log, &mut node, col, &dir, "f.txt");
+    let v = ViewId::Body(w);
+    node.select(&mut log, v, 9, 17).unwrap();
+    node.insert(&mut log, v, "line TWO changed").unwrap();
+    // acme's idiom: the unsaved changes, as diff sees them
+    assert!(matches!(node.exec(&mut log, ExecCtx::Window(w), "Edit ,>diff $% -").unwrap(), Executed::Deferred(_)));
+    poll(&mut server, &mut log, &mut node);
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| errors_text(n).contains("diff: exit 1")), "{}", errors_text(&node));
+    let e = errors_text(&node);
+    assert!(e.contains("2c2\n< line two\n---\n> line TWO changed\n"), "{e}");
+    assert_eq!(exec_status(&node, w), ExecStatus::Done);
+    assert_eq!(body_text(&node, w), "line one\nline TWO changed\nline three\n");
+    // | replaces the range with the output, given it
+    node.exec(&mut log, ExecCtx::Window(w), "Edit ,|sort").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| body_text(n, w) == "line TWO changed\nline one\nline three\n"), "{}", body_text(&node, w));
+    // text edits and commands, in the program's order, as one undo step
+    let s = node.new_window(&mut log, col, "scratch", "b\na\nc\nd\n").unwrap();
+    node.exec(&mut log, ExecCtx::Window(s), "Edit 1c/z\\n/\n2<echo Q\n3,4|tr a-z A-Z").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| body_text(n, s) == "z\nQ\nC\nD\n"), "{}", body_text(&node, s));
+    node.undo(&mut log, ViewId::Body(s)).unwrap();
+    assert_eq!(body_text(&node, s), "b\na\nc\nd\n");
+    // a program with only text commands is still the leader's, done at once
+    assert!(matches!(node.exec(&mut log, ExecCtx::Window(s), "Edit ,x/c/ c/bar/").unwrap(), Executed::Done(_)));
+    assert_eq!(body_text(&node, s), "b\na\nbar\nd\n");
+    // an error stops the program and nothing of it is applied
+    node.exec(&mut log, ExecCtx::Window(s), "Edit ,x/a/ c/A/\nr /nonexistent/file").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| exec_status(n, s) != ExecStatus::Pending));
+    assert!(matches!(exec_status(&node, s), ExecStatus::Failed(_)));
+    let all: String = node.state.buffers.values().filter(|b| b.kind == WinKind::Errors).map(|b| b.text.to_string()).collect();
+    assert!(all.contains("can't open /nonexistent/file"), "{all}");
+    assert_eq!(body_text(&node, s), "b\na\nbar\nd\n");
+    // u is the leader's history, which the server cannot reach: refused
+    // before anything runs
+    node.exec(&mut log, ExecCtx::Window(s), "Edit ,c/x/\nu\n,>touch made").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    assert!(matches!(exec_status(&node, s), ExecStatus::Failed(_)));
+    assert_eq!(body_text(&node, s), "b\na\nbar\nd\n");
+    // a follower replaying the log agrees with everything that happened
+    let mut f = Node::new(AttachmentId(77));
+    f.catch_up(&log).unwrap();
+    assert_eq!(f.state.hash(), node.state.hash());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn edit_file_commands_read_write_and_name_the_file() {
+    let (mut log, mut node, col, mut server, mut rx) = session();
+    let dir = tempdir("edit-files");
+    let path = dir.join("f.txt");
+    std::fs::write(&path, "one\n").unwrap();
+    std::fs::write(dir.join("g.txt"), "gee\n").unwrap();
+    let w = open(&server, &mut log, &mut node, col, &dir, "f.txt");
+    let v = ViewId::Body(w);
+    let run = |log: &mut Log, node: &mut Node, server: &mut Server, rx: &mut UnboundedReceiver<ServerEvent>, prog: &str| {
+        let n = node.state.window(w).unwrap().execs.len();
+        node.exec(log, ExecCtx::Window(w), &format!("Edit {prog}")).unwrap();
+        poll(server, log, node);
+        assert!(pump_until(log, node, server, rx, |nd| nd.state.window(w).unwrap().execs.len() > n && exec_status(nd, w) != ExecStatus::Pending), "{prog}");
+        assert_eq!(exec_status(node, w), ExecStatus::Done, "{prog}: {}", errors_text(node));
+    };
+    // w: all of it to its own file, which leaves it clean
+    node.select(&mut log, v, 0, 0).unwrap();
+    node.insert(&mut log, v, "zero\n").unwrap();
+    assert!(dirty(&node, w));
+    run(&mut log, &mut node, &mut server, &mut rx, "w");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "zero\none\n");
+    assert!(!dirty(&node, w));
+    // w elsewhere, relative to the window's directory
+    run(&mut log, &mut node, &mut server, &mut rx, "2w h.txt");
+    assert_eq!(std::fs::read_to_string(dir.join("h.txt")).unwrap(), "one\n");
+    assert!(!dirty(&node, w));
+    // r: the range replaced with the file
+    run(&mut log, &mut node, &mut server, &mut rx, "2r g.txt");
+    assert_eq!(body_text(&node, w), "zero\ngee\n");
+    assert!(dirty(&node, w));
+    // e of a modified window warns once, as Get does, then loads
+    node.exec(&mut log, ExecCtx::Window(w), "Edit e").unwrap();
+    assert!(errors_text(&node).contains("f.txt modified"), "{}", errors_text(&node));
+    assert_eq!(body_text(&node, w), "zero\ngee\n");
+    run(&mut log, &mut node, &mut server, &mut rx, "e");
+    assert_eq!(body_text(&node, w), "zero\none\n");
+    assert!(!dirty(&node, w));
+    // f: renamed, so changed, and said so
+    run(&mut log, &mut node, &mut server, &mut rx, "f new.txt");
+    let new = dir.join("new.txt").to_string_lossy().to_string();
+    assert_eq!(node.window_path(w), new);
+    assert!(dirty(&node, w));
+    assert!(errors_text(&node).contains(&format!("'+. {new}\n")), "{}", errors_text(&node));
+    // B opens a window on each file named
+    run(&mut log, &mut node, &mut server, &mut rx, "B g.txt");
+    let g = dir.join("g.txt").to_string_lossy().to_string();
+    let gw = node.state.windows.keys().copied().find(|x| node.window_path(*x) == g).expect("a window on g.txt");
+    assert_eq!(body_text(&node, gw), "gee\n");
+    // D closes them
+    run(&mut log, &mut node, &mut server, &mut rx, "D g.txt");
+    assert!(node.state.window(gw).is_err());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn newterm_runs_a_shell() {
     let (mut log, mut node, _col, mut server, mut rx) = session();

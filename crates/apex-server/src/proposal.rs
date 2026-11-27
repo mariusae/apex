@@ -90,6 +90,13 @@ pub enum Proposal {
     /// `ReplaceRange` a change would leave it half written between them.
     /// Dot is left where the edits leave it.
     Edits { buffer: BufferId, version: Version, edits: Vec<(usize, usize, String)> },
+    /// An Edit program the server ran over a window's body (one with file
+    /// or shell commands): its changes, in original coordinates and in
+    /// application order, made as one undo step only if the body is still
+    /// at `version`, and its dot. The buffer is then clean with `clean` on
+    /// disk (`e`, `w` of all of it), or marked changed (`mark`: part of it
+    /// written to its file).
+    EditDone { window: WindowId, version: Version, changes: Vec<(usize, usize, String)>, dot: (usize, usize), clean: Option<String>, mark: bool },
     /// Text for `dir`'s errors window (acme's errorwin), or the session's.
     Errors { dir: Option<String>, text: String },
     /// The outcome of an exec.
@@ -368,6 +375,10 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             // from the end backwards, so that each range is where it was
             let runs: Vec<(usize, usize, String)> = edits.into_iter().rev().collect();
             node.replace_runs(log, buffer, &runs)?;
+            Ok(None)
+        }
+        Proposal::EditDone { window, version, changes, dot, clean, mark } => {
+            node.apply_edit(log, window, version, &changes, dot, clean, mark)?;
             Ok(None)
         }
         Proposal::Errors { dir, text } => {
