@@ -77,7 +77,7 @@ impl Render for Settings {
                     .flex()
                     .flex_col()
                     .gap(px(8.))
-                    .child(self.check("contrast", "Lift a terminal's colours that don't read on its paper", theme::contrast(), cx, |cx| crate::shell::toggle_contrast(cx)))
+                    .child(self.check("contrast", "Apply contrast correction to terminals", theme::contrast(), cx, |cx| crate::shell::toggle_contrast(cx)))
                     .child(self.check("blink", "Blink the cursor", theme::blink(), cx, |cx| crate::shell::toggle_blink(cx)))
                     .child(self.check("smooth", "Move the cursor smoothly", theme::smooth_caret(), cx, |cx| crate::shell::toggle_smooth_caret(cx)))
                     .child(self.check("layout", "Animate the layout's changes", theme::animate_layout(), cx, |cx| crate::shell::toggle_layout_animations(cx))),
