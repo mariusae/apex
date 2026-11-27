@@ -363,6 +363,14 @@ impl Render for Acme {
         } else {
             CursorStyle::Arrow
         };
+        // a drop from another app leaves its drag's cursor, which gpui,
+        // asking the arrow before and after, never sets again: set once
+        // the window is active (a drop from the Finder activates it a
+        // moment later)
+        if self.dropped && window.is_window_active() {
+            self.dropped = false;
+            crate::dragdata::cursor_again(window, pointer);
+        }
         // a lane down a text's left: its handle (a row high) or its
         // scrollbar (all the way down), with its own pointer
         let lane = |h: Option<f32>, c: CursorStyle| {

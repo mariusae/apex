@@ -83,6 +83,7 @@ impl Acme {
     /// Files dropped at `pos`: their paths where they land (above). Whether
     /// anything took them.
     pub fn drop_paths(&mut self, paths: &[PathBuf], pos: Point<Pixels>, cx: &mut Context<Self>) -> bool {
+        self.dropped = true;
         let paths: Vec<String> = paths.iter().map(|p| p.to_string_lossy().into_owned()).filter(|p| !p.is_empty()).collect();
         if paths.is_empty() {
             return false;

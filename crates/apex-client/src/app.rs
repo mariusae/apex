@@ -574,6 +574,9 @@ pub struct Acme {
     /// Windows held while what was dropped on them goes to the host
     /// (`drops`): their keys thrown away, Escape stopping it.
     pub(crate) held: HashMap<WindowId, crate::drops::Held>,
+    /// Something was dropped here: the cursor the drag left is put right
+    /// once the window is active (`dragdata::cursor_again`).
+    pub(crate) dropped: bool,
     /// A place to go once its file is open (asked of the server).
     pub pending_goto: Option<Loc>,
     /// A notification in a tab still attaching (⌘G): taken once it is
@@ -1937,6 +1940,7 @@ impl Acme {
             fullscreen: false,
             show_at: HashMap::new(),
             held: HashMap::new(),
+            dropped: false,
             pending_goto: None,
             pending_note: None,
             pending_switch: None,

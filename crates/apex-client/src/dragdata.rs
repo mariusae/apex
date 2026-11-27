@@ -308,6 +308,24 @@ fn ns_window(window: &Window) -> Option<Id> {
     (!w.is_null()).then_some(w)
 }
 
+/// The cursor put right after a drop: the window's cursor rects made
+/// again (gpui's, of the style it last set) and `style` set now -- the
+/// drag left its own, and gpui sets one only when the style it wants
+/// changes, which over apex's text, all arrow, it does not.
+pub fn cursor_again(window: &Window, style: gpui::CursorStyle) {
+    let Some(w) = ns_window(window) else { return };
+    // SAFETY: gpui's window, alive while it is; AppKit on the main thread
+    unsafe {
+        let view: Id = msg_send![w, contentView];
+        if !view.is_null() {
+            let _: () = msg_send![w, invalidateCursorRectsForView: view];
+        }
+    }
+    if style != crate::cursor::NATIVE_CURSOR {
+        crate::cursor::apply(style);
+    }
+}
+
 /// `window` takes images dragged in too (once for each).
 pub fn register(window: &Window) {
     static DONE: Mutex<Option<HashSet<usize>>> = Mutex::new(None);
