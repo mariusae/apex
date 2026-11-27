@@ -681,6 +681,9 @@ pub struct Acme {
     pub link_closed: bool,
     /// When a lost link is next attached again by itself (`standing`).
     pub retry: Option<crate::standing::Retry>,
+    /// The countdown to it as last drawn ("in 4 s"): drawn again only
+    /// when that changes.
+    pub retry_shown: Option<String>,
     /// When the tick last ran (a long gap is the Mac asleep), and when a
     /// wake's probe went out.
     pub last_tick: Option<std::time::Instant>,
@@ -1822,9 +1825,11 @@ impl Acme {
                         let _ = h.update(cx, |acme, window, cx| {
                             if cx.entity_id() == mine {
                                 alive = true;
-                                // a spinner turning: the working handles, or the
-                                // page a tab shows while it comes up
-                                if acme.web_focus_tick(window) || acme.any_working() || acme.waiting.is_some() {
+                                // a spinner turning: the working handles. The
+                                // page a tab shows while it comes up turns its
+                                // own (`paint_spinner`), and one that has
+                                // stopped, or never had one, is left alone
+                                if acme.web_focus_tick(window) || acme.any_working() {
                                     cx.notify();
                                 }
                                 // a walk whose key came up where gpui did not
@@ -1979,6 +1984,7 @@ impl Acme {
             ping_ms: None,
             link_closed: false,
             retry: None,
+            retry_shown: None,
             last_tick: None,
             woke: None,
             confirm_drop: false,

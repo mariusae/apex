@@ -253,8 +253,10 @@ impl Acme {
                 changed = true;
             }
         }
-        // the countdown, said in seconds, goes on being said
-        if self.retry.is_some() {
+        // the countdown, said in seconds: drawn again as each second goes
+        let said = self.retry_said();
+        if said != self.retry_shown {
+            self.retry_shown = said;
             changed = true;
         }
         // asked whether to drop edits that have since arrived: no question
