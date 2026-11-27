@@ -259,7 +259,11 @@ windows put away out of the tiling, which is the core's
 - **Restarting the server** (`restart.rs`), as Manifold offers: an
   attach that finds this machine's server of another version (which
   this Apex cannot talk to) offers, once a launch, to restart it, and
-  Apex ▸ Restart Server… does whenever asked; both say first what goes
+  Apex ▸ Restart Server does whenever asked: a submenu of this Mac and
+  each host attached to this launch, each saying its daemon's protocol
+  and build and whether that is this app's (or that it could not be
+  reached), the host's restarted by putting this apex there and
+  stopping its daemon, every tab on it attaching again. Both say first what goes
   with it: a server that keeps its sessions (DESIGN.md §12) has them
   back, windows and unsaved changes, the programs in its terminals
   ending; one from before that ends them (changes not saved counted,

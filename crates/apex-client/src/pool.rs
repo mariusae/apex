@@ -364,6 +364,13 @@ impl Pool {
             }
             return;
         }
+        // what the daemon said of itself, for Apex ▸ Restart Server
+        let said = crate::restart::said_by(&r.as_ref().map(|(link, ..)| link.build.clone()).map_err(|e| std::io::Error::new(e.kind(), e.to_string())));
+        if let Some(said) = said {
+            if crate::restart::note(asked.dest(), &crate::restart::host_name(&asked), said) {
+                cx.set_menus(crate::shell::menus());
+            }
+        }
         match r {
             Ok((link, log, node, target)) => {
                 // whatever session answered, it is this tab's session

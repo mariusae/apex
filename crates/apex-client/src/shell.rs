@@ -20,7 +20,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::Acme;
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWin, NewTerm, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, SwitchSession, SwitchSessionBack, PrevTab, NextTab, Goto, GotoAll, NextNotification, Find, FindNext, FindPrevious, NavBack, NavFwd, View, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ToggleSidebar, FontBigger, FontSmaller, FontActual, Settings, StashWindow, ShowOverview, RestartServer, Commands, OpenPath]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWin, NewTerm, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, SwitchSession, SwitchSessionBack, PrevTab, NextTab, Goto, GotoAll, NextNotification, Find, FindNext, FindPrevious, NavBack, NavFwd, View, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ToggleSidebar, FontBigger, FontSmaller, FontActual, Settings, StashWindow, ShowOverview, Commands, OpenPath]);
 
 /// View ▸ Theme ▸ a palette chosen: kept, and everything in its colours
 /// again, as a change of appearance does.
@@ -144,7 +144,7 @@ pub fn menus() -> Vec<Menu> {
                 MenuItem::action("Profile…", Profile),
                 MenuItem::separator(),
                 MenuItem::action("Install apex Command…", InstallCli),
-                MenuItem::action("Restart Server…", RestartServer),
+                MenuItem::submenu(Menu { name: "Restart Server".into(), disabled: false, items: crate::restart::menu_items() }),
                 MenuItem::separator(),
                 MenuItem::action("Hide Apex", HideApp),
                 MenuItem::separator(),

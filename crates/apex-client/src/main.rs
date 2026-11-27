@@ -196,7 +196,7 @@ impl Render for Acme {
             .on_action(cx.listener(|this, _: &shell::FindNext, window, cx| this.find_next(false, window, cx)))
             .on_action(cx.listener(|this, _: &shell::FindPrevious, window, cx| this.find_next(true, window, cx)))
             .on_action(cx.listener(|this, _: &shell::StashWindow, window, cx| this.stash_key(window, cx)))
-            .on_action(cx.listener(|this, _: &shell::RestartServer, window, cx| this.restart_server_asked(window, cx)))
+            .on_action(cx.listener(|this, h: &restart::RestartHost, window, cx| this.restart_host_asked(h, window, cx)))
             .on_action(cx.listener(|this, _: &shell::Commands, _, cx| this.open_commands(cx)))
             .on_action(cx.listener(|this, _: &shell::ShowOverview, _, cx| this.toggle_overview(cx)))
             // a UI hack, on purpose: the keys just say the verbs, which a

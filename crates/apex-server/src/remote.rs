@@ -108,6 +108,8 @@ pub struct Link {
     /// What programs put on the clipboard that is not text (an image):
     /// (what, its bytes), for the UI's.
     pub clip_puts: Vec<(String, Vec<u8>)>,
+    /// The daemon's protocol and build id, as it said them first.
+    pub build: Option<(u32, String)>,
     /// What completes a path, as `Candidates` asked (^F).
     pub candidates: Vec<crate::proto::Candidates>,
     /// ⌘O's matches as they came (`ServerMsg::Found`), for the UI to take.
@@ -239,6 +241,7 @@ impl Link {
         out.send(&ClientMsg::Hello { session: session.to_string(), name: name.to_string(), kind, attach: attach.clone() })?;
         // a daemon that never answers must not hold a client forever
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        let mut build = None;
         let (attachment, snapshot) = loop {
             let left = deadline.saturating_duration_since(std::time::Instant::now());
             let m = match rx.recv_timeout(left) {
@@ -247,7 +250,10 @@ impl Link {
                 Err(_) => return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "closed before welcome")),
             };
             match m {
-                ServerMsg::Build { protocol, id } => check_build(protocol, &id)?,
+                ServerMsg::Build { protocol, id } => {
+                    check_build(protocol, &id)?;
+                    build = Some((protocol, id));
+                }
                 ServerMsg::Welcome { attachment, snapshot } => break (attachment, snapshot),
                 ServerMsg::Error { text } if text.starts_with("no session") && create.is_some() => {
                     let label = create.take().unwrap();
@@ -267,7 +273,7 @@ impl Link {
         for shard in log.shards() {
             sent.insert(shard, log.last_seq(shard));
         }
-        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), outputs: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbed: None, plumbs: Vec::new(), asks: Vec::new(), answers_navigation: false, answered: Vec::new(), window_events: Vec::new(), wants_window_events: false, page_posts: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, term_lines: Vec::new(), term_found: Vec::new(), candidates: Vec::new(), found: Vec::new(), clips: Vec::new(), clip_asks: Vec::new(), clip_puts: Vec::new(), last_pong: None, ended: None, error: None, foreign_end: HashMap::new(), pending_ack: HashMap::new(), ack_ms: None, next_id: 1, closer }, log, node))
+        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), outputs: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbed: None, plumbs: Vec::new(), asks: Vec::new(), answers_navigation: false, answered: Vec::new(), window_events: Vec::new(), wants_window_events: false, page_posts: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, term_lines: Vec::new(), term_found: Vec::new(), candidates: Vec::new(), found: Vec::new(), clips: Vec::new(), clip_asks: Vec::new(), clip_puts: Vec::new(), build, last_pong: None, ended: None, error: None, foreign_end: HashMap::new(), pending_ack: HashMap::new(), ack_ms: None, next_id: 1, closer }, log, node))
     }
 
     pub fn send(&self, m: &ClientMsg) {
