@@ -422,6 +422,13 @@ pub struct Acme {
     /// The terminal the keys go to, whose cursor blinks with the caret.
     pub caret_term: Option<TermId>,
     pub caret_on: bool,
+    /// The modifiers as the keyboard last said they were, and whether
+    /// Alt went down alone since (`alt_tapped`).
+    pub key_mods: Modifiers,
+    pub alt_tap: bool,
+    /// A compose sequence pending (`crate::compose`): the keys typed
+    /// since Alt was tapped.
+    pub compose: Option<Vec<Keystroke>>,
     /// The keys' caret on its way to where it moved (View ▸ Smooth Cursor).
     pub caret_glide: Option<crate::text_element::CaretGlide>,
     pub caret_since: std::time::Instant,
@@ -1904,6 +1911,9 @@ impl Acme {
             caret_view: None,
             caret_term: None,
             caret_on: true,
+            key_mods: Modifiers::default(),
+            alt_tap: false,
+            compose: None,
             caret_glide: None,
             caret_since: std::time::Instant::now(),
             shelf: Default::default(),
@@ -4270,6 +4280,7 @@ impl Acme {
     pub fn modifiers_changed(&mut self, e: &ModifiersChangedEvent, window: &mut Window, cx: &mut Context<Self>) {
         let prev = self.mouse.mods;
         self.mouse.mods = e.modifiers;
+        self.alt_tapped(e.modifiers);
         // ⌘ alone: the sessions' keys in a moment
         if e.modifiers.platform != prev.platform || self.command_down.is_some() || self.numbers.is_some() {
             self.command_mods(&e.modifiers, window, cx);
@@ -4332,6 +4343,35 @@ impl Acme {
             self.paste(d.view, cx);
             cx.notify();
         }
+    }
+
+    /// Alt pressed and let go alone -- nothing else held, no key, button
+    /// or other modifier in between -- starts a compose sequence, or
+    /// ends one pending, as acme's Kalt does. Alt with a button is the
+    /// chord's, and with a key or another modifier the shortcut's.
+    fn alt_tapped(&mut self, m: Modifiers) {
+        let alt_only = |m: Modifiers| m.alt && !(m.shift || m.control || m.platform || m.function);
+        let none = |m: Modifiers| !(m.alt || m.shift || m.control || m.platform || m.function);
+        let held = self.mouse.b1.is_some() || self.mouse.b2.is_some() || self.mouse.b3.is_some() || self.mouse.box_drag.is_some() || self.mouse.term_drag.is_some() || self.head_b1.is_some();
+        let prev = std::mem::replace(&mut self.key_mods, m);
+        if alt_only(m) && none(prev) && !held {
+            self.alt_tap = true;
+        } else if none(m) && alt_only(prev) && self.alt_tap {
+            self.alt_tap = false;
+            self.compose = match self.compose {
+                Some(_) => None,
+                None => Some(Vec::new()),
+            };
+        } else {
+            self.alt_tap = false;
+        }
+    }
+
+    /// A button pressed: Alt held is the chord's, not a tap, and a
+    /// compose sequence pending is dropped (plan9port's abortcompose).
+    pub fn compose_abort(&mut self) {
+        self.alt_tap = false;
+        self.compose = None;
     }
 
     /// The clipboard typed into a terminal (the B1+B3 chord there, as
@@ -5367,6 +5407,45 @@ impl Acme {
                 return;
             }
         }
+        // a key: Alt was not tapped alone
+        self.alt_tap = false;
+        // a compose sequence pending: the keys build it, and what it
+        // makes is typed as one key wherever the keys go (plan9port's
+        // devdraw); escape drops it, and a key no sequence goes on
+        // with types the keys as they were, then itself
+        if let Some(mut keys) = self.compose.take() {
+            let ks = &e.keystroke;
+            let m = ks.modifiers;
+            if ks.key == "escape" {
+                return;
+            }
+            let printable = ks.key_char.as_deref().is_some_and(|s| s.chars().count() == 1 && !s.starts_with(char::is_control));
+            if printable && !(m.control || m.platform || m.alt || m.function) {
+                keys.push(ks.clone());
+                let seq: String = keys.iter().filter_map(|k| k.key_char.as_deref()).collect();
+                match crate::compose::step(&seq) {
+                    crate::compose::Step::More => self.compose = Some(keys),
+                    crate::compose::Step::Done(c) => {
+                        let k = Keystroke { key: c.to_string(), key_char: Some(c.to_string()), modifiers: Modifiers::default() };
+                        self.key_typed(&KeyDownEvent { keystroke: k, is_held: false, prefer_character_input: false }, window, cx);
+                    }
+                    crate::compose::Step::Fail => {
+                        for k in keys {
+                            self.key_typed(&KeyDownEvent { keystroke: k, is_held: false, prefer_character_input: false }, window, cx);
+                        }
+                    }
+                }
+                return;
+            }
+            for k in keys {
+                self.key_typed(&KeyDownEvent { keystroke: k, is_held: false, prefer_character_input: false }, window, cx);
+            }
+        }
+        self.key_typed(e, window, cx);
+    }
+
+    /// A key typed (or made by a compose sequence), to what has the keys.
+    fn key_typed(&mut self, e: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         // ^F's list: ↑ ↓ return tab escape are its; the rest go to the
         // text, and the list follows
         if self.completion.is_some() && !e.keystroke.modifiers.platform && self.completion_key(&e.keystroke.key, cx) {

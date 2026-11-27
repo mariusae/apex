@@ -27,6 +27,7 @@ mod sidebar;
 mod bunny;
 mod commands;
 mod clipboard;
+mod compose;
 mod completion;
 mod cwdbar;
 mod dragdata;
@@ -224,7 +225,10 @@ impl Render for Acme {
             .on_key_down(cx.listener(Self::key_down))
             // a click off the toasts puts them away, wherever it lands (the
             // sidebar and the title bar keep their clicks to themselves)
-            .capture_any_mouse_down(cx.listener(|this, e: &gpui::MouseDownEvent, _, cx| this.toasts_click(e.position, cx)))
+            .capture_any_mouse_down(cx.listener(|this, e: &gpui::MouseDownEvent, _, cx| {
+                this.compose_abort();
+                this.toasts_click(e.position, cx)
+            }))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
             // a force click is B3
             .on_mouse_pressure(cx.listener(Self::mouse_pressure))
