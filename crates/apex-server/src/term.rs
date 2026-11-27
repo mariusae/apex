@@ -208,6 +208,9 @@ mod tests {
 pub const FLAG_BOLD: u8 = 1;
 pub const FLAG_ITALIC: u8 = 2;
 pub const FLAG_UNDERLINE: u8 = 4;
+/// On a row's last cell: the terminal soft-wrapped the row, so its line
+/// goes on in the next row rather than ending at this one.
+pub const FLAG_WRAP: u8 = 8;
 
 /// A keystroke as the client reports it; encoded here because the
 /// encoding depends on terminal modes only the server knows.
@@ -928,6 +931,30 @@ mod scroll_tests {
         // a key brings it back to the live screen
         assert!(h.scroll_to_bottom());
         assert_ne!(first_row(&h), row);
+    }
+
+    /// A line longer than the terminal is wide comes in the shard as
+    /// rows whose last cell says the line goes on (`FLAG_WRAP`), so a
+    /// client can take a word across the wrap; a newline is no wrap.
+    #[test]
+    fn a_soft_wrapped_row_is_marked_in_the_shard() {
+        let (tx, _rx) = futures::channel::mpsc::unbounded();
+        let cmd = "printf 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\nbb\\n'; sleep 3";
+        let h = TermHost::spawn(TermId(1), Path::new("/"), 40, 10, tx, &[], Some(cmd), Some("sh"), 1000, &[]).unwrap();
+        let rows = |h: &TermHost| h.snapshot_ops().into_iter().find_map(|o| if let TermOp::Rows { rows, .. } = o { Some(rows) } else { None }).unwrap();
+        let text = |r: &[Cell]| r.iter().map(|c| c.ch).collect::<String>().trim_end().to_string();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !rows(&h).iter().any(|r| text(r) == "bb") && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let rows = rows(&h);
+        let at = rows.iter().position(|r| text(r).starts_with('a')).expect("the long line");
+        let wraps = |r: &[Cell]| r.last().is_some_and(|c| c.flags & FLAG_WRAP != 0);
+        assert_eq!((text(&rows[at]).len(), text(&rows[at + 1]).len()), (40, 10));
+        assert!(wraps(&rows[at]), "the row the line ran off");
+        assert!(!wraps(&rows[at + 1]), "the line's last row");
+        assert_eq!(text(&rows[at + 2]), "bb");
+        assert!(!wraps(&rows[at + 2]));
     }
 }
 

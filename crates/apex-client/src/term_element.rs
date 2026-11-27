@@ -7,7 +7,7 @@ use gpui::{
 };
 
 use apex_core::{Cell, TermId, ViewId, WindowId};
-use apex_server::term::{FLAG_BOLD, FLAG_UNDERLINE};
+use apex_server::term::{FLAG_BOLD, FLAG_UNDERLINE, FLAG_WRAP};
 
 use crate::app::Acme;
 use crate::text_element::{font_for, rgb, FontSpec, LANE, MARGIN};
@@ -18,6 +18,9 @@ pub struct TermLayout {
     pub cell_w: Pixels,
     pub line_height: Pixels,
     pub rows: Vec<String>,
+    /// Which rows the terminal soft-wrapped: their line goes on in the
+    /// next row (`FLAG_WRAP`).
+    pub wrapped: Vec<bool>,
     pub cols: u16,
     pub scrollbar: Bounds<Pixels>,
 }
@@ -67,6 +70,7 @@ pub struct Prepaint {
     cell_w: Pixels,
     rows: Vec<RowDraw>,
     row_text: Vec<String>,
+    wrapped: Vec<bool>,
     cols: u16,
     cursor: Option<(u16, u16)>,
     /// The keys go here: the cursor is the accent's caret, and whether it
@@ -245,7 +249,8 @@ impl Element for TermElement {
                 rows.push(RowDraw { text: line.into(), runs, bgs, cols, inks, uls });
             }
             let failed = t.marks.iter().filter(|m| m.exit.is_some_and(|e| e != 0) && m.prompt >= top && m.prompt < top + t.rows as u64).map(|m| (m.prompt - top) as usize).collect();
-            Some(Prepaint { fontspec, cell_w, rows, row_text, cols: t.cols, cursor, keys, exited: t.exit.is_some(), view: (top, t.rows as u64, total), progress: t.working.then_some(t.progress), failed, scroller, lane, stops, ran: ran.is_some() })
+            let wrapped = t.grid.iter().map(|row| row.last().is_some_and(|c| c.flags & FLAG_WRAP != 0)).collect();
+            Some(Prepaint { fontspec, cell_w, rows, row_text, wrapped, cols: t.cols, cursor, keys, exited: t.exit.is_some(), view: (top, t.rows as u64, total), progress: t.working.then_some(t.progress), failed, scroller, lane, stops, ran: ran.is_some() })
         })
     }
 
@@ -362,6 +367,7 @@ impl Element for TermElement {
                 cell_w: pp.cell_w,
                 line_height: lh,
                 rows: pp.row_text,
+                wrapped: pp.wrapped,
                 cols: pp.cols,
                 scrollbar: sb,
             };

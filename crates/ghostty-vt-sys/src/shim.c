@@ -31,6 +31,9 @@ typedef struct {
 #define APEX_FLAG_BOLD 1
 #define APEX_FLAG_ITALIC 2
 #define APEX_FLAG_UNDERLINE 4
+// on a row's last cell: the terminal soft-wrapped the row, so its line
+// goes on in the next row rather than ending here
+#define APEX_FLAG_WRAP 8
 
 #define APEX_DEFAULT_FG 0xfd000000u
 #define APEX_DEFAULT_BG 0xfd000001u
@@ -372,6 +375,12 @@ int apex_vt_snapshot(ApexVt *vt,
         if (ghostty_terminal_grid_ref(vt->term, p, &cref) == GHOSTTY_SUCCESS) out->link = link_of(vt, &cref);
       }
       x++;
+    }
+    GhosttyRow row = 0;
+    bool wrap = false;
+    if (cols > 0 && ghostty_render_state_row_get(vt->rows, GHOSTTY_RENDER_STATE_ROW_DATA_RAW, &row) == GHOSTTY_SUCCESS &&
+        ghostty_row_get(row, GHOSTTY_ROW_DATA_WRAP, &wrap) == GHOSTTY_SUCCESS && wrap) {
+      cells[(size_t)y * cols + cols - 1].flags |= APEX_FLAG_WRAP;
     }
     y++;
   }

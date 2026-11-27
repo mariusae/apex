@@ -3777,7 +3777,7 @@ impl Acme {
                         // in a text window, not from the start of the cell
                         // under it: just before a `)` is the place between it
                         // and the character before, and takes the brackets.
-                        let ((c0, r0), (c1, r1)) = term_double_click(&l.rows, l.boundary_at(e.position), r);
+                        let ((c0, r0), (c1, r1)) = term_double_click(&l.rows, &l.wrapped, l.boundary_at(e.position), r);
                         self.term_sel = Some((w, (c0, top + r0 as u64), (c1, top + r1 as u64)));
                         self.mouse.term_dbl = Some(p);
                     } else {
@@ -4159,11 +4159,11 @@ impl Acme {
                 // what B2 runs, and where, to be drawn a moment more
                 // (`term_ran`): the sweep, the selection, or the word
                 if button == MouseButton::Middle {
-                    let line = self.term_of(w).and_then(|t| self.node.state.terms.get(&t)).map_or(0, |t| t.top) + cell.1 as u64;
+                    let top = self.term_top(w);
                     let span = match (hl.filter(|(_, _, p0, p1)| p0 != p1), self.term_sel) {
                         (Some((_, _, p0, p1)), _) => Some((p0, p1)),
                         (None, Some((sw, a, b))) if sw == w && in_selection(a, b, press) => Some((a, b)),
-                        _ => self.term_word_at(w, cell.0, cell.1, is_exec_char).map(|(_, (a, b))| ((a, line), (b, line))),
+                        _ => self.term_word_at(w, cell.0, cell.1, is_exec_char).map(|(_, (a, b))| ((a.0, top + a.1 as u64), (b.0, top + b.1 as u64))),
                     };
                     self.term_ran = span.map(|(p0, p1)| (w, p0, p1, std::time::Instant::now()));
                 }
@@ -4395,12 +4395,14 @@ impl Acme {
 
     /// The text between two `(column, history line)` positions, from the
     /// rows on screen (a sweep is on screen); lines joined by newlines,
-    /// trailing blanks dropped.
+    /// trailing blanks dropped. A row the terminal soft-wrapped runs on
+    /// into the next one, blanks and all, as the line the program wrote.
     pub(crate) fn term_grid_text(&self, w: WindowId, a: (usize, u64), b: (usize, u64)) -> Option<String> {
         let t = self.term_of(w)?;
         let term = self.node.state.terms.get(&t)?;
         let (p0, p1) = if (a.1, a.0) <= (b.1, b.0) { (a, b) } else { (b, a) };
         let mut out = String::new();
+        let mut joined = false;
         for (i, row) in term.grid.iter().enumerate() {
             let line = term.top + i as u64;
             if line < p0.1 || line > p1.1 {
@@ -4409,10 +4411,11 @@ impl Acme {
             let from = if line == p0.1 { p0.0.min(row.len()) } else { 0 };
             let to = if line == p1.1 { p1.0.min(row.len()) } else { row.len() };
             let s: String = row[from.min(to)..to].iter().map(|c| if c.ch == '\0' { ' ' } else { c.ch }).collect();
-            if !out.is_empty() {
+            if !out.is_empty() && !joined {
                 out.push('\n');
             }
-            out.push_str(s.trim_end());
+            joined = line < p1.1 && row.last().is_some_and(|c| c.flags & apex_server::term::FLAG_WRAP != 0);
+            out.push_str(if joined { &s } else { s.trim_end() });
         }
         Some(out).filter(|s| !s.trim().is_empty())
     }
@@ -4431,8 +4434,8 @@ impl Acme {
     /// from its `http://` or `https://` on, less any punctuation that
     /// closes the sentence around it.
     fn term_url(&self, w: WindowId, c: usize, r: usize) -> Option<String> {
-        let row = self.term_layouts.get(&w)?.rows.get(r)?;
-        let chars: Vec<char> = row.chars().collect();
+        let line = self.term_line(w, c, r)?;
+        let (chars, c) = (&line.chars, line.at);
         if c >= chars.len() || chars[c].is_whitespace() {
             return None;
         }
@@ -4456,27 +4459,22 @@ impl Acme {
 
     /// A manual page's name at cell `c` of row `r` (`cat(1)`), whole.
     fn term_man(&self, w: WindowId, c: usize, r: usize) -> Option<String> {
-        let row = self.term_layouts.get(&w)?.rows.get(r)?;
-        let chars: Vec<char> = row.chars().collect();
-        apex_core::expand::man_ref_at(&chars, c).map(|(a, b)| chars[a..b].iter().collect())
+        let line = self.term_line(w, c, r)?;
+        apex_core::expand::man_ref_at(&line.chars, line.at).map(|(a, b)| line.chars[a..b].iter().collect())
     }
 
-    /// `term_word`, and the columns it spans on its row.
-    fn term_word_at(&self, w: WindowId, c: usize, r: usize, pred: fn(char) -> bool) -> Option<(String, (usize, usize))> {
-        let row = self.term_layouts.get(&w)?.rows.get(r)?;
-        let chars: Vec<char> = row.chars().collect();
-        if c >= chars.len() || !pred(chars[c]) {
-            return None;
-        }
-        let mut a = c;
-        while a > 0 && pred(chars[a - 1]) {
-            a -= 1;
-        }
-        let mut b = c + 1;
-        while b < chars.len() && pred(chars[b]) {
-            b += 1;
-        }
-        Some((chars[a..b].iter().collect(), (a, b)))
+    /// `term_word`, and the cells, (column, row), it spans: from its
+    /// first to just past its last, which may be on another row when the
+    /// terminal soft-wrapped it.
+    fn term_word_at(&self, w: WindowId, c: usize, r: usize, pred: fn(char) -> bool) -> Option<(String, ((usize, usize), (usize, usize)))> {
+        self.term_line(w, c, r)?.word(pred)
+    }
+
+    /// The line through cell `c` of row `r` on a terminal's screen
+    /// (`TermLine::of`).
+    fn term_line(&self, w: WindowId, c: usize, r: usize) -> Option<TermLine> {
+        let l = self.term_layouts.get(&w)?;
+        TermLine::of(&l.rows, &l.wrapped, c, r)
     }
 
     /// acme's `textscroll`: a button on the scrollbar keeps scrolling while
@@ -6150,6 +6148,69 @@ fn around(at: usize, len: usize, by: isize) -> usize {
     (at as isize + by).rem_euclid(len as isize) as usize
 }
 
+/// A line of a terminal's screen as the program wrote it: the rows the
+/// terminal soft-wrapped it into (`TermLayout::wrapped`), joined, so that
+/// a word running across the wrap is one word. Rows are one character a
+/// cell (`TermLayout::rows`).
+struct TermLine {
+    chars: Vec<char>,
+    /// The screen row the line starts on.
+    first: usize,
+    /// Where each of its rows starts in `chars`.
+    starts: Vec<usize>,
+    /// The cell asked about, as a place in `chars`.
+    at: usize,
+}
+
+impl TermLine {
+    /// The line through cell `c` of row `r`.
+    fn of(rows: &[String], wrapped: &[bool], c: usize, r: usize) -> Option<TermLine> {
+        rows.get(r)?;
+        let wraps = |i: usize| wrapped.get(i).copied().unwrap_or(false);
+        let mut first = r;
+        while first > 0 && wraps(first - 1) {
+            first -= 1;
+        }
+        let mut last = r;
+        while last + 1 < rows.len() && wraps(last) {
+            last += 1;
+        }
+        let mut chars = Vec::new();
+        let mut starts = Vec::with_capacity(last + 1 - first);
+        for row in &rows[first..=last] {
+            starts.push(chars.len());
+            chars.extend(row.chars());
+        }
+        // a cell past the row's end is past the line, not on the next row
+        let at = if c < rows[r].chars().count() { starts[r - first] + c } else { chars.len() };
+        Some(TermLine { chars, first, starts, at })
+    }
+
+    /// The run of characters `pred` takes around the cell asked about,
+    /// and the cells it spans, the end exclusive.
+    fn word(&self, pred: fn(char) -> bool) -> Option<(String, ((usize, usize), (usize, usize)))> {
+        let (chars, c) = (&self.chars, self.at);
+        if c >= chars.len() || !pred(chars[c]) {
+            return None;
+        }
+        let mut a = c;
+        while a > 0 && pred(chars[a - 1]) {
+            a -= 1;
+        }
+        let mut b = c + 1;
+        while b < chars.len() && pred(chars[b]) {
+            b += 1;
+        }
+        Some((chars[a..b].iter().collect(), (self.cell(a), self.cell(b))))
+    }
+
+    /// The cell, (column, row), at place `o` in the line.
+    fn cell(&self, o: usize) -> (usize, usize) {
+        let k = self.starts.iter().rposition(|&s| s <= o).unwrap_or(0);
+        (o - self.starts[k], self.first + k)
+    }
+}
+
 /// acme's double-click (`node::double_click`) on a terminal's screen, so
 /// a terminal selects as a text window does: the rows as lines, each
 /// without the blanks after its text, so that a click anywhere past the
@@ -6158,14 +6219,16 @@ fn around(at: usize, len: usize, by: isize) -> usize {
 /// exclusive. Rows are one character a cell (`TermLayout::rows`), so a
 /// character's place in its row is its column. The click is at `c`, the
 /// boundary before column `c` (`TermLayout::boundary_at`), as a text
-/// window's click is between characters.
-fn term_double_click(rows: &[String], c: usize, r: usize) -> ((usize, usize), (usize, usize)) {
-    let lines: Vec<&str> = rows.iter().map(|s| s.trim_end()).collect();
+/// window's click is between characters. A row the terminal soft-wrapped
+/// (`wrapped`) runs on into the next, blanks and all, as one line.
+fn term_double_click(rows: &[String], wrapped: &[bool], c: usize, r: usize) -> ((usize, usize), (usize, usize)) {
+    let wraps = |i: usize| wrapped.get(i).copied().unwrap_or(false);
+    let lines: Vec<&str> = rows.iter().enumerate().map(|(i, s)| if wraps(i) { s.as_str() } else { s.trim_end() }).collect();
     let mut starts = Vec::with_capacity(lines.len());
     let mut text = String::new();
     let mut at = 0;
     for (i, l) in lines.iter().enumerate() {
-        if i > 0 {
+        if i > 0 && !wraps(i - 1) {
             text.push('\n');
             at += 1;
         }
@@ -6315,31 +6378,79 @@ mod term_double_click_tests {
     fn a_double_click_in_a_terminal_selects_as_a_text_window_does() {
         let screen = rows(&["ls -l src/main.rs", "total 8", "f(a, b) and 'q'"]);
         // in a word: the word (acme's: `.` and `/` end it)
-        assert_eq!(term_double_click(&screen, 1, 0), ((0, 0), (2, 0)));
-        assert_eq!(term_double_click(&screen, 12, 0), ((10, 0), (14, 0)), "main");
+        assert_eq!(term_double_click(&screen, &[], 1, 0), ((0, 0), (2, 0)));
+        assert_eq!(term_double_click(&screen, &[], 12, 0), ((10, 0), (14, 0)), "main");
         // at the end of a line, and anywhere in the blanks past it: the
         // line, and its newline with it, as a text window takes it
-        assert_eq!(term_double_click(&screen, 17, 0), ((0, 0), (0, 1)));
-        assert_eq!(term_double_click(&screen, 35, 0), ((0, 0), (0, 1)), "past the text is the line's end");
+        assert_eq!(term_double_click(&screen, &[], 17, 0), ((0, 0), (0, 1)));
+        assert_eq!(term_double_click(&screen, &[], 35, 0), ((0, 0), (0, 1)), "past the text is the line's end");
         // at the start of a line: the line
-        assert_eq!(term_double_click(&screen, 0, 1), ((0, 1), (0, 2)));
+        assert_eq!(term_double_click(&screen, &[], 0, 1), ((0, 1), (0, 2)));
         // inside brackets and quotes: what they enclose
-        assert_eq!(term_double_click(&screen, 2, 2), ((2, 2), (6, 2)), "(a, b)");
-        assert_eq!(term_double_click(&screen, 13, 2), ((13, 2), (14, 2)), "'q'");
+        assert_eq!(term_double_click(&screen, &[], 2, 2), ((2, 2), (6, 2)), "(a, b)");
+        assert_eq!(term_double_click(&screen, &[], 13, 2), ((13, 2), (14, 2)), "'q'");
         // the last line has no newline after it, and still is a line
-        assert_eq!(term_double_click(&screen, 39, 2), ((0, 2), (15, 2)));
+        assert_eq!(term_double_click(&screen, &[], 39, 2), ((0, 2), (15, 2)));
     }
 
     #[test]
     fn a_double_click_just_inside_either_bracket_selects_what_they_enclose() {
         let screen = rows(&["foo(bar baz) x", "f(a, g(b, c), d)", "'hi there' [one two]"]);
         // just after the opener and just before the closer alike
-        assert_eq!(term_double_click(&screen, 4, 0), ((4, 0), (11, 0)));
-        assert_eq!(term_double_click(&screen, 11, 0), ((4, 0), (11, 0)));
-        assert_eq!(term_double_click(&screen, 11, 1), ((7, 1), (11, 1)), "g(b, c)");
-        assert_eq!(term_double_click(&screen, 15, 1), ((2, 1), (15, 1)), "the outer pair");
-        assert_eq!(term_double_click(&screen, 9, 2), ((1, 2), (9, 2)), "'hi there'");
-        assert_eq!(term_double_click(&screen, 19, 2), ((12, 2), (19, 2)), "[one two]");
+        assert_eq!(term_double_click(&screen, &[], 4, 0), ((4, 0), (11, 0)));
+        assert_eq!(term_double_click(&screen, &[], 11, 0), ((4, 0), (11, 0)));
+        assert_eq!(term_double_click(&screen, &[], 11, 1), ((7, 1), (11, 1)), "g(b, c)");
+        assert_eq!(term_double_click(&screen, &[], 15, 1), ((2, 1), (15, 1)), "the outer pair");
+        assert_eq!(term_double_click(&screen, &[], 9, 2), ((1, 2), (9, 2)), "'hi there'");
+        assert_eq!(term_double_click(&screen, &[], 19, 2), ((12, 2), (19, 2)), "[one two]");
+    }
+
+    #[test]
+    fn a_double_click_takes_a_soft_wrapped_line_whole() {
+        // a 10-column terminal: "echo one two three" wrapped after "two "
+        let screen: Vec<String> = ["echo one t", "wo three", "next"].iter().map(|l| format!("{l:<10}")).collect();
+        let wrapped = [true, false, false];
+        assert_eq!(term_double_click(&screen, &wrapped, 9, 0), ((9, 0), (2, 1)), "the word across the wrap");
+        assert_eq!(term_double_click(&screen, &wrapped, 1, 1), ((9, 0), (2, 1)), "from its second row too");
+        assert_eq!(term_double_click(&screen, &wrapped, 0, 0), ((0, 0), (0, 2)), "the line, both rows of it");
+        // the newline after a row that is not wrapped still ends the word
+        assert_eq!(term_double_click(&screen, &wrapped, 1, 2), ((0, 2), (4, 2)));
+    }
+}
+
+#[cfg(test)]
+mod term_line_tests {
+    use super::{is_file_char, TermLine};
+
+    fn word(rows: &[&str], wrapped: &[bool], c: usize, r: usize) -> Option<(String, ((usize, usize), (usize, usize)))> {
+        let rows: Vec<String> = rows.iter().map(|l| format!("{l:<10}")).collect();
+        TermLine::of(&rows, wrapped, c, r)?.word(is_file_char)
+    }
+
+    #[test]
+    fn a_word_runs_across_a_soft_wrap_either_way() {
+        // "ls dir/sub/file.go:3" in 10 columns, wrapped twice, then a
+        // hard newline before "x.go"
+        let rows = ["ls dir/sub", "/file.go:3", "x.go"];
+        let wrapped = [true, false, false];
+        let whole = Some(("dir/sub/file.go:3".to_string(), ((3, 0), (10, 1))));
+        assert_eq!(word(&rows, &wrapped, 5, 0), whole, "from the first row");
+        assert_eq!(word(&rows, &wrapped, 4, 1), whole, "from the second");
+        // the hard newline still ends it
+        assert_eq!(word(&rows, &wrapped, 1, 2), Some(("x.go".to_string(), ((0, 2), (4, 2)))));
+        // unwrapped, each row is its own line
+        assert_eq!(word(&rows, &[], 5, 0), Some(("dir/sub".to_string(), ((3, 0), (10, 0)))));
+        assert_eq!(word(&rows, &[], 4, 1).map(|(t, _)| t), Some("/file.go:3".to_string()));
+    }
+
+    #[test]
+    fn a_line_wrapped_over_many_rows_is_one() {
+        let rows: Vec<String> = ["aaaaaaaaaa", "bbbbbbbbbb", "cccc"].iter().map(|l| format!("{l:<10}")).collect();
+        let l = TermLine::of(&rows, &[true, true, false], 2, 2).unwrap();
+        assert_eq!((l.first, l.at, l.chars.len()), (0, 22, 30));
+        assert_eq!(l.cell(22), (2, 2));
+        assert_eq!(l.cell(10), (0, 1));
+        assert!(TermLine::of(&rows, &[], 0, 3).is_none(), "no such row");
     }
 }
 

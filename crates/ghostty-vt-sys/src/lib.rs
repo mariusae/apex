@@ -307,6 +307,21 @@ mod tests {
     }
 
     #[test]
+    fn a_soft_wrapped_row_says_so_on_its_last_cell() {
+        let mut t = Terminal::new(8, 4, 100).unwrap();
+        // ten characters wrap onto a second row; the newline ends that one
+        t.write(b"abcdefghij\r\nxy");
+        let s = t.screen();
+        let wraps = |y: usize| s.cells[y * 8 + 7].flags & 8 != 0;
+        assert_eq!(line(&s, 0), "abcdefgh");
+        assert_eq!(line(&s, 1), "ij");
+        assert!(wraps(0), "the row the text ran off");
+        assert!(!wraps(1), "a hard newline is not a wrap");
+        assert!(!wraps(2));
+        assert!(s.cells[..7].iter().all(|c| c.flags & 8 == 0), "only the last cell");
+    }
+
+    #[test]
     fn a_cleared_screen_keeps_the_colour_it_was_cleared_with() {
         // what a full-screen program paints with: set a background, then
         // erase. The cells it never writes on are blank, and the colour
