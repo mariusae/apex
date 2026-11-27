@@ -3,11 +3,13 @@
 //! is recorded on the app so mouse events map to rune offsets.
 
 use std::cell::RefCell;
+use std::sync::Arc;
 
 use gpui::{
     fill, font, point, px, relative, size, App, AvailableSpace, Bounds, ContentMask, Element, ElementId,
     Entity, Font, FontId, GlobalElementId, GlyphId, Hsla, InspectorElementId, IntoElement, LayoutId,
-    LineLayout, Pixels, Point, Rgba, SharedString, Size, Style, TextRun, Window, WrappedLine,
+    LineLayout, Pixels, Point, Rgba, SharedString, Size, Style, TextRun, Window, WrapBoundary, WrappedLine,
+    WrappedLineLayout,
 };
 
 use apex_core::{Text, ViewId};
@@ -58,6 +60,8 @@ fn thumb_span(height: Pixels, s0: f32, s1: f32) -> (Pixels, Pixels) {
     let len = (t1 - t0).max(px(14.)).min(h);
     ((px(3.) + t0).min(height - px(3.) - len), len)
 }
+/// acme's `maxtab`: tab stops this many widths of '0' apart, unless a
+/// window's `Tab` says otherwise (its body's; a tag's are always this).
 pub const TABSTOP: usize = 4;
 
 // acme's colours live in theme.rs (the light theme), with the dark
@@ -560,6 +564,9 @@ pub struct FontSpec {
     pub font: Font,
     pub size: Pixels,
     pub line_height: Pixels,
+    /// How many widths of '0' apart the tab stops are (`TABSTOP`, or a
+    /// window's `Tab`).
+    pub tabstop: usize,
 }
 
 /// The text faces, as View ▸ Font has them (`fonts::text` for text
@@ -567,7 +574,7 @@ pub struct FontSpec {
 pub fn font_for(mono: bool) -> FontSpec {
     let spec = if mono { crate::fonts::mono() } else { crate::fonts::text() };
     let f = Font { weight: crate::fonts::weight(spec.weight), ..unjoined(with_symbols(font(spec.family)), spec.features) };
-    FontSpec { font: f, size: spec.size, line_height: spec.line_height }
+    FontSpec { font: f, size: spec.size, line_height: spec.line_height, tabstop: TABSTOP }
 }
 
 /// No ligatures from the font: every character its own glyph. Where a
@@ -1259,31 +1266,124 @@ impl Head {
     }
 }
 
-/// Expand tabs and build the display-byte to rune map.
-fn expand(src: &str, start: usize) -> (String, Vec<usize>) {
-    let mut out = String::with_capacity(src.len() + 8);
-    let mut map = Vec::with_capacity(src.len() + 8);
-    let mut col = 0;
+/// A line as it is shaped, each tab a space (widened to its tab stop
+/// once shaped: `retab`), byte for byte where it was; and the
+/// display-byte to rune map.
+fn spaced(src: &str, start: usize) -> (String, Vec<usize>) {
+    let mut map = Vec::with_capacity(src.len() + 1);
     let mut r = start;
     for c in src.chars() {
-        if c == '\t' {
-            let n = TABSTOP - col % TABSTOP;
-            for _ in 0..n {
-                out.push(' ');
-                map.push(r);
-            }
-            col += n;
-        } else {
-            out.push(c);
-            for _ in 0..c.len_utf8() {
-                map.push(r);
-            }
-            col += 1;
-        }
+        map.extend(std::iter::repeat_n(r, c.len_utf8()));
         r += 1;
     }
     map.push(r);
-    (out, map)
+    (src.replace('\t', " "), map)
+}
+
+/// `line` laid out again with its tabs (the display offsets `tabs`, each
+/// shaped as a space) reaching tab stops `maxtab` apart, and wrapped
+/// `wrap` wide (`tab_layout`): its glyphs moved, and its rows found
+/// afresh, so that whatever asks it where an offset is, or which offset
+/// is at a point, agrees with what is drawn.
+fn retab(line: &mut WrappedLine, tabs: &[usize], maxtab: Pixels, wrap: Option<Pixels>) {
+    let new = {
+        let lay = &line.unwrapped_layout;
+        let at: Vec<(usize, usize)> = lay.runs.iter().enumerate().flat_map(|(r, run)| (0..run.glyphs.len()).map(move |g| (r, g))).collect();
+        let glyph = |&(r, g): &(usize, usize)| &lay.runs[r].glyphs[g];
+        let cells: Vec<Cell> = at
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let g = glyph(p);
+                let next = at.get(i + 1).map_or(lay.width, |q| glyph(q).position.x);
+                Cell { ch: line.text[g.index..].chars().next().unwrap_or(' '), adv: f32::from(next - g.position.x), tab: tabs.binary_search(&g.index).is_ok() }
+            })
+            .collect();
+        let (xs, width, rows) = tab_layout(&cells, f32::from(maxtab), wrap.map(f32::from));
+        let mut runs = lay.runs.clone();
+        for (&(r, g), x) in at.iter().zip(xs) {
+            runs[r].glyphs[g].position.x = px(x);
+        }
+        let unwrapped = LineLayout { font_size: lay.font_size, width: px(width), ascent: lay.ascent, descent: lay.descent, runs, len: lay.len };
+        let wrap_boundaries = rows.iter().map(|&i| WrapBoundary { run_ix: at[i].0, glyph_ix: at[i].1 }).collect();
+        WrappedLineLayout { unwrapped_layout: Arc::new(unwrapped), wrap_boundaries, wrap_width: wrap }
+    };
+    let slot: &mut Arc<WrappedLineLayout> = line;
+    *slot = Arc::new(new);
+}
+
+/// One glyph of a line for `tab_layout`: its character, how far it
+/// advances as shaped, and whether it stands for a tab.
+#[derive(Clone, Copy)]
+struct Cell {
+    ch: char,
+    adv: f32,
+    tab: bool,
+}
+
+/// Where a line's glyphs go (`cells`), each tab widened to the next tab
+/// stop -- a multiple of `maxtab` from the start of its row -- as
+/// libframe's `_frnewwid0` widens them: a tab already on a stop goes on
+/// to the next, and one that would come out narrower than its own
+/// (a space's) width, or reach past the row's end, is that width. With
+/// `wrap`, the line is wrapped that wide as gpui wraps a line
+/// (`compute_wrap_boundaries`): after a space before a word, or before
+/// any other mark, or where a word itself overflows; each row's tabs
+/// counted from where it starts. The glyphs' x across the unwrapped line,
+/// its width, and the glyph each row after the first starts at.
+fn tab_layout(cells: &[Cell], maxtab: f32, wrap: Option<f32>) -> (Vec<f32>, f32, Vec<usize>) {
+    let mut xs = vec![0.; cells.len()];
+    let mut rows = Vec::new();
+    let first_ink = cells.iter().position(|c| c.ch != ' ').unwrap_or(cells.len());
+    let (mut row, mut row_x) = (0, 0.);
+    'rows: loop {
+        let mut x = row_x;
+        let mut candidate = None;
+        for i in row..cells.len() {
+            let c = cells[i];
+            xs[i] = x;
+            let mut adv = c.adv;
+            if c.tab && maxtab > 0. {
+                // (a little give, so a tab just short of a stop by the
+                // sum of the glyphs' rounding is on it)
+                let rel = x - row_x;
+                let stop = ((rel + 0.02) / maxtab).floor() * maxtab + maxtab;
+                if stop - rel >= c.adv && wrap.is_none_or(|w| stop <= w) {
+                    adv = stop - rel;
+                }
+            }
+            let prev = if i > 0 { cells[i - 1].ch } else { '\0' };
+            let inked = first_ink < i;
+            if i > row && inked && c.ch != ' ' && (!is_word_char(c.ch) || prev == ' ') {
+                candidate = Some(i);
+            }
+            x += adv;
+            if wrap.is_some_and(|w| x - row_x > w) && i > row {
+                row = candidate.unwrap_or(i);
+                row_x = xs[row];
+                rows.push(row);
+                continue 'rows;
+            }
+        }
+        return (xs, x, rows);
+    }
+}
+
+/// gpui's `LineWrapper::is_word_char`: a character a line is not
+/// wrapped before when it follows another.
+fn is_word_char(c: char) -> bool {
+    c.is_ascii_alphanumeric()
+        || matches!(c, '\u{00C0}'..='\u{024F}' | '\u{0400}'..='\u{04FF}' | '\u{1E00}'..='\u{1EFF}' | '\u{0300}'..='\u{036F}' | '\u{0980}'..='\u{09FF}')
+        || matches!(c, '-' | '_' | '.' | '\'' | '’' | '‘' | '$' | '%' | '@' | '#' | '^' | '~' | ',' | '=' | ':' | ';')
+        || matches!(c, '!' | ')' | ']' | '}' | '"' | '”' | '»' | '…' | '⋯')
+        || matches!(c, '\u{202F}' | '\u{00A0}' | '\u{2011}')
+}
+
+/// How far apart `fontspec`'s tab stops are: its `tabstop` widths of
+/// '0', as acme's frame's `maxtab`.
+fn tab_width(window: &Window, fontspec: &FontSpec) -> Pixels {
+    let run = TextRun { len: 1, font: fontspec.font.clone(), color: gpui::black(), background_color: None, underline: None, strikethrough: None };
+    window.text_system().shape_line(SharedString::new_static("0"), fontspec.size, &[run], None).width * fontspec.tabstop as f32
 }
 
 /// What the element needs from the app for one view.
@@ -1296,6 +1396,9 @@ pub struct Source {
     /// pulled down past the start.
     pub shift: f32,
     pub mono: bool,
+    /// A body's window's `Tab`: its tab stops this many widths of '0'
+    /// apart.
+    pub tabstop: usize,
     pub dirty: bool,
     /// Dirty, and the file (or directory) changed on disk since.
     pub stale: bool,
@@ -1571,8 +1674,9 @@ fn shape(
     tint: Option<Tint>,
     head: Option<&Head>,
 ) -> LineInfo {
-    let (mut disp, mut map) = expand(line_text, start);
+    let (mut disp, mut map) = spaced(line_text, start);
     let hn = head.map_or(0, |h| h.text.len());
+    let tabs: Vec<usize> = line_text.match_indices('\t').map(|(i, _)| hn + i).collect();
     if let Some(h) = head {
         disp.insert_str(0, &h.text);
         map.splice(0..0, std::iter::repeat_n(start, hn));
@@ -1711,12 +1815,16 @@ fn shape(
     info.colors = colors;
     info.bar = bar.map(|(p, _)| p);
     info.icons = icon_at;
-    let shaped = window
+    // a line with tabs is wrapped once they are widened (`retab`)
+    let mut shaped = window
         .text_system()
-        .shape_text(disp.clone(), fontspec.size, &runs, wrap_width, None)
+        .shape_text(disp.clone(), fontspec.size, &runs, if tabs.is_empty() { wrap_width } else { None }, None)
         .ok()
         .and_then(|mut v| if v.is_empty() { None } else { Some(v.remove(0)) })
         .unwrap_or_default();
+    if !tabs.is_empty() {
+        retab(&mut shaped, &tabs, tab_width(window, fontspec), wrap_width);
+    }
     let mut subs = Vec::new();
     let mut s = 0;
     for b in shaped.wrap_boundaries() {
@@ -1817,6 +1925,9 @@ impl Element for TextElement {
             let src = acme.source(view)?;
             let kind = src.kind;
             let mut fontspec = font_for(src.mono && kind == Kind::Body);
+            if kind == Kind::Body {
+                fontspec.tabstop = src.tabstop;
+            }
             // a tag's rows (its card's pad over and under them)
             if kind != Kind::Body {
                 fontspec.line_height = tag_row_height();
@@ -2640,5 +2751,62 @@ mod spinner_tests {
             last = t;
         }
         assert!(near(ease_in_out(0.5), 0.5) && near(ease_in_out(0.), 0.) && near(ease_in_out(1.), 1.));
+    }
+}
+
+#[cfg(test)]
+mod tab_tests {
+    use super::*;
+
+    /// `s` in a font each of whose characters is `w` wide, a tab a space.
+    fn cells(s: &str, w: f32) -> Vec<Cell> {
+        s.chars().map(|ch| Cell { ch: if ch == '\t' { ' ' } else { ch }, adv: w, tab: ch == '\t' }).collect()
+    }
+
+    #[test]
+    fn tabs_reach_the_next_stop_whatever_is_before_them() {
+        // proportional: "ab" 13 wide, "abcd" 23 wide; stops 20 apart
+        let mut c = vec![Cell { ch: 'a', adv: 6., tab: false }, Cell { ch: 'b', adv: 7., tab: false }];
+        c.extend(cells("\tx", 4.));
+        let (xs, w, rows) = tab_layout(&c, 20., None);
+        assert_eq!(xs, vec![0., 6., 13., 20.]);
+        assert_eq!((w, rows), (24., vec![]));
+        let mut c = vec![Cell { ch: 'a', adv: 6., tab: false }, Cell { ch: 'b', adv: 7., tab: false }, Cell { ch: 'c', adv: 5., tab: false }, Cell { ch: 'd', adv: 5., tab: false }];
+        c.extend(cells("\t\tx", 4.));
+        let (xs, _, _) = tab_layout(&c, 20., None);
+        assert_eq!(xs[4..], [23., 40., 60.]);
+    }
+
+    #[test]
+    fn a_tab_on_a_stop_goes_to_the_next_and_none_is_narrower_than_a_space() {
+        // fixed width 5, stops 4 characters (20) apart: as acme's columns
+        let (xs, _, _) = tab_layout(&cells("abcd\tx", 5.), 20., None);
+        assert_eq!(xs[5], 40.);
+        let (xs, _, _) = tab_layout(&cells("\tx", 5.), 20., None);
+        assert_eq!(xs[1], 20.);
+        let (xs, _, _) = tab_layout(&cells("abc\tx", 5.), 20., None);
+        assert_eq!(xs[4], 20.);
+        // just short of a stop: a space's width, not past the stop
+        let c = vec![Cell { ch: 'a', adv: 18., tab: false }, Cell { ch: ' ', adv: 5., tab: true }, Cell { ch: 'x', adv: 5., tab: false }];
+        assert_eq!(tab_layout(&c, 20., None).0[2], 23.);
+        // stops 8 characters apart
+        let (xs, _, _) = tab_layout(&cells("abcd\tx", 5.), 40., None);
+        assert_eq!(xs[5], 40.);
+    }
+
+    #[test]
+    fn a_wrapped_rows_tabs_count_from_where_it_starts() {
+        // 10 wide, rows 55: "aaaa bb\tc" wraps before "bb"
+        let (xs, _, rows) = tab_layout(&cells("aaaa bb\tc", 10.), 30., Some(55.));
+        assert_eq!(rows, vec![5]);
+        // "bb" at 50 (the row's 0), so its tab stops at the row's 30
+        assert_eq!(xs[5..], [50., 60., 70., 80.]);
+        // a tab whose stop is past the row's end is a space's width (and
+        // what follows wraps as after a space)
+        let (xs, _, rows) = tab_layout(&cells("aaa\tb", 10.), 30., Some(40.));
+        assert_eq!((xs[4], rows), (40., vec![4]));
+        // a word longer than the row is cut where it overflows
+        let (_, _, rows) = tab_layout(&cells("aaaaaaaaa", 10.), 30., Some(40.));
+        assert_eq!(rows, vec![4, 8]);
     }
 }
