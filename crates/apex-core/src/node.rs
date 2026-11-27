@@ -691,12 +691,18 @@ impl Node {
         let win = self.state.window(w)?;
         match win.body_buffer() {
             Some(b) => {
-                if self.state.buffer(b)?.name != path {
+                let was = &self.state.buffer(b)?.name;
+                if was != path {
+                    let named = !was.is_empty();
                     self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::Rename { name: path.to_string() }))?;
-                    // acme's wincommit: under its new name the text is
-                    // not yet on disk, so Put shows (a Put to a new name
-                    // cleans it straight after)
-                    self.mark(log, ViewId::Body(w))?;
+                    // acme's wincommit: a file under its new name is not
+                    // yet on disk, so Put shows (a Put to a new name
+                    // cleans it straight after); a window first given a
+                    // name (`apex new NAME`) has no file to differ from
+                    // and stays clean, as acme's New NAME does
+                    if named {
+                        self.mark(log, ViewId::Body(w))?;
+                    }
                 }
             }
             None => {

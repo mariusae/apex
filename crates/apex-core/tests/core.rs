@@ -199,6 +199,27 @@ fn renaming_a_file_window_marks_it_changed() {
 }
 
 #[test]
+fn a_window_made_with_or_first_given_a_name_starts_clean() {
+    let (mut log, mut node, col) = session();
+    // New NAME (or B3) on a file that isn't there: as acme, clean
+    let w = node.new_window_as(&mut log, col, "/w/absent.txt", "", &Spec::default()).unwrap();
+    assert!(!node.state.buffer(node.state.window(w).unwrap().body_buffer().unwrap()).unwrap().dirty());
+    assert!(!node.window_verbs(w).contains(&"Put"));
+    // `apex new NAME`: New, then the unnamed window given its name
+    let before: Vec<WindowId> = node.state.windows.keys().copied().collect();
+    node.exec(&mut log, ExecCtx::Top, "New").unwrap();
+    let n = node.state.windows.keys().copied().find(|w| !before.contains(w)).unwrap();
+    node.set_window_path(&mut log, n, "/w/new.txt").unwrap();
+    assert_eq!(node.window_path(n), "/w/new.txt");
+    assert!(!body_marked(&node, n));
+    assert!(!node.state.buffer(node.state.window(n).unwrap().body_buffer().unwrap()).unwrap().dirty());
+    assert_eq!(f_hash(&log), node.state.hash());
+    // named, it is a file: renaming it again marks it
+    node.set_window_path(&mut log, n, "/w/other.txt").unwrap();
+    assert!(body_marked(&node, n));
+}
+
+#[test]
 fn typing_undoes_as_one_group_until_a_mouse_action() {
     let (mut log, mut node, col) = session();
     let w = node.new_window(&mut log, col, "f", "").unwrap();
