@@ -9,9 +9,11 @@
 //! heading the view is in in the accent, the others dark, bigger the
 //! higher the heading. The bar is for scrolling first: the pointer in it
 //! brings out only a pill by the accent's stop, naming the part being
-//! read; the pointer onto the pill opens it into the whole outline, that heading level with where the pill
-//! was, and a heading chosen there is where the page goes. Back in the
-//! bar, it is a pill again. The bar's buttons are acme's as ever.
+//! read; the pointer onto the pill (it waits for one on its way there,
+//! as a submenu does) opens it into the whole outline, that heading
+//! under the pointer, and a heading chosen there is where the page goes.
+//! Back in the bar, it is a pill again. The bar's buttons are acme's as
+//! ever.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -56,6 +58,46 @@ pub struct Outline {
     pub scroll: gpui::ScrollHandle,
     /// The list's row under the pointer: what ⌘C copies, a command's.
     pub hover: Option<usize>,
+    /// Where the pointer last was in the bar, and since when it has been
+    /// out of it on its way to the pill (`toward_pill`).
+    pub left_bar: Option<(Point<Pixels>, Option<std::time::Instant>)>,
+    /// Which side of the bar the pill and the list go, and how wide they
+    /// may be there (`side`): the same side for both, so the list opens
+    /// where the pill was.
+    pub left: bool,
+    pub room: Pixels,
+    /// The window's height, as the pointer last moved in it.
+    pub window_h: Pixels,
+}
+
+/// How wide the list may be: wider with a column of runs at its right.
+fn widest(toc: &Toc) -> f32 {
+    if toc.heads.iter().any(|h| h.detail.is_some()) { 520. } else { 320. }
+}
+
+/// Which side of `bar` the outline goes in a window `width` wide, for a
+/// list as wide as `want`: the right, where it fits; else the side with
+/// more room. Whether left, and the room there.
+fn side(bar: Bounds<Pixels>, width: Pixels, want: f32) -> (bool, Pixels) {
+    let right = width - bar.right() - px(2. + 8.);
+    let left = bar.left() - px(2. + 8.);
+    if right >= px(want) || right >= left {
+        (false, right)
+    } else {
+        (true, left)
+    }
+}
+
+/// How long the pill waits for a pointer on its way to it, out of the bar.
+const ON_THE_WAY: std::time::Duration = std::time::Duration::from_millis(700);
+
+/// Whether `p` is in the triangle `a b c` (either way round).
+fn in_triangle(p: Point<Pixels>, a: Point<Pixels>, b: Point<Pixels>, c: Point<Pixels>) -> bool {
+    let side = |p: Point<Pixels>, q: Point<Pixels>, r: Point<Pixels>| f32::from(q.x - p.x) * f32::from(r.y - p.y) - f32::from(q.y - p.y) * f32::from(r.x - p.x);
+    let (d1, d2, d3) = (side(p, a, b), side(p, b, c), side(p, c, a));
+    let neg = d1 < 0. || d2 < 0. || d3 < 0.;
+    let pos = d1 > 0. || d2 > 0. || d3 > 0.;
+    !(neg && pos)
 }
 
 /// The stops down the bar: each heading where it is in the page
@@ -246,13 +288,26 @@ impl Acme {
     /// bar (one with an outline); onto the pill, the whole outline from
     /// it, staying while the pointer is on it; back in the bar, the pill
     /// again. Whether anything changed.
-    pub fn outline_hover(&mut self, pos: Point<Pixels>) -> bool {
+    ///
+    /// The pill is beside its stop, not the pointer, so the way there
+    /// leaves the bar: while the pointer heads for it (in the triangle
+    /// from where it left to the pill's near edge, as a submenu waits),
+    /// for a moment, the pill stays as it was. The whole outline opens
+    /// with the pill's entry under the pointer (`place_outline`).
+    pub fn outline_hover(&mut self, pos: Point<Pixels>, window: gpui::Size<Pixels>) -> bool {
+        self.outline.window_h = window.height;
         let in_bar = self.outline_bar_at(pos);
         let on_it = self.outline.panel_at.get().is_some_and(|b| b.dilate(px(4.)).contains(&pos));
         let was = (self.outline.open, self.outline.whole, self.outline.near);
+        if in_bar.is_some() {
+            self.outline.left_bar = Some((pos, None));
+        }
         match in_bar {
             Some((w, bar)) => {
                 self.outline.bar = Some(bar);
+                if let Some((toc, _, _)) = self.outline_of(w) {
+                    (self.outline.left, self.outline.room) = side(bar, window.width, widest(&toc));
+                }
                 (self.outline.open, self.outline.whole) = (Some(w), false);
                 // the item under the pointer, not the one being read
                 self.outline.near = self.outline_of(w).and_then(|(toc, scroll, _)| {
@@ -265,10 +320,14 @@ impl Acme {
             None if on_it && self.outline.open.is_some() => {
                 if !self.outline.whole {
                     self.outline.whole = true;
-                    self.place_outline();
+                    self.place_outline(pos.y);
                 }
             }
+            None if self.toward_pill(pos) => {}
             None => (self.outline.open, self.outline.whole) = (None, false),
+        }
+        if self.outline.open.is_none() {
+            self.outline.left_bar = None;
         }
         if self.outline.open.is_none() {
             self.outline.panel_at.set(None);
@@ -278,18 +337,41 @@ impl Acme {
         was != (self.outline.open, self.outline.whole, self.outline.near)
     }
 
-    /// The whole outline placed where the pill was: the heading being
-    /// read level with its stop (the list scrolled to it where the panel
-    /// can go no higher, or no lower).
-    fn place_outline(&mut self) {
+    /// The pointer out of the bar with the pill out: whether it is on its
+    /// way to the pill -- in the triangle from where it left the bar to
+    /// the pill's near edge, not long since it left.
+    fn toward_pill(&mut self, pos: Point<Pixels>) -> bool {
+        if self.outline.whole || self.outline.open.is_none() {
+            return false;
+        }
+        let (Some(pill), Some((from, mut since))) = (self.outline.panel_at.get(), self.outline.left_bar) else { return false };
+        let since = *since.get_or_insert_with(std::time::Instant::now);
+        self.outline.left_bar = Some((from, Some(since)));
+        if since.elapsed() > ON_THE_WAY {
+            return false;
+        }
+        // a little behind where it left, so a pointer going straight
+        // across is well inside; to the pill's corners on its near side,
+        // a little past them -- its left, or its right when it is out to
+        // the bar's left
+        let (behind, near) = if self.outline.left { (px(6.), pill.right() - px(8.)) } else { (px(-6.), pill.left() + px(8.)) };
+        let a = point(from.x + behind, from.y);
+        let (b, c) = (point(near, pill.top() - px(6.)), point(near, pill.bottom() + px(6.)));
+        in_triangle(pos, a, b, c)
+    }
+
+    /// The whole outline opened from the pill: the pill's entry under the
+    /// pointer, at `y` -- the panel moved for it, within the window, and
+    /// where it can go no further, the list scrolled for it.
+    fn place_outline(&mut self, y: Pixels) {
+        let window_h = self.outline.window_h;
         let (Some(w), Some(bar)) = (self.outline.open, self.outline.bar) else { return };
-        let Some((toc, scroll, current)) = self.outline_of(w) else { return };
+        let Some((toc, _, current)) = self.outline_of(w) else { return };
         let toc = &toc;
         let i = self.outline.near.or(current).unwrap_or(0);
-        let y = stop_y(toc, scroll, bar, i);
         let (n, tall) = (toc.heads.len(), tall(toc.heads.len(), bar));
         let row = px(PAD + ROW * (i as f32 + 0.5));
-        let top = (y - row).min(bar.bottom() - px(8.) - tall).max(bar.top() + px(8.));
+        let top = (y - row).min(window_h - px(8.) - tall).max(px(8.));
         let off = (top + row - y).max(px(0.)).min(px(ROW * n as f32 + 2. * PAD) - tall);
         self.outline.top = top;
         self.outline.scroll.set_offset(point(px(0.), -off));
@@ -381,14 +463,14 @@ impl Acme {
             .relative()
             .flex()
             .flex_col()
-            .min_w(px(170.))
-            .max_w(px(if toc.heads.iter().any(|h| h.detail.is_some()) { 520. } else { 320. }))
+            .min_w(px(170.).min(self.outline.room))
+            .max_w(px(widest(&toc)).min(self.outline.room))
             .h(tall)
             .overflow_hidden()
             .child(self.overlay_mark_by(px(0.)))
             .child(gpui::canvas(move |b, _, _| at.set(Some(b)), |_, _, _, _| {}).absolute().top(px(0.)).left(px(0.)).size_full())
             .child(list);
-        Some(deferred(anchored().anchor(gpui::Anchor::TopLeft).position(point(bar.right() + px(2.), self.outline.top)).child(crate::shell::fade_in("toc-panel", panel))).with_priority(2).into_any_element())
+        Some(deferred(self.beside(bar, self.outline.top).child(crate::shell::fade_in("toc-panel", panel))).with_priority(2).into_any_element())
     }
 
     /// The outline's pill: the part being read, by its stop; the pointer
@@ -407,7 +489,7 @@ impl Acme {
             .items_center()
             .gap(px(5.))
             .h(px(PILL))
-            .max_w(px(320.))
+            .max_w(px(320.).min(self.outline.room))
             .px(px(10.))
             .rounded(px(PILL / 2.))
             .bg(rgb(t.tag_bg))
@@ -423,6 +505,47 @@ impl Acme {
             .child(div().flex_none().text_color(rgb(t.accent)).child("§"))
             .child(div().min_w_0().overflow_hidden().text_ellipsis().child(title(head)))
             .child(div().flex_none().child("›"));
-        Some(deferred(anchored().anchor(gpui::Anchor::TopLeft).position(point(bar.right() + px(2.), top)).child(pill)).with_priority(2).into_any_element())
+        Some(deferred(self.beside(bar, top).child(pill)).with_priority(2).into_any_element())
+    }
+
+    /// Where the pill or the list goes: beside `bar` at `top`, on the side
+    /// chosen (`side`), its near edge against the bar.
+    fn beside(&self, bar: Bounds<Pixels>, top: Pixels) -> gpui::Anchored {
+        if self.outline.left {
+            anchored().anchor(gpui::Anchor::TopRight).position(point(bar.left() - px(2.), top))
+        } else {
+            anchored().anchor(gpui::Anchor::TopLeft).position(point(bar.right() + px(2.), top))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_outline_goes_where_it_fits_the_right_first() {
+        let bar = Bounds::new(point(px(770.), px(0.)), gpui::size(px(10.), px(500.)));
+        // room for it on the right
+        assert_eq!(side(bar, px(1400.), 520.), (false, px(1400. - 780. - 10.)));
+        // not: the left, which has more
+        assert_eq!(side(bar, px(1100.), 520.), (true, px(760.)));
+        // a bar near the left edge keeps the right, cramped as it is
+        let near = Bounds::new(point(px(40.), px(0.)), gpui::size(px(10.), px(500.)));
+        assert_eq!(side(near, px(400.), 520.), (false, px(340.)));
+    }
+
+    #[test]
+    fn a_pointer_heading_for_the_pill_is_in_its_triangle() {
+        // left the bar at (100, 200); the pill's near edge from 190 to 220,
+        // as `toward_pill` widens them
+        let (a, b, c) = (point(px(94.), px(200.)), point(px(118.), px(184.)), point(px(118.), px(226.)));
+        // straight across, and down towards it
+        assert!(in_triangle(point(px(102.), px(200.)), a, b, c));
+        assert!(in_triangle(point(px(110.), px(215.)), a, b, c));
+        // below it, back behind the bar, past its edge
+        assert!(!in_triangle(point(px(110.), px(225.)), a, b, c));
+        assert!(!in_triangle(point(px(90.), px(200.)), a, b, c));
+        assert!(!in_triangle(point(px(130.), px(200.)), a, b, c));
     }
 }

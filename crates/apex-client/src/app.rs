@@ -3833,7 +3833,7 @@ impl Acme {
             cx.notify();
         }
         // a page's outline out while the pointer is in its bar, or on it
-        if self.outline_hover(pos) {
+        if self.outline_hover(pos, _window.viewport_size()) {
             cx.notify();
         }
         // the tag under the pointer: its commands come up
