@@ -6,15 +6,6 @@
 //! sidebar hidden, the sessions' names slide out across the title bar
 //! from the session's own, each with its key. Let go, or another
 //! modifier with it, and they go; a key with ⌘ (⌘2, then ⌘3) leaves them.
-//!
-//! ⌘` (⇧⌘` back) is Manifold's ⌥⇥, as ⌘⇥ the Mac's apps: a step through
-//! the sessions, the most recently settled on first, while ⌘ is held --
-//! a tap goes back to the session before, and back again -- their cards
-//! (each its session's window, small and live) coming up a moment
-//! after if ⌘ is still held; letting go of ⌘ goes to the one chosen,
-//! escape stays, a card clicked goes to it. Unlike ctrl-tab, which shows
-//! each session in the window as it is passed, nothing moves till ⌘ is
-//! let go.
 
 use std::time::{Duration, Instant};
 
@@ -26,19 +17,8 @@ use crate::pool::{Pool, TabId};
 
 /// How long ⌘ is held alone before the keys show.
 pub const NUMBERS_AFTER: Duration = Duration::from_millis(250);
-/// How long ⌘` is held before its cards come up.
-pub const CARDS_AFTER: Duration = Duration::from_millis(200);
 /// How long the names take to slide out across the title bar.
 const SLIDE: Duration = Duration::from_millis(180);
-
-/// A ⌘` walk: the sessions as they stood when it began (this one first,
-/// then the most recently settled on), the one chosen, and when its
-/// cards came up.
-pub struct Walk {
-    pub order: Vec<TabId>,
-    pub index: usize,
-    pub shown: Option<Instant>,
-}
 
 /// ⌘n's n for the session at `i` of `count`: 1 to 8, and 9 the last.
 pub fn number(i: usize, count: usize) -> Option<usize> {
@@ -96,13 +76,10 @@ impl Acme {
     }
 
     /// The modifiers changed: ⌘ down alone starts the wait for its keys;
-    /// anything else puts them away (and ⌘ let go ends a ⌘` walk).
+    /// anything else puts them away.
     pub fn command_mods(&mut self, mods: &gpui::Modifiers, window: &mut Window, cx: &mut Context<Self>) {
         let alone = mods.platform && !mods.shift && !mods.alt && !mods.control && !mods.function;
-        if self.walk.is_some() && !mods.platform {
-            self.end_walk(true, window, cx);
-        }
-        if alone && self.walk.is_none() {
+        if alone {
             let at = Instant::now();
             self.command_down = Some(at);
             cx.spawn_in(window, async move |this, cx| {
@@ -138,7 +115,7 @@ impl Acme {
     /// enough shows the keys though gpui never heard it go down -- a page
     /// had the keys, and the flags went to it.
     pub fn command_poll(&mut self, window: &Window, cx: &mut Context<Self>) {
-        if self.numbers.is_some() || self.walk.is_some() || !window.is_window_active() {
+        if self.numbers.is_some() || !window.is_window_active() {
             return;
         }
         if crate::web::command_alone_for().is_some_and(|held| held >= NUMBERS_AFTER) {
@@ -149,75 +126,12 @@ impl Acme {
     }
 
     /// ⌘ let go where gpui did not hear it (a page had the keys, or
-    /// another app): the keys put away, a walk ended as letting go does.
-    pub fn command_released(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// another app): the keys put away.
+    pub fn command_released(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.command_down = None;
         if self.numbers.take().is_some() {
             cx.notify();
         }
-        if self.walk.is_some() {
-            self.end_walk(true, window, cx);
-        }
-    }
-
-    /// ⌘` (`back`: ⇧⌘`): a step through the sessions, the most recent
-    /// first; begun, its cards a moment after while ⌘ is held. From the
-    /// menu, ⌘ not held: one step, gone to at once.
-    pub fn walk_step(&mut self, back: bool, window: &mut Window, cx: &mut Context<Self>) {
-        self.command_down = None;
-        self.numbers = None;
-        if let Some(w) = self.walk.as_mut() {
-            let n = w.order.len();
-            w.index = if back { (w.index + n - 1) % n } else { (w.index + 1) % n };
-            cx.notify();
-            return;
-        }
-        let mut order: Vec<TabId> = vec![self.tab];
-        for id in Pool::by_recency(cx).into_iter().chain(self.numbered_tabs(cx)) {
-            if !order.contains(&id) {
-                order.push(id);
-            }
-        }
-        let n = order.len();
-        if n < 2 {
-            return;
-        }
-        let index = if back { n - 1 } else { 1 };
-        if !window.modifiers().platform {
-            let id = order[index];
-            self.switch_to(id, window, cx);
-            cx.notify();
-            return;
-        }
-        self.walk = Some(Walk { order, index, shown: None });
-        let since = Instant::now();
-        self.walk_began = Some(since);
-        cx.spawn_in(window, async move |this, cx| {
-            cx.background_executor().timer(CARDS_AFTER).await;
-            let _ = this.update_in(cx, |acme, _, cx| {
-                if acme.walk_began == Some(since) {
-                    if let Some(w) = acme.walk.as_mut() {
-                        w.shown = Some(Instant::now());
-                        cx.notify();
-                    }
-                }
-            });
-        })
-        .detach();
-    }
-
-    /// The walk over: to the session chosen (`going`), else staying.
-    pub fn end_walk(&mut self, going: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(w) = self.walk.take() else { return };
-        self.walk_began = None;
-        if going {
-            if let Some(&id) = w.order.get(w.index) {
-                if id != self.tab {
-                    self.switch_to(id, window, cx);
-                }
-            }
-        }
-        cx.notify();
     }
 
     /// The sessions' names across the title bar while ⌘ is held with the
@@ -297,64 +211,6 @@ impl Acme {
         self.numbers.is_some_and(|s| s.elapsed() < SLIDE) && !self.sidebar_shown()
     }
 
-    /// ⌘`'s cards, centred over the window, the one chosen ringed.
-    pub fn walk_cards(&self, window: &mut Window, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let w = self.walk.as_ref()?;
-        w.shown?;
-        let t = crate::theme::theme();
-        let vp = window.viewport_size();
-        let (ww, wh) = (f32::from(vp.width), f32::from(vp.height));
-        let l = &self.node.state.layout;
-        let aspect = if l.r.x1 > 0 && l.r.y1 > 0 { l.r.x1 as f32 / l.r.y1 as f32 } else { ww / wh.max(1.) };
-        // Manifold's: up to four across, as many rows as they take (three
-        // at most), each card at most 236 across and no wider than the
-        // window lets four be
-        const PER_ROW: usize = 4;
-        const MOST: usize = PER_ROW * 3;
-        let (pad, gap) = (18f32, 14f32);
-        let n = w.order.len().min(MOST);
-        let cols = n.min(PER_ROW);
-        let cw = 236f32.min((ww * 0.9 - 2. * pad - gap * (cols as f32 - 1.)) / cols as f32).max(80.);
-        let ch = (cw / aspect).min(wh * 0.22);
-        const RING: f32 = 3.;
-        let mut grid = div().flex().flex_row().flex_wrap().gap(px(gap)).w(px(cols as f32 * (cw + 2. * RING) + (cols as f32 - 1.) * gap));
-        for (i, id) in w.order.iter().take(MOST).enumerate() {
-            let chosen = i == w.index;
-            let card = self.session_card(*id, cw, ch, 1., cx);
-            grid = grid.child(
-                div()
-                    .id(("walk-card", i))
-                    .flex_none()
-                    .p(px(RING))
-                    .rounded(px(12. + RING))
-                    .border(px(2.))
-                    .border_color(if chosen { gpui::Hsla::from(rgb(t.accent)) } else { gpui::Hsla::transparent_black() })
-                    .cursor_pointer()
-                    .child(card)
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, _, window, cx| {
-                            if let Some(w) = this.walk.as_mut() {
-                                w.index = i;
-                            }
-                            this.end_walk(true, window, cx);
-                            cx.stop_propagation();
-                        }),
-                    ),
-            );
-        }
-        let panel = div()
-            .bg(rgb(t.panel_bg))
-            .border(px(crate::shell::HAIRLINE))
-            .border_color(rgb(t.panel_border))
-            .rounded(px(14.))
-            .shadow(vec![gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.2), offset: gpui::point(px(0.), px(6.)), blur_radius: px(24.), spread_radius: px(0.), inset: false }])
-            .p(px(pad))
-            .child(self.overlay_mark())
-            .child(grid);
-        let place = div().absolute().top(px(0.)).left(px(0.)).size_full().flex().items_center().justify_center().child(panel);
-        Some(gpui::deferred(crate::shell::fade_in("walk-cards", place)).with_priority(3).into_any_element())
-    }
 }
 
 #[cfg(test)]

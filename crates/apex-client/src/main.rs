@@ -183,8 +183,6 @@ impl Render for Acme {
             .on_action(cx.listener(|this, _: &shell::Tab7, window, cx| this.go_to_tab(7, window, cx)))
             .on_action(cx.listener(|this, _: &shell::Tab8, window, cx| this.go_to_tab(8, window, cx)))
             .on_action(cx.listener(|this, _: &shell::Tab9, window, cx| this.go_to_tab(9, window, cx)))
-            .on_action(cx.listener(|this, _: &shell::SwitchSession, window, cx| this.walk_step(false, window, cx)))
-            .on_action(cx.listener(|this, _: &shell::SwitchSessionBack, window, cx| this.walk_step(true, window, cx)))
             .on_action(cx.listener(|this, _: &shell::PrevTab, window, cx| this.cycle_tab(-1, window, cx)))
             .on_action(cx.listener(|this, _: &shell::NextTab, window, cx| this.cycle_tab(1, window, cx)))
             // the host's profile, the session's setup: opened, or made
@@ -304,7 +302,6 @@ impl Render for Acme {
                 Some(o) => root.child(o),
                 None => root,
             };
-            let root = root.children(self.walk_cards(window, cx));
         // a command's dot, at the end of the prompt row the pointer is on
         let root = root.children(self.run_dot_element());
         let root = match self.selector_panel(cx) {
@@ -1222,7 +1219,8 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
                 theme::set_system_dark(matches!(window.appearance(), gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark));
                 shell::apply_theme(cx);
             }).detach();
-            // cmd-` back into this window: the pointer where it was
+            // back into this window (macOS's ⌘`, a click): the pointer
+            // where it was
             view.update(cx, |_, cx| {
                 cx.observe_window_activation(window, |acme: &mut Acme, window, cx| {
                     let active = window.is_window_active();

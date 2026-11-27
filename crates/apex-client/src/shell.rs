@@ -20,7 +20,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::Acme;
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWin, NewTerm, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, SwitchSession, SwitchSessionBack, PrevTab, NextTab, Goto, GotoAll, NextNotification, Find, FindNext, FindPrevious, NavBack, NavFwd, View, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ToggleSidebar, FontBigger, FontSmaller, FontActual, Settings, StashWindow, ShowOverview, Commands, OpenPath]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWin, NewTerm, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, Find, FindNext, FindPrevious, NavBack, NavFwd, View, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ToggleSidebar, FontBigger, FontSmaller, FontActual, Settings, StashWindow, ShowOverview, Commands, OpenPath]);
 
 /// View ▸ Theme ▸ a palette chosen: kept, and everything in its colours
 /// again, as a change of appearance does.
@@ -161,8 +161,6 @@ pub fn menus() -> Vec<Menu> {
                 MenuItem::action("Open…", OpenPath),
                 MenuItem::action("New Tab", NewTab),
                 MenuItem::action("Close Tab", CloseTab),
-                MenuItem::action("Switch Session", SwitchSession),
-                MenuItem::action("Switch Session Back", SwitchSessionBack),
                 MenuItem::action("Previous Tab", PrevTab),
                 MenuItem::action("Next Tab", NextTab),
                 MenuItem::action("Go to…", Goto),
@@ -250,11 +248,6 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-7", Tab7, None),
         KeyBinding::new("cmd-8", Tab8, None),
         KeyBinding::new("cmd-9", Tab9, None),
-        // ⌘`: the sessions, most recent first, as ⌘⇥ the Mac's apps
-        // (`sessionkeys`); shifted, macOS hands over the ~
-        KeyBinding::new("cmd-`", SwitchSession, None),
-        KeyBinding::new("cmd-~", SwitchSessionBack, None),
-        KeyBinding::new("cmd-shift-`", SwitchSessionBack, None),
         // ⌘⇧[ and ⌘⇧]: macOS hands the shifted character over, so the
         // binding is on what the key makes -- { and } -- as Zed's is
         KeyBinding::new("cmd-{", PrevTab, None),
