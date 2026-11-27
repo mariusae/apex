@@ -2,6 +2,10 @@
 //! (return, or going on to anything else, moves the window there, as
 //! `apex win rename` does; escape leaves it where it was; a new
 //! window's Untitled is one click); its label double-clicked, the same.
+//! The field holds the path as the tag shows it (from the session's
+//! directory on, when it is in it), runs along the tag's row as far as
+//! the window's edge and no further, scrolling to keep its caret in
+//! sight, and B1 in it clicks, sweeps and double-clicks as in text.
 //! A folder of the path, or its name, clicked brings a picker down under
 //! it, as VS Code's breadcrumbs do: the folder's entries (the name's
 //! siblings), listed by the host as ^F's names are, so a remote one's
@@ -18,6 +22,7 @@
 //! with nothing typed goes up. B3 on a folder or the name
 //! plumbs the path to there; B1 or B2 on a verb runs it.
 
+use std::cell::Cell;
 use std::time::{Duration, Instant};
 
 use gpui::prelude::*;
@@ -76,9 +81,24 @@ pub struct TagEdit {
     pub caret_since: Instant,
     /// Where what it edits is drawn.
     pub at: Bounds<Pixels>,
+    /// The right edge of the tag's row: the field goes no further.
+    pub right: Pixels,
+    /// The folder the path is shown from (the session's directory, with
+    /// its slash), when it is shown relative to it: a relative path
+    /// typed is in it.
+    pub base: Option<String>,
+    /// How far the text is scrolled left, to keep the caret in sight
+    /// (kept as it is drawn: `tag_overlays`).
+    pub scroll: Cell<f32>,
     /// B1 pressed in the field and still held: B2 cuts its selection,
     /// B3 pastes over it, acme's chords.
     pub b1: bool,
+    /// Where that press was, in characters: a sweep runs from there.
+    pub press: Option<usize>,
+    /// The press was inside the selection: it becomes a click there when
+    /// B1 comes up without a sweep or a chord, so a chord there still
+    /// cuts or pastes over the selection.
+    pub collapse: bool,
 }
 
 /// A row of the picker: a window open on the folder or a file in it
@@ -246,7 +266,7 @@ impl Acme {
         if name.contains('\n') || self.node.state.window(w).is_err() {
             return;
         }
-        if let Some(p) = self.rename_to(w, name) {
+        if let Some(p) = self.rename_to(w, name, None) {
             apex_server::perform(&mut self.node, &mut self.log, vec![p]);
             self.after();
         }
@@ -285,11 +305,21 @@ impl Acme {
             Part::Label => layout.and_then(|l| l.atom_bounds(Atom::Label)),
         };
         let Some(at) = at.or_else(|| layout.map(|l| Bounds::new(l.text_origin, gpui::size(px(200.), l.line_height)))) else { return };
+        let right = layout.map_or(at.right() + px(420.), |l| l.bounds.right());
         let mut field = LineEdit::new();
+        let mut base = None;
         match part {
             Part::Path => {
-                let path = self.node.window_path(w);
-                field.set(&path);
+                let full = self.node.window_path(w);
+                // as the tag shows it: from the session's directory on
+                // when it is in it (`Head::build_in`), so what was
+                // clicked stays put
+                let cwd = &self.node.state.meta.cwd;
+                if !self.node.is_url_page(w) && cwd.ends_with('/') && full.len() > cwd.len() && full.starts_with(cwd.as_str()) {
+                    base = Some(cwd.clone());
+                }
+                let path = base.as_ref().map_or(full.as_str(), |b| &full[b.len()..]);
+                field.set(path);
                 // the name chosen, its extension left: what a rename
                 // changes most
                 let name_at = path.trim_end_matches('/').rfind('/').map_or(0, |i| i + 1);
@@ -312,7 +342,7 @@ impl Acme {
             }
         }
         self.picker = None;
-        self.tag_edit = Some(TagEdit { window: w, part, field, caret_since: Instant::now(), at, b1: false });
+        self.tag_edit = Some(TagEdit { window: w, part, field, caret_since: Instant::now(), at, right, base, scroll: Cell::new(f32::MAX), b1: false, press: None, collapse: false });
         cx.notify();
     }
 
@@ -335,11 +365,81 @@ impl Acme {
     /// cuts (`cut`) or pastes (`paste`) as the Edit menu does there; else
     /// a click off it, for `mouse_down`.
     fn tag_edit_chord(&mut self, what: &str, cx: &mut Context<Self>) {
-        if !self.tag_edit.as_ref().is_some_and(|e| e.b1) {
-            return;
-        }
+        let Some(e) = self.tag_edit.as_mut().filter(|e| e.b1) else { return };
+        // the chord's: no sweep after it, nor a click when B1 comes up
+        e.press = None;
+        e.collapse = false;
         cx.stop_propagation();
         self.overlay_edit(what, cx);
+    }
+
+    /// B1 pressed in the field: the cursor where it is, and a sweep from
+    /// there as it moves (`tag_edit_drag`); a double-click a word, a
+    /// third all of it. A press inside the selection keeps it until B1
+    /// comes up, for a chord over it.
+    fn tag_edit_press(&mut self, ev: &gpui::MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        cx.stop_propagation();
+        let i = self.tag_edit_index(ev.position, window);
+        let Some(e) = self.tag_edit.as_mut() else { return };
+        e.b1 = true;
+        e.press = None;
+        e.collapse = false;
+        e.caret_since = Instant::now();
+        let Some(i) = i else { return };
+        match ev.click_count {
+            0 | 1 => {
+                e.press = Some(i);
+                if e.field.selection().is_some_and(|(a, z)| a < i && i < z) {
+                    e.collapse = true;
+                } else {
+                    e.field.click(i);
+                }
+            }
+            2 => e.field.select_word(i),
+            _ => e.field.select_all(),
+        }
+        cx.notify();
+    }
+
+    /// The pointer moved with B1 held from a press in the field: the
+    /// selection swept from the press to it. True when that changed it.
+    pub fn tag_edit_drag(&mut self, pos: Point<Pixels>, window: &mut Window) -> bool {
+        let Some(from) = self.tag_edit.as_ref().filter(|e| e.b1).and_then(|e| e.press) else { return false };
+        let Some(i) = self.tag_edit_index(pos, window) else { return false };
+        let Some(e) = self.tag_edit.as_mut() else { return false };
+        if e.collapse && i == from {
+            return false;
+        }
+        e.collapse = false;
+        let was = (e.field.anchor, e.field.cursor);
+        e.field.sweep(from, i);
+        e.caret_since = Instant::now();
+        was != (e.field.anchor, e.field.cursor)
+    }
+
+    /// B1 come up: a press inside the selection that swept nothing is a
+    /// click there after all.
+    pub fn tag_edit_release(&mut self) {
+        let Some(e) = self.tag_edit.as_mut() else { return };
+        if let (true, Some(i)) = (e.collapse, e.press) {
+            e.field.click(i);
+        }
+        e.b1 = false;
+        e.press = None;
+        e.collapse = false;
+    }
+
+    /// The character of the field under `pos`, as its text is drawn
+    /// (`tag_overlays`): from the path's left, less the scroll.
+    fn tag_edit_index(&self, pos: Point<Pixels>, window: &mut Window) -> Option<usize> {
+        let e = self.tag_edit.as_ref()?;
+        let text: &str = &e.field;
+        if text.is_empty() {
+            return Some(0);
+        }
+        let line = field_line(text, window);
+        let b = line.closest_index_for_x(pos.x - e.at.left() + px(e.scroll.get())).min(text.len());
+        Some(text[..b].chars().count())
     }
 
     /// The field put away, what it says taken: the window moved to the
@@ -354,7 +454,7 @@ impl Acme {
         }
         let text = e.field.trim().to_string();
         let proposal = match e.part {
-            Part::Path => self.rename_to(e.window, &text),
+            Part::Path => self.rename_to(e.window, &text, e.base.as_deref()),
             Part::Label => {
                 let label = Some(text).filter(|t| !t.is_empty());
                 (label != self.node.window_label(e.window)).then_some(Proposal::SetLabel { window: e.window, label })
@@ -367,12 +467,16 @@ impl Acme {
     }
 
     /// The window moved to a path typed (or pasted) for it: nothing for
-    /// nothing typed, or for the path it has.
-    fn rename_to(&self, w: WindowId, text: &str) -> Option<Proposal> {
+    /// nothing typed, or for the path it has. A relative one is in
+    /// `base` when the field showed the path from there.
+    fn rename_to(&self, w: WindowId, text: &str, base: Option<&str>) -> Option<Proposal> {
         if text.is_empty() {
             return None;
         }
-        let path = self.absolute_for(w, text);
+        let path = match base {
+            Some(b) if !text.starts_with('/') && !text.starts_with("~/") && !apex_core::is_url(text) => format!("{b}{text}"),
+            _ => self.absolute_for(w, text),
+        };
         (path != self.node.window_path(w)).then_some(Proposal::SetPath { window: w, path })
     }
 
@@ -628,7 +732,7 @@ impl Acme {
     }
 
     /// The field over the path or label, and the picker under the path.
-    pub fn tag_overlays(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    pub fn tag_overlays(&self, window: &mut Window, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let mut out = Vec::new();
         let t = crate::theme::theme();
         let fs = crate::text_element::font_for(false);
@@ -637,35 +741,51 @@ impl Acme {
                 Part::Path => "A path",
                 Part::Label => "A label",
             };
+            // its text where the path's was (the border and padding to
+            // its left), as wide as the text and some room to type --
+            // never past the tag's row: past that the text scrolls, the
+            // caret kept in sight
+            let text: &str = &e.field;
+            let line = (!text.is_empty()).then(|| field_line(text, window));
+            let text_w = line.as_ref().map_or(0., |l| f32::from(l.width));
+            let caret_x = line.as_ref().map_or(0., |l| f32::from(l.x_for_index(text.char_indices().nth(e.field.cursor).map_or(text.len(), |(b, _)| b))));
+            let left = e.at.left() - px(5.);
+            let room = f32::from(e.right - left) - 2.;
+            let least = match e.part {
+                Part::Path => f32::from(e.at.size.width) + 48.,
+                Part::Label => 200.,
+            };
+            let width = (text_w + 32.).max(least).min(room).max(40.);
+            let shown = width - 10. - 2.;
+            // no room left bare at the end (it opens scrolled to there:
+            // the name in sight)
+            let mut scroll = e.scroll.get().min((text_w - shown).max(0.));
+            if caret_x - scroll > shown {
+                scroll = caret_x - shown;
+            }
+            if caret_x < scroll {
+                scroll = caret_x;
+            }
+            scroll = scroll.max(0.);
+            e.scroll.set(scroll);
             let field = div()
                 .id("tag-edit")
-                .min_w(e.at.size.width + px(48.))
-                .w(px(match e.part {
-                    Part::Path => 420.,
-                    Part::Label => 200.,
-                }))
+                .w(px(width))
                 .h(e.at.size.height)
                 .px(px(4.))
                 .rounded(px(5.))
                 .flex()
                 .items_center()
+                .overflow_hidden()
                 .bg(rgb(t.body_bg))
                 .border_1()
                 .border_color(rgb(t.accent))
-                .font_family(fs.font.family.clone())
+                .font(fs.font.clone())
                 .text_size(fs.size)
                 .text_color(rgb(t.text))
                 .child(self.overlay_mark_by(px(4.)))
-                .child(crate::field::field_view(&e.field, caret_on(e.caret_since), hint, true))
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|this, _, _, cx| {
-                        if let Some(e) = this.tag_edit.as_mut() {
-                            e.b1 = true;
-                        }
-                        cx.stop_propagation();
-                    }),
-                )
+                .child(div().flex_1().min_w_0().h_full().flex().items_center().overflow_hidden().child(crate::field::field_view(&e.field, caret_on(e.caret_since), hint, true).flex_none().whitespace_nowrap().relative().left(px(-scroll))))
+                .on_mouse_down(MouseButton::Left, cx.listener(|this, ev: &gpui::MouseDownEvent, window, cx| this.tag_edit_press(ev, window, cx)))
                 // B2 or B3 while B1 is held in it: the chords, cut and paste
                 .on_mouse_down(MouseButton::Middle, cx.listener(|this, _, _, cx| this.tag_edit_chord("cut", cx)))
                 .on_mouse_down(MouseButton::Right, cx.listener(|this, _, _, cx| this.tag_edit_chord("paste", cx)));
@@ -762,6 +882,14 @@ impl Acme {
         }
         out
     }
+}
+
+/// The field's text as it is drawn, in the tag's face: where each of its
+/// characters is.
+fn field_line(text: &str, window: &mut Window) -> gpui::ShapedLine {
+    let fs = crate::text_element::font_for(false);
+    let run = gpui::TextRun { len: text.len(), font: fs.font, color: gpui::black(), background_color: None, underline: None, strikethrough: None };
+    window.text_system().shape_line(text.to_string().into(), fs.size, &[run], None)
 }
 
 #[cfg(test)]

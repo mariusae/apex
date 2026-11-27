@@ -775,7 +775,7 @@ impl Render for Acme {
             None => root,
         };
         // a tag's path or label being typed, and the path's picker
-        let root = root.children(self.tag_overlays(cx));
+        let root = root.children(self.tag_overlays(window, cx));
         // a process's card, under its pill
         let root = root.children(self.proc_card());
         // a page's outline, out beside its scrollbar (gone once a row

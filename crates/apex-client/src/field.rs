@@ -175,6 +175,35 @@ impl LineEdit {
         self.cursor = p;
     }
 
+    /// A click at character `i`: the cursor there, nothing selected.
+    pub fn click(&mut self, i: usize) {
+        self.move_to(i, false);
+    }
+
+    /// A sweep from character `from` to `i`, the cursor at `i`.
+    pub fn sweep(&mut self, from: usize, i: usize) {
+        let n = self.len();
+        self.anchor = Some(from.min(n));
+        self.cursor = i.min(n);
+    }
+
+    /// A double-click at character `i`: the word it is in (or just
+    /// after) selected, as option-arrows count words; between words,
+    /// only the cursor there.
+    pub fn select_word(&mut self, i: usize) {
+        let chars: Vec<char> = self.text.chars().collect();
+        let i = i.min(chars.len());
+        let (mut a, mut z) = (i, i);
+        while a > 0 && Self::is_word(chars[a - 1]) {
+            a -= 1;
+        }
+        while z < chars.len() && Self::is_word(chars[z]) {
+            z += 1;
+        }
+        self.anchor = Some(a);
+        self.cursor = z;
+    }
+
     pub fn select_all(&mut self) {
         self.anchor = Some(0);
         self.cursor = self.len();
@@ -387,5 +416,29 @@ mod tests {
         assert!(e.is_empty());
         // a command key that is not editing is not taken
         assert_eq!(e.key("k", Some("k"), &mods(false, false, true, false)), Edited::No);
+    }
+
+    #[test]
+    fn the_mouse_places_the_cursor_sweeps_and_selects_words() {
+        let mut e = LineEdit::from("/a/my_notes.txt");
+        e.select_all();
+        e.click(4);
+        assert_eq!((e.cursor, e.selection()), (4, None));
+        e.sweep(3, 11);
+        assert_eq!(e.selected().as_deref(), Some("my_notes"));
+        // swept backwards, and past the end
+        e.sweep(11, 3);
+        assert_eq!(e.selected().as_deref(), Some("my_notes"));
+        e.sweep(12, 99);
+        assert_eq!((e.selected().as_deref(), e.cursor), (Some("txt"), 15));
+        // a word, from inside it or just after it
+        e.select_word(6);
+        assert_eq!(e.selected().as_deref(), Some("my_notes"));
+        e.select_word(15);
+        assert_eq!(e.selected().as_deref(), Some("txt"));
+        // between two slashes there is no word
+        let mut e = LineEdit::from("a//b");
+        e.select_word(2);
+        assert_eq!((e.cursor, e.selection()), (2, None));
     }
 }

@@ -3895,7 +3895,7 @@ impl Acme {
         }
     }
 
-    pub fn mouse_move(&mut self, e: &MouseMoveEvent, _window: &mut Window, cx: &mut Context<Self>) {
+    pub fn mouse_move(&mut self, e: &MouseMoveEvent, window: &mut Window, cx: &mut Context<Self>) {
         let pos = e.position;
         // onto a prompt's row, or off one, or onto its dot: drawn again
         let dot = |a: &Self, p| a.run_dot_near(p).map(|d| (d.window, d.entry, d.hit(p)));
@@ -3903,6 +3903,10 @@ impl Acme {
             cx.notify();
         }
         self.last_mouse = pos;
+        // a sweep in a tag's field
+        if self.tag_edit_drag(pos, window) {
+            cx.notify();
+        }
         self.hint_mods(e.modifiers);
         if self.caret_tick() {
             cx.notify();
@@ -4083,9 +4087,7 @@ impl Acme {
         self.last_mouse = e.position;
         if e.button == MouseButton::Left {
             self.head_b1 = None;
-            if let Some(t) = self.tag_edit.as_mut() {
-                t.b1 = false;
-            }
+            self.tag_edit_release();
         }
         // a button let go anywhere but on the outline's row it went down
         // on (which takes it first): that row done with it, B2 not sent

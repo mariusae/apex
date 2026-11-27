@@ -693,6 +693,10 @@ impl Node {
             Some(b) => {
                 if self.state.buffer(b)?.name != path {
                     self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::Rename { name: path.to_string() }))?;
+                    // acme's wincommit: under its new name the text is
+                    // not yet on disk, so Put shows (a Put to a new name
+                    // cleans it straight after)
+                    self.mark(log, ViewId::Body(w))?;
                 }
             }
             None => {

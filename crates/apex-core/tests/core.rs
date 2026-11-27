@@ -174,6 +174,31 @@ fn a_cut_with_a_selection_still_cuts_it() {
 }
 
 #[test]
+fn renaming_a_file_window_marks_it_changed() {
+    let (mut log, mut node, col) = session();
+    let w = file_window(&mut log, &mut node, col, "/w/f.txt", "abc");
+    let b = node.state.window(w).unwrap().body_buffer().unwrap();
+    // the same name again changes nothing
+    node.set_window_path(&mut log, w, "/w/f.txt").unwrap();
+    assert!(!node.state.buffer(b).unwrap().dirty());
+    // a new name is not on disk yet: Put shows, as after acme's wincommit
+    node.set_window_path(&mut log, w, "/w/g.txt").unwrap();
+    assert_eq!(node.window_path(w), "/w/g.txt");
+    assert!(node.state.buffer(b).unwrap().dirty());
+    assert!(node.window_verbs(w).contains(&"Put"));
+    assert_eq!(f_hash(&log), node.state.hash());
+    assert!(follower(&log).state.buffer(b).unwrap().dirty());
+    // Put to it cleans it
+    let version = node.state.buffer(b).unwrap().version;
+    node.append(&mut log, Shard::Buffer(b), Op::Buffer(BufferOp::Clean { version, disk_hash: Some(Text::new("abc").content_hash()) })).unwrap();
+    assert!(!node.state.buffer(b).unwrap().dirty());
+    // a scratch window is renamed but has no file to mark
+    let s = node.new_window_as(&mut log, col, "/w/+notes", "x", &Spec::scratch(None)).unwrap();
+    node.set_window_path(&mut log, s, "/w/+other").unwrap();
+    assert!(!body_marked(&node, s));
+}
+
+#[test]
 fn typing_undoes_as_one_group_until_a_mouse_action() {
     let (mut log, mut node, col) = session();
     let w = node.new_window(&mut log, col, "f", "").unwrap();
