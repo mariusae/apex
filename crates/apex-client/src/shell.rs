@@ -1518,8 +1518,18 @@ impl Acme {
         .detach();
     }
 
+    /// Whether a one-line field has the keyboard (`key_down` gives it
+    /// the keys): an overlay's, or one in place (a tag's path or label
+    /// being renamed, the path's or the directory's picker's query, the
+    /// session's name).
+    pub fn has_field(&self) -> bool {
+        self.selector.is_some() || self.finder.is_some() || self.url_edit.is_some() || self.commands.is_some() || self.quick.is_some() || self.tag_edit.is_some() || self.picker.is_some() || self.cwd_picker.is_some() || self.session_edit.is_some()
+    }
+
     /// The field that has the keyboard while an overlay is up: the
-    /// new-host form's host, the picker's search, the finder's.
+    /// new-host form's host, the picker's search, the finder's -- or a
+    /// field in place: a tag's being renamed, a picker's query, the
+    /// session's name.
     fn overlay_field(&mut self) -> Option<&mut crate::field::LineEdit> {
         if let Some(sel) = self.selector.as_mut() {
             sel.caret_since = std::time::Instant::now();
@@ -1544,6 +1554,22 @@ impl Acme {
             q.caret_since = std::time::Instant::now();
             return Some(&mut q.filter);
         }
+        if let Some(e) = self.tag_edit.as_mut() {
+            e.caret_since = std::time::Instant::now();
+            return Some(&mut e.field);
+        }
+        if let Some(p) = self.picker.as_mut() {
+            p.caret_since = std::time::Instant::now();
+            return Some(&mut p.filter);
+        }
+        if let Some(p) = self.cwd_picker.as_mut() {
+            p.caret_since = std::time::Instant::now();
+            return Some(&mut p.filter);
+        }
+        if let Some(e) = self.session_edit.as_mut() {
+            e.caret_since = std::time::Instant::now();
+            return Some(&mut e.field);
+        }
         None
     }
 
@@ -1559,6 +1585,11 @@ impl Acme {
             f.changed();
         } else if self.quick.is_some() {
             self.quick_changed();
+        } else if let Some(p) = self.picker.as_mut() {
+            p.cursor = 0;
+            p.warned = false;
+        } else if let Some(p) = self.cwd_picker.as_mut() {
+            p.cursor = 0;
         }
         cx.notify();
     }

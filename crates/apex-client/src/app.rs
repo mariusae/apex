@@ -507,6 +507,9 @@ pub struct Acme {
     pub picker_opened: Option<(WindowId, std::time::Instant)>,
     /// A verb in a tag's head pressed: it runs if the button comes up on it.
     pub atom_down: Option<(WindowId, Atom, MouseButton)>,
+    /// B1 pressed on a folder of a tag's path or its name, and still
+    /// held: B2 now is the 1-2 chord, which snarfs the path to there.
+    pub head_b1: Option<(WindowId, Atom)>,
     /// The process pill the pointer is on, and where it is drawn: its
     /// card goes under it (`procs.rs`).
     pub proc_hover: Option<(apex_core::Seq, gpui::Bounds<Pixels>)>,
@@ -1922,6 +1925,7 @@ impl Acme {
             picker_due: None,
             picker_opened: None,
             atom_down: None,
+            head_b1: None,
             proc_hover: None,
             title_marks: crate::titlefit::new_marks(),
             title_fan: None,
@@ -3609,6 +3613,7 @@ impl Acme {
             self.mouse.b1 = None;
             self.mouse.autoscroll = None;
             self.mouse.term_drag = None;
+            self.head_b1 = None;
         }
         let button = self.logical_button(e);
         self.mouse.mods = e.modifiers;
@@ -3785,6 +3790,14 @@ impl Acme {
     /// textselect acts on its text for as long as a button is held.
     /// True if it was one.
     fn chord(&mut self, button: MouseButton, cx: &mut Context<Self>) -> bool {
+        // B1 held on a tag's path: B2 snarfs it
+        if let Some((w, atom)) = self.head_b1 {
+            if button == MouseButton::Middle {
+                self.head_b1 = None;
+                self.snarf_head(w, atom, cx);
+                return true;
+            }
+        }
         if let Some(d) = self.mouse.b1 {
             match button {
                 MouseButton::Middle => {
@@ -3837,7 +3850,7 @@ impl Acme {
     /// A button pressed off the window (AppKit sends it here while another
     /// is held from a press in it): only a chord means anything.
     pub fn mouse_down_out(&mut self, e: &MouseDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
-        if self.mouse.b1.is_none() && self.mouse.term_drag.is_none() {
+        if self.mouse.b1.is_none() && self.mouse.term_drag.is_none() && self.head_b1.is_none() {
             return;
         }
         let button = self.logical_button_peek(e);
@@ -4032,6 +4045,9 @@ impl Acme {
     pub fn mouse_up(&mut self, e: &MouseUpEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let button = if e.button == MouseButton::Left { self.mouse.left_as.take().unwrap_or(MouseButton::Left) } else { e.button };
         self.last_mouse = e.position;
+        if e.button == MouseButton::Left {
+            self.head_b1 = None;
+        }
         // a button let go anywhere but on the outline's row it went down
         // on (which takes it first): that row done with it, B2 not sent
         // (B2 as option-click lets go as B1)
@@ -4220,6 +4236,15 @@ impl Acme {
                 if !self.mouse.term_copied {
                     self.term_paste_clipboard(w, cx);
                 }
+                cx.notify();
+            }
+            return;
+        }
+        // B1 held on a tag's path: option snarfs it, as B2 would
+        if let Some((w, atom)) = self.head_b1 {
+            if e.modifiers.alt && !prev.alt {
+                self.head_b1 = None;
+                self.snarf_head(w, atom, cx);
                 cx.notify();
             }
             return;
@@ -5450,6 +5475,12 @@ impl Acme {
             }
             return;
         }
+        // a field in place (a tag's being renamed, a picker's query):
+        // select all is its field's too
+        if text == "Edit ," && self.has_field() {
+            self.overlay_edit("select-all", cx);
+            return;
+        }
         // a tag's field being typed in: what it says counts first, so a
         // Put writes to the name typed
         self.tag_edit_commit();
@@ -5533,9 +5564,11 @@ impl Acme {
                 }
             }
         }
-        // an overlay (the session picker, the finder) has the keyboard:
-        // the Edit menu works on its field, not on the text below
-        if self.selector.is_some() || self.finder.is_some() || self.url_edit.is_some() || self.commands.is_some() || self.quick.is_some() {
+        // an overlay (the session picker, the finder) or a field (a tag's
+        // path or label being renamed, a picker's query, the session's
+        // name) has the keyboard: the Edit menu works on its field, not
+        // on the text below
+        if self.has_field() {
             self.overlay_edit(what, cx);
             return;
         }

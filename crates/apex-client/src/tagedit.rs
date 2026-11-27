@@ -181,9 +181,12 @@ impl Acme {
             // the picker, unless this is the first of a double-click
             // the picker at once; a second click, a double-click, takes it
             // away for the field (`mouse_down`, `picker_opened`)
+            // (and B2 while it is held, the 1-2 chord, snarfs the path to
+            // there: `snarf_head`)
             (MouseButton::Left, Atom::Dir(_) | Atom::Name) => {
                 self.open_path_picker(w, atom, cx);
                 self.picker_opened = Some((w, Instant::now()));
+                self.head_b1 = Some((w, atom));
             }
             // B3 on the path: plumbed, as far as the part
             (MouseButton::Right, Atom::Dir(k)) => {
@@ -197,6 +200,27 @@ impl Acme {
             _ => {}
         }
         cx.notify();
+    }
+
+    /// The 1-2 chord on a part of a tag's path, as acme's on the name
+    /// at the start of its tag (swept with B1, cut with B2) would snarf
+    /// it: the path to there -- the whole of it from the name, a
+    /// folder's with its slash -- in the snarf buffer and on the
+    /// clipboard, and the path left as it is (nothing is cut from a
+    /// window's name). The picker the B1 press brought down goes.
+    pub fn snarf_head(&mut self, w: WindowId, atom: Atom, cx: &mut Context<Self>) {
+        self.picker = None;
+        self.picker_opened = None;
+        let path = self.node.window_path(w);
+        let text = match atom {
+            Atom::Dir(k) => path[..k.min(path.len())].to_string(),
+            _ => path,
+        };
+        if text.is_empty() {
+            return;
+        }
+        let _ = self.node.append(&mut self.log, apex_core::Shard::Layout, apex_core::Op::Layout(apex_core::LayoutOp::Snarf { text: text.clone() }));
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
     }
 
     /// The button come up where it went down on a verb: run it.
