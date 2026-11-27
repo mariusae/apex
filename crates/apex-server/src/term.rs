@@ -44,6 +44,13 @@ pub enum TermEvent {
 
 /// The size of a cell as a program is told (`TIOCGWINSZ` pixels, and
 /// what an XTWINOPS report says).
+/// How long after text put into a terminal for a program (a paste, or
+/// keys typed) the Enter that submits it waits. A program reading both
+/// at once can take the return for part of what came (Claude Code does,
+/// keeping it in the prompt as an invisible character and sending
+/// nothing); apart, it is the key that submits.
+pub const ENTER_AFTER: std::time::Duration = std::time::Duration::from_millis(200);
+
 pub const CELL_W: u16 = 8;
 pub const CELL_H: u16 = 16;
 

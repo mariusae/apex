@@ -1290,7 +1290,9 @@ impl Pane {
                     // the model is not to follow), and this is the
                     // user's own prompt
                     self.t.term_keys(base, &text.replace("\r\n", "\n"))?;
-                    self.t.term_key(base, "enter", Some("\r"))?;
+                    // Enter apart from the typing, or Claude Code takes
+                    // it for part of it
+                    self.t.term_enter(base)?;
                 } else {
                     // pasted, then Enter: a prompt of several lines is one
                     self.t.term_send(base, &format!("{text}\n"))?;

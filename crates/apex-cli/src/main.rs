@@ -1759,10 +1759,16 @@ fn term(ctx: &Ctx, p: &Parsed) -> R {
             if enter {
                 text.pop();
             }
-            if !text.is_empty() {
+            let pasted = !text.is_empty();
+            if pasted {
                 c.send(&ClientMsg::TermPaste { term: t, text });
             }
             if enter {
+                // apart from the paste, or the program may take it for
+                // part of it (`ENTER_AFTER`)
+                if pasted {
+                    std::thread::sleep(apex_server::term::ENTER_AFTER);
+                }
                 c.send(&ClientMsg::TermKey { term: t, key: apex_server::TermKey { key: "enter".into(), text: Some("\r".into()), shift: false, control: false, alt: false } });
             }
             // give the daemon a moment to take it before we hang up

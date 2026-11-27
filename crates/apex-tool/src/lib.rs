@@ -875,7 +875,13 @@ impl Tool {
             self.remote.send(&ClientMsg::TermPaste { term: t, text: text.to_string() });
         }
         if enter {
-            self.term_key(w, "enter", Some("\r"))?;
+            // apart from the paste, or the program may take it for part
+            // of it (`term_enter`)
+            if text.is_empty() {
+                self.term_key(w, "enter", Some("\r"))?;
+            } else {
+                self.term_enter(w)?;
+            }
         }
         Ok(())
     }
@@ -888,6 +894,14 @@ impl Tool {
         let t = self.term_of(w)?;
         self.remote.send(&ClientMsg::TermKey { term: t, key: apex_server::TermKey { key: String::new(), text: Some(text.to_string()), shift: false, control: false, alt: false } });
         Ok(())
+    }
+
+    /// Enter in window `w`'s terminal after text just put there, a moment
+    /// apart from it (`term::ENTER_AFTER`): a program reading both at
+    /// once can take the return for part of the text, and submit nothing.
+    pub fn term_enter(&mut self, w: WindowId) -> Result<()> {
+        std::thread::sleep(apex_server::term::ENTER_AFTER);
+        self.term_key(w, "enter", Some("\r"))
     }
 
     /// Press a key in window `w`'s terminal: its name (`enter`,
