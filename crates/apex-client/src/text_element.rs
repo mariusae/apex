@@ -929,6 +929,21 @@ impl TextLayout {
         self.rows[to]
     }
 
+    /// Whether the end of the text is on screen: the rows reach it and
+    /// the last of them is in view -- acme's `org+nchars == nc`. The
+    /// empty line after a final newline need not show.
+    pub fn end_shown(&self) -> bool {
+        if !self.rows_end {
+            return false;
+        }
+        let mut lines = self.lines.iter().rev();
+        let Some(mut last) = lines.next() else { return true };
+        if last.start == self.text_len && self.text_len > 0 {
+            last = lines.next().unwrap_or(last);
+        }
+        self.text_origin.y + last.y + last.height(self.line_height) <= self.bounds.bottom() + px(0.5)
+    }
+
     pub fn lines_that_fit(&self) -> usize {
         ((self.bounds.size.height / self.line_height) as usize).max(1)
     }

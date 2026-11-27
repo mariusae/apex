@@ -723,6 +723,11 @@ pub struct Acme {
     /// ⌘ or ⌥ held over text: what a click would take there.
     pub hint: Option<(ViewId, usize, usize, HlKind)>,
     mouse: Mouse,
+    /// Which B1 autoscroll's timer is the live one: a loop started
+    /// before it stops at its next tick, so recrossing the edge
+    /// does not leave two scrolling at once. (Not in `Mouse`,
+    /// which is reset while a loop may be running.)
+    autoscroll_gen: u64,
     pub(crate) want_visible: HashSet<ViewId>,
     typed_start: HashMap<ViewId, usize>,
     /// acme's `iq1`: where the last typing in each view ended, shifted
@@ -2008,6 +2013,7 @@ impl Acme {
             scroll_pos: HashMap::new(),
             scrolled_at: HashMap::new(),
             mouse: Mouse::default(),
+            autoscroll_gen: 0,
             want_visible: HashSet::new(),
             typed_start: HashMap::new(),
             iq1: HashMap::new(),
@@ -3967,11 +3973,16 @@ impl Acme {
                         let fresh = self.mouse.autoscroll.is_none();
                         self.mouse.autoscroll = Some((d.view, dir));
                         if fresh {
+                            self.autoscroll_gen += 1;
+                            let gen = self.autoscroll_gen;
                             self.autoscroll_step();
                             cx.spawn(async move |this, cx| loop {
                                 cx.background_executor().timer(std::time::Duration::from_millis(80)).await;
                                 let going = cx.update(|cx| {
                                     this.update(cx, |acme, cx| {
+                                        if acme.autoscroll_gen != gen {
+                                            return false;
+                                        }
                                         let r = acme.autoscroll_step();
                                         cx.notify();
                                         r
@@ -4442,9 +4453,13 @@ impl Acme {
             self.mouse.autoscroll = None;
             return false;
         }
-        let lines = ((f32::from(dist) / f32::from(lh)) as i64).max(1);
-        self.scroll_by(v, dir * lines);
-        self.sync();
+        // acme's framescroll goes no further down once the end of the
+        // text is in the frame
+        if dir < 0 || !l.end_shown() {
+            let lines = ((f32::from(dist) / f32::from(lh)) as i64).max(1);
+            self.scroll_by(v, dir * lines);
+            self.sync();
+        }
         if let Some(l) = self.layouts.get(&v) {
             let edge = point(pos.x, if dir < 0 { l.bounds.top() } else { l.bounds.bottom() - px(1.) });
             // a tag's pad is inside its edge: the pointer, off the card,
