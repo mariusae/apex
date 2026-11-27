@@ -3733,6 +3733,7 @@ impl Acme {
                     self.term_hl = Some((w, button, p, p));
                 }
                 (Region::TermScrollbar, MouseButton::Left) => self.start_scrolling(Target::Term(w, t), MouseButton::Left, e.position, window, cx),
+                (Region::TermScrollbar, MouseButton::Middle) => self.start_scrolling(Target::Term(w, t), MouseButton::Middle, e.position, window, cx),
                 (Region::TermScrollbar, MouseButton::Right) => self.start_scrolling(Target::Term(w, t), MouseButton::Right, e.position, window, cx),
                 _ => {}
             },
