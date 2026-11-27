@@ -396,9 +396,11 @@ pub fn paint_work(window: &mut Window, c: Point<Pixels>, r: f32, width: f32, ink
 
 /// Material's spinner (Google's): an arc of radius `r` round `c` whose
 /// head races round ahead and whose tail then catches it up, the whole
-/// turning the while (the window is drawn again each tick while anything
-/// spins).
+/// turning the while. It asks for the next frame itself, so it turns
+/// smoothly wherever it is drawn, not only when something else has the
+/// window drawn again.
 pub fn paint_spinner(window: &mut Window, c: Point<Pixels>, r: f32, width: f32, ink: Hsla) {
+    window.request_animation_frame();
     let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|t| t.as_millis()).unwrap_or(0);
     let (tail, head) = hare(ms);
     // the whole of it turning once in two seconds, under the chase
