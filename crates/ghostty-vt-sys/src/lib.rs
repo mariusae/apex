@@ -436,4 +436,30 @@ mod tests {
         assert_eq!(s.cells[3].link, 1);
         assert_eq!(s.cells[5].link, 0);
     }
+
+    #[test]
+    fn the_scrollback_keeps_the_lines_it_is_asked_to_whatever_the_width() {
+        // the line limit governs, not the library's default byte limit,
+        // which kept a few hundred lines, fewer the wider the terminal.
+        // Pruning goes by whole pages, so the count is near, not exact
+        let mut out = String::new();
+        for i in 1..=20000 {
+            out.push_str(&format!("{i}\r\n"));
+        }
+        for cols in [80, 200, 400] {
+            let mut t = Terminal::new(cols, 42, 10_000).unwrap();
+            t.write(out.as_bytes());
+            let (history, _, _) = t.size();
+            assert!((8_500..=11_000).contains(&history), "{cols} columns kept {history} lines");
+            // a resize keeps it so
+            t.resize(cols / 2, 42);
+            t.write(out.as_bytes());
+            let (history, _, _) = t.size();
+            assert!((8_500..=11_000).contains(&history), "{} columns kept {history} lines", cols / 2);
+        }
+        let mut t = Terminal::new(80, 42, 1_000).unwrap();
+        t.write(out.as_bytes());
+        let (history, _, _) = t.size();
+        assert!(history < 2_000, "a lower limit still holds: {history}");
+    }
 }

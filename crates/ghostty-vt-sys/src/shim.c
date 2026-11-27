@@ -162,6 +162,11 @@ ApexVt *apex_vt_new(uint16_t cols, uint16_t rows, size_t scrollback) {
   }
   size_t lines = scrollback;
   ghostty_terminal_set(vt->term, GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_LINES, &lines);
+  // the line limit is the only one: the library's default byte limit
+  // (10000, raised to one page beyond the screen) would otherwise come
+  // first, keeping a few hundred lines, fewer the wider the terminal.
+  // The line limit bounds the memory as well, about lines x cols cells.
+  ghostty_terminal_set(vt->term, GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_BYTES, NULL);
   ghostty_terminal_set(vt->term, GHOSTTY_TERMINAL_OPT_USERDATA, vt);
   // a callback option takes the function itself, not its address
   ghostty_terminal_set(vt->term, GHOSTTY_TERMINAL_OPT_WRITE_PTY, (const void *)on_write_pty);
