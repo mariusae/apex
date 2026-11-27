@@ -896,7 +896,7 @@ pub fn palette_dim(picked: bool, act: Act) -> gpui::Hsla {
 }
 
 /// The colour the window goes behind a dialog (the picker), as RGBA:
-/// gpui's veil and the one laid over each page (`Webs::set_veil`) are
+/// gpui's veil and the one laid over each page (`Webs::set_veils`) are
 /// this one colour, so a page goes as quiet as the text beside it.
 pub fn veil() -> u32 {
     // Manifold's scrim: the light a white haze, the dark a shade

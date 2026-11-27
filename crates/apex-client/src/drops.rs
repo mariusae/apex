@@ -21,11 +21,12 @@
 //! ×) stops them -- nothing put in, nothing left there. Other windows go
 //! on as ever. The sidebar lists the transfer too (`transfers`).
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Duration;
 
-use gpui::{anchored, deferred, div, point, prelude::*, px, rgb, AnyElement, Context, MouseButton, Pixels, Point};
+use gpui::{anchored, deferred, div, prelude::*, px, rgb, AnyElement, Context, MouseButton, Pixels, Point};
 
 use apex_core::{ViewId, WindowId};
 
@@ -56,10 +57,26 @@ pub fn words(paths: &[String], shell: bool) -> String {
     }
 }
 
+/// How long a drop goes before its window fades, and how long the fade
+/// takes (seconds): one that goes at once does not flash.
+const HELD_WAIT: f32 = 0.12;
+const HELD_FADE: f32 = 0.18;
+/// How far a held window fades: its veil's opacity.
+const HELD_VEIL: f32 = 0.65;
+
+/// How far a held window's fade has come, 0 to 1.
+fn held_shown(it: &crate::transfers::Item, now: std::time::Instant) -> f32 {
+    let since = now.saturating_duration_since(it.started).as_secs_f32();
+    ((since - HELD_WAIT) / HELD_FADE).clamp(0., 1.)
+}
+
 /// A window held while what was dropped on it goes to the host.
 pub struct Held {
     /// Its transfer (`transfers`).
     pub transfer: u64,
+    /// Where its body was last drawn: the layouts are made anew in each
+    /// frame's paint, after the panels are made (`note_held_bounds`).
+    pub at: Option<gpui::Bounds<Pixels>>,
 }
 
 impl Acme {
@@ -102,7 +119,15 @@ impl Acme {
         }
         let crate::app::Backend::Remote(link) = &self.backend else { return false };
         let (transfer, rx) = crate::transfers::upload(link.io_plane(), files, &self.url.arg);
-        self.held.insert(w, Held { transfer });
+        let on = match target {
+            Target::Term(..) => "a terminal",
+            Target::View(ViewId::Input(_)) => "an input strip",
+            Target::View(ViewId::Tag(_)) => "a tag",
+            _ => "a text",
+        };
+        crate::shell::log_line(&format!("drop {transfer}: on {on} of window {w}, held"));
+        let at = self.term_layouts.get(&w).map(|l| l.bounds).or_else(|| self.layouts.get(&ViewId::Body(w)).map(|l| l.bounds));
+        self.held.insert(w, Held { transfer, at });
         self.watch_held(w, target, region, rx, cx);
         cx.notify();
         true
@@ -147,14 +172,18 @@ impl Acme {
         .detach();
     }
 
-    /// Over each window held: what is going, how far it has got, and how
-    /// to stop it.
-    pub fn held_panels(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    /// Over each window held: the window faded, as it takes no input
+    /// while held, and on it what is going, how far it has got, and how
+    /// to stop it. The fade comes in a moment after the drop, so one that
+    /// goes at once does not flash.
+    pub fn held_panels(&self, window: &mut gpui::Window, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let t = crate::theme::theme();
         let now = std::time::Instant::now();
         let mut out = Vec::new();
         for (w, h) in &self.held {
-            let bounds = self.term_layouts.get(w).map(|l| l.bounds).or_else(|| self.layouts.get(&ViewId::Body(*w)).map(|l| l.bounds));
+            // a terminal's or a text's body as last drawn, or a page's (an
+            // agent's)
+            let bounds = h.at.or_else(|| self.webs.bounds(*w));
             let (Some(b), Some(it)) = (bounds, crate::transfers::item(h.transfer)) else { continue };
             let id = h.transfer;
             let width = (f32::from(b.size.width) - 24.).clamp(160., 380.);
@@ -199,10 +228,57 @@ impl Acme {
                 )
                 .child(div().h(px(3.)).w_full().rounded(px(2.)).bg(rgb(t.panel_hover)).child(div().h_full().rounded(px(2.)).w(gpui::relative(it.fraction())).bg(rgb(t.accent))))
                 .child(div().overflow_hidden().text_ellipsis().whitespace_nowrap().text_size(px(11.)).text_color(rgb(t.panel_dim)).child(format!("{} · esc to stop", it.said(now))));
-            let at = point(b.left() + (b.size.width - px(width)) / 2., b.top() + px(12.));
-            out.push(deferred(anchored().anchor(gpui::Anchor::TopLeft).position(at).child(panel)).with_priority(2).into_any_element());
+            let shown = held_shown(&it, now);
+            if shown < 1. {
+                window.request_animation_frame();
+            }
+            if shown <= 0. {
+                continue;
+            }
+            let veil = gpui::rgb(t.body_bg);
+            let veil = gpui::Hsla { a: HELD_VEIL * shown, ..veil.into() };
+            let over = div()
+                .id(("held-veil", id))
+                .w(b.size.width)
+                .h(b.size.height)
+                .bg(veil)
+                .occlude()
+                .flex()
+                .items_center()
+                .justify_center()
+                // the card a hole in a page, which is over all of this
+                // (the page itself veiled natively: `held_veils`)
+                .child(panel.child(self.overlay_mark()).opacity(shown));
+            out.push(deferred(anchored().anchor(gpui::Anchor::TopLeft).position(b.origin).child(over)).with_priority(2).into_any_element());
         }
         out
+    }
+
+    /// Where each held window's body was drawn last frame, noted before
+    /// the layouts are cleared for this one's (a window not drawn keeps
+    /// what it had).
+    pub fn note_held_bounds(&mut self) {
+        for (w, h) in self.held.iter_mut() {
+            if let Some(b) = self.term_layouts.get(w).map(|l| l.bounds).or_else(|| self.layouts.get(&ViewId::Body(*w)).map(|l| l.bounds)) {
+                h.at = Some(b);
+            }
+        }
+    }
+
+    /// The veils over held windows' pages (`Webs::set_veils`), as RGBA:
+    /// a page is a native view above what `held_panels` draws, so it is
+    /// faded where it is, as gpui's veil fades the rest.
+    pub fn held_veils(&self) -> HashMap<WindowId, u32> {
+        let now = std::time::Instant::now();
+        let body = crate::theme::theme().body_bg;
+        self.held
+            .iter()
+            .filter_map(|(w, h)| {
+                let shown = held_shown(&crate::transfers::item(h.transfer)?, now);
+                let a = (HELD_VEIL * shown * 255.).round() as u32;
+                (a > 0).then_some((*w, (body << 8) | a))
+            })
+            .collect()
     }
 
     /// The paths (each on the host the session is on) put into `target`

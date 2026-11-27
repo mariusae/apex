@@ -482,7 +482,7 @@ pub struct WebHost {
     restoring: Option<(f64, std::time::Instant)>,
     /// Its outline, as it last said (a page from a buffer's).
     toc: Option<Toc>,
-    /// The veil laid over the page while a dialog has the window (`set_veil`):
+    /// The veil laid over the page while a dialog has the window (`set_veils`):
     /// its colour, and the layer that draws it.
     veil: Option<(u32, VeilLayer)>,
 }
@@ -959,11 +959,13 @@ impl Webs {
     /// A dialog has the window, and the window goes quiet behind it: gpui
     /// paints its veil over everything it draws, but a page is a native
     /// view above all of that, so each page gets the veil too -- a layer of
-    /// the same colour over it (`rgba`), inside the page's own layer and so
+    /// the same colour over it (RGBA), inside the page's own layer and so
     /// cut by the same holes the dialog cuts. A layer takes no events: the
-    /// page answers the pointer as it did. `None` takes the veils away.
+    /// page answers the pointer as it did. Each page's is as `want` says,
+    /// by its window (a window held while a drop goes to the host has its
+    /// own); `None` takes it away.
     #[cfg(target_os = "macos")]
-    pub fn set_veil(&mut self, rgba: Option<u32>) {
+    pub fn set_veils(&mut self, want: impl Fn(WindowId) -> Option<u32>) {
         use objc::runtime::Object;
         use objc::{class, msg_send, sel, sel_impl};
         use wry::WebViewExtMacOS;
@@ -975,8 +977,8 @@ impl Webs {
         /// kCALayerWidthSizable | kCALayerHeightSizable: the veil follows
         /// the page as it is laid out again
         const SIZABLE: u32 = 2 | 16;
-        for h in self.hosts.values_mut() {
-            let want = rgba.filter(|_| h.shown);
+        for (w, h) in self.hosts.iter_mut() {
+            let want = want(*w).filter(|_| h.shown);
             if h.veil.as_ref().map(|(c, _)| *c) == want {
                 continue;
             }
@@ -1019,7 +1021,12 @@ impl Webs {
     }
 
     #[cfg(not(target_os = "macos"))]
-    pub fn set_veil(&mut self, _rgba: Option<u32>) {}
+    pub fn set_veils(&mut self, _want: impl Fn(WindowId) -> Option<u32>) {}
+
+    /// Where window `w`'s page is shown (the window's coordinates).
+    pub fn bounds(&self, w: WindowId) -> Option<Bounds<Pixels>> {
+        self.hosts.get(&w).filter(|h| h.shown).and_then(|h| h.bounds)
+    }
 
     /// The theme changed: every page from a buffer takes the new colours
     /// in place (its `#apex-theme` style rewritten; nothing reloads).

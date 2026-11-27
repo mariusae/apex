@@ -633,7 +633,11 @@ windows put away out of the tiling, which is the core's
   anywhere else.
   On a session on another host, the files go there first, each to
   `~/.apex/drops/KEY/NAME` (its own name; the key of the file, so the
-  same file dropped again goes no second time), paced so keys are not
+  same file dropped again goes no second time -- the key is of its name,
+  size and modified time, not its contents, so a file changed with its
+  size and time put back, `cp -p`, `rsync -t`, `touch -r`, is taken for
+  the one there and not sent: kept so on purpose, hashing the contents
+  first being a second a gigabyte before a drop goes), paced so keys are not
   left behind them, and their paths there are put in once all are
   there. Meanwhile the window is held, as if the drop took that long: its
   keys and clicks thrown away, a panel over it saying how far the files

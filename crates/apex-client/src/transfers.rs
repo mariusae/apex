@@ -197,6 +197,10 @@ pub fn live() -> bool {
 
 /// A file's key among the drops (`apex_server::drops`): of its name, size
 /// and when it changed, so the same file dropped again is the one there.
+/// Not of its contents: a file changed with its size and modified time
+/// put back (`cp -p`, `rsync -t`, `touch -r`) is taken for the one there
+/// and not sent again. Known and kept: hashing the contents would read
+/// the whole file before a drop could start (a second a gigabyte).
 pub fn key(path: &Path, len: u64) -> String {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -222,8 +226,11 @@ pub fn upload(plane: IoPlane, files: Vec<PathBuf>, host: &str) -> (u64, Receiver
         [one] => one.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
         many => format!("{} files", many.len()),
     };
+    crate::shell::log_line(&format!("drop: {title} ({}) to {host}", size(total)));
     let (id, stop) = begin(title, format!("to {host}:~/.apex/drops"), total);
     let (tx, rx) = channel();
+    let t0 = Instant::now();
+    let said = move |how: &str| crate::shell::log_line(&format!("drop {id}: {how} after {} ms", t0.elapsed().as_millis()));
     std::thread::spawn(move || {
         let mut base = 0u64;
         let mut landed = Vec::new();
@@ -233,6 +240,7 @@ pub fn upload(plane: IoPlane, files: Vec<PathBuf>, host: &str) -> (u64, Receiver
                 Ok(at) => landed.push(at),
                 Err(e) => {
                     let stopped = stop.load(Ordering::Relaxed);
+                    said(&if stopped { "stopped".to_string() } else { format!("failed: {e}") });
                     end(id, if stopped { State::Stopped } else { State::Failed(e.clone()) });
                     let _ = tx.send(Err(if stopped { "stopped".into() } else { e }));
                     return;
@@ -241,6 +249,7 @@ pub fn upload(plane: IoPlane, files: Vec<PathBuf>, host: &str) -> (u64, Receiver
             base += len;
             progress(id, base);
         }
+        said(&format!("landed at {}", landed.join(" ")));
         end(id, State::Finished);
         let _ = tx.send(Ok(landed));
     });

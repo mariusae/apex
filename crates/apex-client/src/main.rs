@@ -130,6 +130,7 @@ impl Render for Acme {
         if self.picker_anchor() {
             cx.notify();
         }
+        self.note_held_bounds();
         self.layouts.clear();
         self.term_layouts.clear();
         self.web_bars.clear();
@@ -767,7 +768,7 @@ impl Render for Acme {
         // a page's outline, out beside its scrollbar
         let root = root.children(self.outline_panel(cx));
         // a window held while a drop goes to the host: how far it has got
-        let root = root.children(self.held_panels(cx));
+        let root = root.children(self.held_panels(window, cx));
         // the title bar's crumbs' folders
         let root = root.children(self.cwd_panel(cx));
         // the overview (⌘⇧\), over everything
@@ -790,8 +791,11 @@ impl Render for Acme {
                     me3.update(cx, |acme, _| {
                         acme.webs.set_holes(&holes);
                         // the pages go quiet with the rest while the
-                        // picker or the finder has the window
-                        acme.webs.set_veil((acme.selector.is_some() || acme.finder.is_some() || acme.commands.is_some()).then(shell::veil));
+                        // picker or the finder has the window; a page
+                        // held while a drop goes, by itself
+                        let dialog = acme.selector.is_some() || acme.finder.is_some() || acme.commands.is_some();
+                        let held = acme.held_veils();
+                        acme.webs.set_veils(|w| if dialog { Some(shell::veil()) } else { held.get(&w).copied() });
                     });
                 },
                 |_, _, _, _| {},
