@@ -94,6 +94,10 @@ struct Mouse {
     autoscroll: Option<(ViewId, i64)>,
     /// B1 held in a terminal: the selection follows the pointer.
     term_drag: Option<WindowId>,
+    /// B1 double-clicked in a terminal, the cell pressed: the word or
+    /// line it selected stands until the pointer leaves that cell, and
+    /// then a sweep from it replaces them, as in acme's `textselect`.
+    term_dbl: Option<(usize, u64)>,
     /// The terminal sweep has copied (B2): the B3 after it is acme's
     /// paste back of what was cut, which leaves the shell alone.
     term_copied: bool,
@@ -3710,23 +3714,26 @@ impl Acme {
             (Target::Term(w, t), button) => match (region, button) {
                 (Region::Term(c, r), MouseButton::Left) => {
                     let top = self.term_top(w);
+                    let p = (c, top + r as u64);
+                    self.mouse.term_dbl = None;
                     // double-clicked on a command's prompt: the command
                     // and its output, delimited by the prompts
                     let run = (e.click_count >= 2).then(|| self.run_at_prompt_term(w, c, r)).flatten();
                     if let Some(i) = run {
                         self.run_select(w, i);
+                        self.mouse.term_dbl = Some(p);
                     } else if let Some(l) = self.term_layouts.get(&w).filter(|_| e.click_count >= 2) {
                         // double-clicked: what acme's text windows select,
                         // over the rows on screen -- the word, the line at
                         // either end of it, what brackets or quotes enclose
                         let ((c0, r0), (c1, r1)) = term_double_click(&l.rows, c, r);
                         self.term_sel = Some((w, (c0, top + r0 as u64), (c1, top + r1 as u64)));
+                        self.mouse.term_dbl = Some(p);
                     } else {
-                        let p = (c, top + r as u64);
                         self.term_sel = Some((w, p, p));
-                        self.mouse.term_drag = Some(w);
-                        self.mouse.term_copied = false;
                     }
+                    self.mouse.term_drag = Some(w);
+                    self.mouse.term_copied = false;
                     self.node.activecol = self.column_of_view(ViewId::Tag(w));
                 }
                 (Region::Term(c, r), MouseButton::Middle | MouseButton::Right) => {
@@ -3922,10 +3929,20 @@ impl Acme {
                     let (c, r) = l.cell_at(pos);
                     let (cols, top) = (l.cols as usize, self.term_top(w));
                     let line = top + r as u64;
-                    // the end is exclusive: past the pointed-at cell when dragging forward
-                    let end = if (line, c) >= (anchor.1, anchor.0) { ((c + 1).min(cols), line) } else { (c, line) };
-                    self.term_sel = Some((w, anchor, end));
-                    changed = true;
+                    let anchor = match self.mouse.term_dbl {
+                        Some(p) if p == (c, line) => None,
+                        Some(p) => {
+                            self.mouse.term_dbl = None;
+                            Some(p)
+                        }
+                        None => Some(anchor),
+                    };
+                    if let Some(anchor) = anchor {
+                        // the end is exclusive: past the pointed-at cell when dragging forward
+                        let end = if (line, c) >= (anchor.1, anchor.0) { ((c + 1).min(cols), line) } else { (c, line) };
+                        self.term_sel = Some((w, anchor, end));
+                        changed = true;
+                    }
                 }
             }
         }
