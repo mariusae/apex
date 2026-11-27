@@ -61,6 +61,11 @@ pub struct Outline {
     /// Where the pointer last was in the bar, and since when it has been
     /// out of it on its way to the pill (`toward_pill`).
     pub left_bar: Option<(Point<Pixels>, Option<std::time::Instant>)>,
+    /// The pill as last drawn: its entry and its width -- what `pill_now`
+    /// takes for its width while it names that entry.
+    pub pill_w: Rc<Cell<Option<(usize, f32)>>>,
+    /// Where the pointer was at its last move, for which way it goes.
+    pub last_pos: Option<Point<Pixels>>,
     /// Which side of the bar the pill and the list go, and how wide they
     /// may be there (`side`): the same side for both, so the list opens
     /// where the pill was.
@@ -99,6 +104,14 @@ fn side(bar: Bounds<Pixels>, width: Pixels, want: f32) -> (bool, Pixels) {
 
 /// How long the pill waits for a pointer on its way to it, out of the bar.
 const ON_THE_WAY: std::time::Duration = std::time::Duration::from_millis(700);
+
+/// Whether the pill keeps the stop it names, `held` from the pointer,
+/// though another is nearer (`best` from it, `gap` from the one held):
+/// until the pointer is past the middle between them by a quarter of
+/// the gap.
+fn keeps(held: f32, best: f32, gap: f32) -> bool {
+    held - best <= gap / 4.
+}
 
 /// Whether `p` is in the triangle `a b c` (either way round).
 fn in_triangle(p: Point<Pixels>, a: Point<Pixels>, b: Point<Pixels>, c: Point<Pixels>) -> bool {
@@ -415,7 +428,9 @@ impl Acme {
     pub fn outline_hover(&mut self, pos: Point<Pixels>, window: gpui::Size<Pixels>) -> bool {
         self.outline.window_h = window.height;
         let in_bar = self.outline_bar_at(pos);
-        let on_it = self.outline.panel_at.get().is_some_and(|b| b.dilate(px(4.)).contains(&pos));
+        // on the list as drawn; on the pill where it is now, not where it
+        // was drawn last, which a quick pointer outruns
+        let on_it = if self.outline.whole { self.outline.panel_at.get() } else { self.pill_now() }.is_some_and(|b| b.dilate(px(4.)).contains(&pos));
         let was = (self.outline.open, self.outline.whole, self.outline.near);
         if in_bar.is_some() {
             self.outline.left_bar = Some((pos, None));
@@ -426,14 +441,28 @@ impl Acme {
                 if let Some((toc, _, _)) = self.outline_of(w) {
                     (self.outline.left, self.outline.room) = side(bar, window.width, widest(&toc));
                 }
+                let same = self.outline.open == Some(w) && !self.outline.whole;
                 (self.outline.open, self.outline.whole) = (Some(w), false);
-                // the item under the pointer, not the one being read
-                self.outline.near = self.outline_of(w).and_then(|(toc, scroll, _)| {
-                    (0..toc.heads.len()).min_by(|&a, &b| {
+                // the item under the pointer, not the one being read -- held
+                // while the pointer goes sideways (on its way to the pill)
+                // and until it is clearly nearer another stop, so stops close
+                // together do not pass the pill from one to the next
+                let sideways = self.outline.last_pos.is_some_and(|l| (pos.x - l.x).abs() > (pos.y - l.y).abs() * 2.);
+                let held = self.outline.near.filter(|_| same);
+                self.outline.near = match (held, sideways) {
+                    (Some(i), true) => Some(i),
+                    _ => self.outline_of(w).and_then(|(toc, scroll, _)| {
                         let d = |i: usize| (stop_y(&toc, scroll, bar, i) - pos.y).abs();
-                        d(a).partial_cmp(&d(b)).unwrap_or(std::cmp::Ordering::Equal)
-                    })
-                });
+                        let best = (0..toc.heads.len()).min_by(|&a, &b| d(a).partial_cmp(&d(b)).unwrap_or(std::cmp::Ordering::Equal))?;
+                        Some(match held {
+                            Some(i) if i < toc.heads.len() && i != best => {
+                                let gap = (stop_y(&toc, scroll, bar, i) - stop_y(&toc, scroll, bar, best)).abs();
+                                if keeps(f32::from(d(i)), f32::from(d(best)), f32::from(gap)) { i } else { best }
+                            }
+                            _ => best,
+                        })
+                    }),
+                };
             }
             None if on_it && self.outline.open.is_some() => {
                 if !self.outline.whole {
@@ -444,6 +473,7 @@ impl Acme {
             None if self.toward_pill(pos) => {}
             None => (self.outline.open, self.outline.whole) = (None, false),
         }
+        self.outline.last_pos = Some(pos);
         if self.outline.open.is_none() {
             self.outline.left_bar = None;
         }
@@ -462,7 +492,7 @@ impl Acme {
         if self.outline.whole || self.outline.open.is_none() {
             return false;
         }
-        let (Some(pill), Some((from, mut since))) = (self.outline.panel_at.get(), self.outline.left_bar) else { return false };
+        let (Some(pill), Some((from, mut since))) = (self.pill_now(), self.outline.left_bar) else { return false };
         let since = *since.get_or_insert_with(std::time::Instant::now);
         self.outline.left_bar = Some((from, Some(since)));
         if since.elapsed() > ON_THE_WAY {
@@ -476,6 +506,31 @@ impl Acme {
         let a = point(from.x + behind, from.y);
         let (b, c) = (point(near, pill.top() - px(6.)), point(near, pill.bottom() + px(6.)));
         in_triangle(pos, a, b, c)
+    }
+
+    /// Where the pill is now, for the entry it names now: placed as
+    /// `outline_pill` places it, as wide as it was last drawn naming that
+    /// entry, else as its title makes it -- not where the last frame drew
+    /// it, which a pointer quicker than a frame (or than the first frame
+    /// of a pill) would miss.
+    fn pill_now(&self) -> Option<Bounds<Pixels>> {
+        if self.outline.whole {
+            return None;
+        }
+        let (w, bar) = (self.outline.open?, self.outline.bar?);
+        let (toc, scroll, current) = self.outline_of(w)?;
+        let i = self.outline.near.or(current).unwrap_or(0);
+        let head = toc.heads.get(i)?;
+        let y = stop_y(&toc, scroll, bar, i);
+        let top = (y - px(PILL / 2.)).min(bar.bottom() - px(PILL)).max(bar.top());
+        let width = match self.outline.pill_w.get() {
+            Some((j, wd)) if j == i => wd,
+            // padding, the mark, the gaps and the chevron, and the title
+            // at about seven points a character
+            _ => (44. + 7.2 * title(head).chars().count() as f32).min(320.).min(f32::from(self.outline.room)),
+        };
+        let x = if self.outline.left { bar.left() - px(2. + width) } else { bar.right() + px(2.) };
+        Some(Bounds::new(point(x, top), gpui::size(px(width), px(PILL))))
     }
 
     /// The whole outline opened from the pill: the pill's entry under the
@@ -604,6 +659,7 @@ impl Acme {
         let head = toc.heads.get(i)?;
         let t = crate::theme::theme();
         let at = self.outline.panel_at.clone();
+        let drawn_w = self.outline.pill_w.clone();
         let y = stop_y(&toc, scroll, bar, i);
         let top = (y - px(PILL / 2.)).min(bar.bottom() - px(PILL)).max(bar.top());
         let pill = div()
@@ -623,7 +679,19 @@ impl Acme {
             .text_color(rgb(t.text_dim))
             .whitespace_nowrap()
             .child(self.overlay_mark_by(px(0.)))
-            .child(gpui::canvas(move |b, _, _| at.set(Some(b)), |_, _, _, _| {}).absolute().top(px(0.)).left(px(0.)).size_full())
+            .child(
+                gpui::canvas(
+                    move |b, _, _| {
+                        at.set(Some(b));
+                        drawn_w.set(Some((i, f32::from(b.size.width))));
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .top(px(0.))
+                .left(px(0.))
+                .size_full(),
+            )
             // the accent's mark: the stop it names
             .child(div().flex_none().text_color(rgb(t.accent)).child("§"))
             .child(div().min_w_0().overflow_hidden().text_ellipsis().child(title(head)))
@@ -645,6 +713,14 @@ impl Acme {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_pill_holds_its_stop_until_the_pointer_is_clearly_past_the_middle() {
+        // stops 16 apart: the middle is 8 from each
+        assert!(keeps(8., 8., 16.), "at the middle");
+        assert!(keeps(10., 6., 16.), "2 past it, under a quarter of the gap");
+        assert!(!keeps(13., 3., 16.), "5 past it, over a quarter");
+    }
 
     #[test]
     fn the_outline_goes_where_it_fits_the_right_first() {
