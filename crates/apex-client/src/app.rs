@@ -747,6 +747,25 @@ pub(crate) fn is_exec_char(c: char) -> bool {
 /// after, 0 while blinked off, and None once it is gone.
 pub const RAN: (f32, f32, f32, f32) = (30., 60., 90., 210.);
 
+/// The button a press means, plan9port's mapping for laptops: option-click
+/// is B2, command-click B3, shift-click B4 (the tools menu). Elements that
+/// take their own presses (the outline's rows, a command's dot in a list)
+/// ask it too, or a laptop has only B1 there.
+pub(crate) fn laptop_button(e: &MouseDownEvent) -> MouseButton {
+    if e.button != MouseButton::Left {
+        return e.button;
+    }
+    if e.modifiers.alt {
+        MouseButton::Middle
+    } else if e.modifiers.platform {
+        MouseButton::Right
+    } else if e.modifiers.shift {
+        MouseButton::Navigate(gpui::NavigationDirection::Back)
+    } else {
+        MouseButton::Left
+    }
+}
+
 pub(crate) fn ran_fade(since: std::time::Duration) -> Option<f32> {
     let ms = since.as_secs_f32() * 1000.;
     let (off, on, fade, gone) = RAN;
@@ -3456,19 +3475,10 @@ impl Acme {
 
     /// plan9port mapping for laptops: option-click is B2, command-click is B3.
     fn logical_button(&mut self, e: &MouseDownEvent) -> MouseButton {
-        if e.button != MouseButton::Left {
-            return e.button;
+        let b = laptop_button(e);
+        if e.button == MouseButton::Left {
+            self.mouse.left_as = Some(b);
         }
-        let b = if e.modifiers.alt {
-            MouseButton::Middle
-        } else if e.modifiers.platform {
-            MouseButton::Right
-        } else if e.modifiers.shift {
-            MouseButton::Navigate(gpui::NavigationDirection::Back) // B4: the tools menu
-        } else {
-            MouseButton::Left
-        };
-        self.mouse.left_as = Some(b);
         b
     }
 
@@ -3971,6 +3981,20 @@ impl Acme {
     pub fn mouse_up(&mut self, e: &MouseUpEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let button = if e.button == MouseButton::Left { self.mouse.left_as.take().unwrap_or(MouseButton::Left) } else { e.button };
         self.last_mouse = e.position;
+        // a button let go anywhere but on the outline's row it went down
+        // on (which takes it first): that row done with it, B2 not sent
+        // (B2 as option-click lets go as B1)
+        match e.button {
+            MouseButton::Left | MouseButton::Middle => {
+                if e.button == MouseButton::Left {
+                    self.outline.b1 = None;
+                }
+                if self.outline.b2.take().is_some() {
+                    cx.notify();
+                }
+            }
+            _ => {}
+        }
         // B1 up after a dot's press: done with it (its chord's B2 too)
         if self.dot_held.is_some() {
             if button == MouseButton::Left {
@@ -6336,4 +6360,19 @@ mod smooth_scroll_tests {
 /// banner of a window that only watches names the one that leads.
 pub fn ui_name() -> String {
     format!("apex on {}", apex_server::term::sysname())
+}
+
+#[cfg(test)]
+mod laptop_tests {
+    use super::*;
+
+    #[test]
+    fn option_and_command_clicks_are_b2_and_b3() {
+        let press = |button, alt, platform| MouseDownEvent { button, position: Default::default(), modifiers: Modifiers { alt, platform, ..Default::default() }, click_count: 1, first_mouse: false };
+        assert_eq!(laptop_button(&press(MouseButton::Left, false, false)), MouseButton::Left);
+        assert_eq!(laptop_button(&press(MouseButton::Left, true, false)), MouseButton::Middle);
+        assert_eq!(laptop_button(&press(MouseButton::Left, false, true)), MouseButton::Right);
+        // a real button is itself, whatever is held
+        assert_eq!(laptop_button(&press(MouseButton::Middle, false, true)), MouseButton::Middle);
+    }
 }

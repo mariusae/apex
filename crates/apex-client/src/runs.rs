@@ -352,10 +352,11 @@ impl Acme {
         let (failed, running) = self.run_state(w, i)?;
         let t = crate::theme::theme();
         let ink = dot_ink(failed, running);
-        let hit = |b: MouseButton| {
-            cx.listener(move |acme: &mut Acme, _: &gpui::MouseDownEvent, _, cx| {
+        // the button the press means: option- and command-click B2 and B3
+        let hit = |_: MouseButton| {
+            cx.listener(move |acme: &mut Acme, e: &gpui::MouseDownEvent, _, cx| {
                 cx.stop_propagation();
-                acme.dot_button(w, i, b, true, cx);
+                acme.dot_button(w, i, crate::app::laptop_button(e), true, cx);
             })
         };
         Some(

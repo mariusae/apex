@@ -732,7 +732,7 @@ fn view_in_an_agents_terminal_is_its_conversation_with_a_prompt_under_it() {
     }
     assert!(text_of(&c, lens).contains("ax-prompt\">what is in hosts?</pre>") && text_of(&c, lens).contains("It names localhost."), "{}", text_of(&c, lens));
     // each turn marked for the page's outline: its turns
-    assert!(text_of(&c, lens).contains("data-apex-outline=\"1\" data-apex-title=\"what is in hosts?\""), "{}", text_of(&c, lens));
+    assert!(text_of(&c, lens).contains("data-apex-outline=\"1\" data-apex-title=\"what is in hosts?\" data-apex-send=\"what is in hosts?\""), "what B2 on its entry sends again: {}", text_of(&c, lens));
     // a prompt written in the strip and sent: typed into the terminal,
     // the strip empty
     let strip = |c: &Remote| c.node.state.window(lens).ok().and_then(|w| w.input).and_then(|b| c.node.state.buffer(b).ok()).map(|b| (b.id, b.version, b.text.to_string()));
@@ -747,6 +747,19 @@ fn view_in_an_agents_terminal_is_its_conversation_with_a_prompt_under_it() {
     }
     assert!(screen(&c).lines().any(|l| l.trim() == "hello-lens"), "the prompt typed and entered: {}", screen(&c));
     assert_eq!(strip(&c).map(|s| s.2).as_deref(), Some(""));
+    // `Send TEXT` (B2 on a turn in its outline): the text sent, a draft
+    // in the strip left as it is
+    let (ib, version, _) = strip(&c).unwrap();
+    c.propose(apex_server::Proposal::ReplaceRange { select: false, dir: None, buffer: ib, version, q0: 0, q1: 0, text: "a draft".into() }, Duration::from_secs(5)).unwrap();
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(lens), text: "Send echo resent-lens".into() }, Duration::from_secs(5)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while !screen(&c).lines().any(|l| l.trim() == "resent-lens") && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    assert!(screen(&c).lines().any(|l| l.trim() == "resent-lens"), "the text sent: {}", screen(&c));
+    assert_eq!(strip(&c).map(|s| s.2).as_deref(), Some("a draft"), "the draft left");
+    let (ib, version, _) = strip(&c).unwrap();
+    c.propose(apex_server::Proposal::ReplaceRange { select: false, dir: None, buffer: ib, version, q0: 0, q1: 7, text: String::new() }, Duration::from_secs(5)).unwrap();
     // a prompt of several lines, to Claude: typed, its lines broken with
     // ^J, not pasted (Claude Code makes a paste `<pasted_content>`) --
     // what the terminal's program reads shown as cat -v has it, the

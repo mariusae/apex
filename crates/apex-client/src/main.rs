@@ -773,7 +773,9 @@ impl Render for Acme {
         let root = root.children(self.tag_overlays(cx));
         // a process's card, under its pill
         let root = root.children(self.proc_card());
-        // a page's outline, out beside its scrollbar
+        // a page's outline, out beside its scrollbar (gone once a row
+        // sent from it has blinked)
+        self.outline_settle(window);
         let root = root.children(self.outline_panel(cx));
         // a window held while a drop goes to the host: how far it has got
         let root = root.children(self.held_panels(window, cx));

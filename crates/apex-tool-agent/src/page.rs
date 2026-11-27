@@ -127,7 +127,15 @@ fn page(turns: &[Turn], a: &crate::agent::Agent) -> String {
         // each turn an entry of the page's outline, titled by what was
         // asked: its outline its turns, and nothing else (no heading of
         // an answer's)
-        let mark = t.asked.map(|a| format!(" data-apex-outline=\"1\" data-apex-title=\"{}\"", escape(&title(a)).replace('"', "&quot;"))).unwrap_or_default();
+        // what was asked, whole, for B2 on its entry to send again; not a
+        // notification's, which the user did not write
+        let mark = t
+            .asked
+            .map(|a| {
+                let send = if notification(a).is_none() { format!(" data-apex-send=\"{}\"", escape(a.trim()).replace('"', "&quot;")) } else { String::new() };
+                format!(" data-apex-outline=\"1\" data-apex-title=\"{}\"{send}", escape(&title(a)).replace('"', "&quot;"))
+            })
+            .unwrap_or_default();
         out.push_str(&format!("<section class=\"ax-turn\" id=\"turn-{}\"{mark}>\n\n", turns.len() - shown.len() + i));
         if let Some(asked) = t.asked {
             match notification(asked) {

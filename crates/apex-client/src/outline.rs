@@ -68,6 +68,15 @@ pub struct Outline {
     pub room: Pixels,
     /// The window's height, as the pointer last moved in it.
     pub window_h: Pixels,
+    /// B2 down on this row: let go on it, it is sent (`outline_send`);
+    /// off it, or B3 with it, not.
+    pub b2: Option<usize>,
+    /// B1 down on this row: B2 with it copies the command and its output,
+    /// as on its dot.
+    pub b1: Option<usize>,
+    /// The row just sent, and when: it blinks as B2's run text does, then
+    /// the outline goes (`outline_settle`).
+    pub sent: Option<(usize, std::time::Instant)>,
 }
 
 /// How wide the list may be: wider with a column of runs at its right.
@@ -158,14 +167,14 @@ impl Acme {
                 if entries.len() < 2 {
                     return None;
                 }
-                let heads = entries.into_iter().map(|e| TocHead { level: e.level, title: e.title, top: match e.at { apex_server::outline::At::Term(l) => l as f64, _ => 0. }, path: false, detail: e.detail, failed: e.failed }).collect();
+                let heads = entries.into_iter().map(|e| TocHead { level: e.level, title: e.title, top: match e.at { apex_server::outline::At::Term(l) => l as f64, _ => 0. }, path: false, detail: e.detail, failed: e.failed, send: None }).collect();
                 let height = term.total.max(1) as f64;
                 (heads, height, (term.top as f64, height, term.rows as f64))
             }
             apex_core::Body::Text(b) => {
                 let buf = self.node.state.buffer(b).ok()?;
                 let n = buf.text.line_count().max(1);
-                let heads = entries.into_iter().map(|e| TocHead { level: e.level, title: e.title, top: match e.at { apex_server::outline::At::Text(a) => buf.text.line_of(a.min(buf.text.len())) as f64, _ => 0. }, path: false, detail: e.detail, failed: e.failed }).collect();
+                let heads = entries.into_iter().map(|e| TocHead { level: e.level, title: e.title, top: match e.at { apex_server::outline::At::Text(a) => buf.text.line_of(a.min(buf.text.len())) as f64, _ => 0. }, path: false, detail: e.detail, failed: e.failed, send: None }).collect();
                 let scroll = match self.layouts.get(&apex_core::ViewId::Body(w)) {
                     Some(l) => (l.first_line as f64, l.total_lines.max(1) as f64, l.lines.len() as f64),
                     None => {
@@ -266,6 +275,115 @@ impl Acme {
         let _ = self.node.set_origin(&mut self.log, v, start);
         let _ = self.node.select(&mut self.log, v, at, at);
         self.after();
+    }
+
+    /// Whether entry `i` of window `w`'s outline has something B2 sends:
+    /// a command (a terminal's, win's, a lens's line for one), or an
+    /// agent's turn (what was asked).
+    pub fn outline_sendable(&self, w: WindowId, i: usize) -> bool {
+        if let Some((toc, _)) = self.webs.toc(w) {
+            return toc.heads.get(i).is_some_and(|h| h.send.is_some());
+        }
+        apex_server::outline::run_of(&self.node, w, i).is_some_and(|r| !r.cmd.trim().is_empty())
+    }
+
+    /// B2 on entry `i` of window `w`'s outline, let go: Send, as B2 means
+    /// everywhere -- a command run again, typed to its shell (`run_again`:
+    /// a terminal's typed, win's sent as its Send does); an agent's turn,
+    /// what was asked, sent to the agent again (`Send TEXT` in its lens,
+    /// the strip's draft left). Then the window at its end, where it goes
+    /// on, and the row blinking before the outline goes.
+    pub fn outline_send(&mut self, w: WindowId, i: usize, cx: &mut Context<Self>) {
+        let send = self.webs.toc(w).and_then(|(toc, _)| toc.heads.get(i)).and_then(|h| h.send.clone());
+        match send {
+            // (the lens scrolls its page to the end itself)
+            Some(text) => self.execute(apex_core::ExecCtx::Window(w), &format!("Send {text}"), cx),
+            None => {
+                self.run_again(w, i, cx);
+                // a lens's line: the window under it is where it runs
+                let at = self.run_home(w, i).map_or(w, |(base, _)| base);
+                self.outline_to_end(at);
+            }
+        }
+        self.outline.sent = Some((i, std::time::Instant::now()));
+        cx.notify();
+    }
+
+    /// A button down on entry `i`'s row in window `w`'s outline. B1 goes
+    /// there (and, held, B2 with it copies a command and its output, as
+    /// on its dot); B3 goes there too, as the lens has it -- or, with B2
+    /// down, takes B2 back, as acme's B2 B3 does; B2 is Send, as
+    /// everywhere: down here, sent when let go here (`outline_row_up`).
+    fn outline_row_down(&mut self, w: WindowId, i: usize, b: MouseButton, cx: &mut Context<Self>) {
+        cx.stop_propagation();
+        match b {
+            MouseButton::Left => {
+                self.outline_go(w, i);
+                self.outline.b1 = Some(i);
+            }
+            MouseButton::Right => {
+                if self.outline.b2.take().is_none() {
+                    self.outline_go(w, i);
+                }
+            }
+            MouseButton::Middle => {
+                if self.outline.b1 == Some(i) && apex_server::outline::run_of(&self.node, w, i).is_some() {
+                    self.run_act(w, i, crate::runs::RunAct::Copy, cx);
+                } else if self.outline.sent.is_none() && self.outline_sendable(w, i) {
+                    self.outline.b2 = Some(i);
+                }
+            }
+            _ => {}
+        }
+        cx.notify();
+    }
+
+    /// A button let go on entry `i`'s row: B2 down on it, sent.
+    fn outline_row_up(&mut self, w: WindowId, i: usize, cx: &mut Context<Self>) {
+        if self.outline.b2 == Some(i) {
+            cx.stop_propagation();
+            self.outline.b2 = None;
+            self.outline_send(w, i, cx);
+        }
+        cx.notify();
+    }
+
+    /// Window `w` at its end, as End shows it: a terminal's screen, a
+    /// text's end with room under it for what comes.
+    fn outline_to_end(&mut self, w: WindowId) {
+        let Ok(body) = self.node.state.window(w).map(|x| x.body) else { return };
+        match body {
+            apex_core::Body::Term(t) => {
+                let Some(term) = self.node.state.terms.get(&t) else { return };
+                let (top, last) = (term.top, term.total.saturating_sub(term.rows as u64));
+                if last > top {
+                    self.term_scroll(t, (last - top) as isize);
+                }
+            }
+            apex_core::Body::Text(_) => {
+                let v = apex_core::ViewId::Body(w);
+                if let Some(n) = self.text_of(v).map(|t| t.len()) {
+                    let quarters = if self.node.window_live(w) { 3 } else { 1 };
+                    self.show_at.insert(v, (n, quarters));
+                }
+                self.after();
+            }
+            apex_core::Body::Page(_) => {}
+        }
+    }
+
+    /// Each frame: a row sent, once its blink is over, takes the outline
+    /// with it; drawn again until then.
+    pub fn outline_settle(&mut self, window: &mut gpui::Window) {
+        let Some((_, at)) = self.outline.sent else { return };
+        if crate::app::ran_fade(at.elapsed()).is_some() {
+            window.request_animation_frame();
+            return;
+        }
+        self.outline.sent = None;
+        (self.outline.open, self.outline.whole, self.outline.near, self.outline.hover, self.outline.b2, self.outline.b1) = (None, false, None, None, None, None);
+        self.outline.panel_at.set(None);
+        self.outline.left_bar = None;
     }
 
     /// The scrollbar a pointer at `pos` is in, of a window with an
@@ -395,6 +513,10 @@ impl Acme {
         let nested = toc.heads.iter().any(|h| h.level > 1);
         let rows = toc.heads.iter().enumerate().map(|(i, h)| {
             let here = current == Some(i);
+            // B2 down on it, or just sent (blinking off a moment, as B2's
+            // run text does): in B2's colours
+            let exec = self.outline.b2 == Some(i)
+                || self.outline.sent.is_some_and(|(j, at)| j == i && crate::app::ran_fade(at.elapsed()).is_some_and(|f| f > 0.));
             let row = div()
                 .id(("toc", i))
                 .relative()
@@ -418,32 +540,33 @@ impl Acme {
                 .when_some(h.detail.clone(), |d, detail| d.child(div().flex_none().pl(px(10.)).text_size(px(12.)).font_weight(crate::fonts::weight(gpui::FontWeight::NORMAL)).text_color(rgb(if h.failed { t.text } else { t.panel_dim })).child(detail)))
                 // a command's dot: the command's own buttons, as by its prompt
                 .children(self.dot_view(w, i, cx).map(|d| d.ml(px(6.))))
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |acme, _, _, cx| {
-                        acme.outline_go(w, i);
-                        cx.stop_propagation();
-                        cx.notify();
-                    }),
-                )
-                // a row is a place: B3 goes there too, as the lens has it
-                // (a command's own buttons are its dot's, at the row's end)
-                .on_mouse_down(
-                    MouseButton::Right,
-                    cx.listener(move |acme, _, _, cx| {
-                        acme.outline_go(w, i);
-                        cx.stop_propagation();
-                        cx.notify();
-                    }),
-                )
-                .on_hover(cx.listener(move |acme, over: &bool, _, _| {
+                // the buttons, B2 and B3 as option- and command-click too
+                .on_mouse_down(MouseButton::Left, cx.listener(move |acme, e: &gpui::MouseDownEvent, _, cx| acme.outline_row_down(w, i, crate::app::laptop_button(e), cx)))
+                .on_mouse_down(MouseButton::Middle, cx.listener(move |acme, _, _, cx| acme.outline_row_down(w, i, MouseButton::Middle, cx)))
+                .on_mouse_down(MouseButton::Right, cx.listener(move |acme, _, _, cx| acme.outline_row_down(w, i, MouseButton::Right, cx)))
+                // B2 let go on the row it went down on: sent (option-click's
+                // B2 lets go as B1)
+                .on_mouse_up(MouseButton::Middle, cx.listener(move |acme, _, _, cx| acme.outline_row_up(w, i, cx)))
+                .on_mouse_up(MouseButton::Left, cx.listener(move |acme, _, _, cx| acme.outline_row_up(w, i, cx)))
+                .on_hover(cx.listener(move |acme, over: &bool, _, cx| {
                     if *over {
                         acme.outline.hover = Some(i);
-                    } else if acme.outline.hover == Some(i) {
-                        acme.outline.hover = None;
+                    } else {
+                        if acme.outline.hover == Some(i) {
+                            acme.outline.hover = None;
+                        }
+                        // off the row with B2 down: not sent
+                        if acme.outline.b2 == Some(i) {
+                            acme.outline.b2 = None;
+                            cx.notify();
+                        }
                     }
                 }));
-            // going to a heading is B3's: its colours under the pointer
+            // going to a heading is B3's: its colours under the pointer;
+            // B2 down on it, or just sent, B2's
+            if exec {
+                return crate::shell::chosen(row, true, crate::shell::Act::Exec, crate::shell::BAR_INSET);
+            }
             crate::shell::chosen_under_pointer(row, crate::shell::Act::Look, crate::shell::BAR_INSET, "toc-row")
         });
         let tall = tall(toc.heads.len(), bar);

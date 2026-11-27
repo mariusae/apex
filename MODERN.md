@@ -595,7 +595,17 @@ windows put away out of the tiling, which is the core's
   command's `cmdline=` is the rest of its mark, semicolons and all.
 - **A command is a thing to act on** (`runs.rs`, `outline::run_of`):
   a shell's commands, a terminal's or win's. A row in a list of them is
-  a place, as any outline's row is: B1 or B3 goes there. The command
+  a place, as any outline's row is: B1 or B3 goes there; and B2 on a
+  row of the outline by the scrollbar is Send, as B2 is everywhere --
+  the command run again (typed to a terminal's shell; win's sent as its
+  Send does), or on an agent's turn, what was asked sent to it again
+  (`Send TEXT` in its lens, the page marking each prompt
+  `data-apex-send`, the strip's draft left). It takes on B2's colours
+  while down, goes on letting go on the same row (off it, or B3 with
+  it, it does not), blinks as B2's run text does, and the outline goes,
+  the window at its end. B1 held on the row and B2 copies the command
+  and its output, as on its dot. A row with nothing to send (a
+  heading, a symbol) takes no B2. The command
   itself is its dot -- at the end of its prompt's row while the pointer
   is on that row, and always at the end of its row in the outline's
   list by the scrollbar, in ⌘P's sections and at the end of its line in

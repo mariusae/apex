@@ -469,7 +469,7 @@ impl Pane {
                     // a word in a conversation lens: View, Send or Stop
                     let lens = p.window.filter(|w| self.lenses.get(w).is_some_and(|l| [l.view, l.send, l.stop].contains(&p.rule)));
                     let taken = match (page_nav, self.verbs.get(&p.rule).copied(), target) {
-                        _ if lens.is_some() => self.lens_verb(lens.unwrap(), p.rule)?,
+                        _ if lens.is_some() => self.lens_verb(lens.unwrap(), p.rule, &p.text)?,
                         (None, Some("View"), Some(key)) => self.view_for(p.window.unwrap(), &key)?,
                         (Some((w, nav)), _, _) => self.navigate_page(w, nav)?,
                         (None, Some(v), Some(key)) => self.verb_for(v, &key)?,
@@ -1246,9 +1246,11 @@ impl Pane {
     }
 
     /// A word in a conversation lens: View takes it away (its draft kept
-    /// for the next), Send gives the agent what is in the strip, Stop
-    /// interrupts its turn.
-    fn lens_verb(&mut self, w: WindowId, rule: RuleId) -> apex_tool::Result<bool> {
+    /// for the next), Send gives the agent what is in the strip -- or,
+    /// `Send TEXT` (B2 on a turn in the outline: what was asked then),
+    /// the text, the strip's draft left as it is -- Stop interrupts its
+    /// turn.
+    fn lens_verb(&mut self, w: WindowId, rule: RuleId, args: &str) -> apex_tool::Result<bool> {
         let Some(l) = self.lenses.get(&w) else { return Ok(false) };
         let (base, key, at) = (l.base, l.session.clone(), l.at);
         if rule == l.view {
@@ -1270,9 +1272,14 @@ impl Pane {
             }
             self.t.delete(w)?;
         } else if rule == l.send {
-            let text = self.t.take_input(w)?;
-            // sent: no draft left of it
-            self.drafts.remove(&key);
+            let text = if args.trim().is_empty() {
+                let text = self.t.take_input(w)?;
+                // sent: no draft left of it
+                self.drafts.remove(&key);
+                text
+            } else {
+                args.to_string()
+            };
             let text = text.trim_end();
             if !text.is_empty() {
                 let claude = self.agents.get(&key).is_some_and(|a| a.kind == "claude");

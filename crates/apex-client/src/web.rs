@@ -318,7 +318,10 @@ const TOC_SCRIPT: &str = r#"(function () {
         const name = h.querySelector('.name');
         const label = marked.length ? title(h) : (name || h).textContent.trim().replace(/\s+/g, ' ');
         const level = marked.length ? Math.min(4, Math.max(1, parseInt(h.getAttribute('data-apex-outline'), 10) || 1)) : h.tagName[1];
-        lines.push(level + '\t' + Math.round(at(h)) + '\t' + (h.closest('section.file') ? 'p' : '') + '\t' + label);
+        // what B2 on it sends (an agent's turn: what was asked), encoded
+        // so its tabs and newlines stay in its field
+        const send = marked.length ? (h.getAttribute('data-apex-send') || '') : '';
+        lines.push(level + '\t' + Math.round(at(h)) + '\t' + (h.closest('section.file') ? 'p' : '') + '\t' + encodeURIComponent(send) + '\t' + label);
       }
       const now = lines.join('\n');
       if (now !== last) {
@@ -542,6 +545,30 @@ pub struct TocHead {
     pub top: f64,
     /// A path (a diff's file): its end says most.
     pub path: bool,
+    /// What B2 on it sends, when it is something to send again: an
+    /// agent's turn's prompt (the page's `data-apex-send`).
+    pub send: Option<String>,
+}
+
+/// `encodeURIComponent` undone: `%XX` bytes, UTF-8 whole again.
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        let hex = |c: u8| (c as char).to_digit(16).map(|d| d as u8);
+        match (b[i], b.get(i + 1).copied().and_then(hex), b.get(i + 2).copied().and_then(hex)) {
+            (b'%', Some(h), Some(l)) => {
+                out.push(h << 4 | l);
+                i += 3;
+            }
+            (c, _, _) => {
+                out.push(c);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 impl Toc {
@@ -551,11 +578,12 @@ impl Toc {
         let height = lines.next()?.trim().parse().ok()?;
         let heads = lines
             .filter_map(|l| {
-                let mut f = l.splitn(4, '\t');
+                let mut f = l.splitn(5, '\t');
                 let level = f.next()?.parse().ok()?;
                 let top = f.next()?.parse().ok()?;
                 let path = f.next()? == "p";
-                Some(TocHead { level, top, path, title: f.next()?.to_string(), detail: None, failed: false })
+                let send = Some(percent_decode(f.next()?)).filter(|s| !s.is_empty());
+                Some(TocHead { level, top, path, title: f.next()?.to_string(), detail: None, failed: false, send })
             })
             .collect();
         Some(Toc { height, heads })
@@ -2336,7 +2364,7 @@ mod tests {
 
     #[test]
     fn a_pages_outline_is_read_and_placed_down_its_bar() {
-        let toc = Toc::parse("4000\n1\t0\t\tapex\n2\t1000\t\tWhat changed\n2\t3000\tp\tcrates/apex-client/src/a.rs\nbad line").unwrap();
+        let toc = Toc::parse("4000\n1\t0\t\t\tapex\n2\t1000\t\t\tWhat changed\n2\t3000\tp\t\tcrates/apex-client/src/a.rs\nbad line").unwrap();
         assert_eq!(toc.height, 4000.);
         assert_eq!(toc.heads.iter().map(|h| (h.level, h.top, h.path, h.title.as_str())).collect::<Vec<_>>(), vec![(1, 0., false, "apex"), (2, 1000., false, "What changed"), (2, 3000., true, "crates/apex-client/src/a.rs")]);
         // down the bar as the page is long now
@@ -2349,6 +2377,17 @@ mod tests {
         assert_eq!(toc.current(Some((3000., 4000., 1000.))), Some(2));
         assert_eq!(toc.current(None), None);
         assert_eq!(Toc::parse("x"), None);
+        assert!(toc.heads.iter().all(|h| h.send.is_none()));
+    }
+
+    #[test]
+    fn an_agents_turn_says_what_b2_sends_again() {
+        // as TOC_SCRIPT encodes it: encodeURIComponent("fix it\n\tnow — ✓")
+        let toc = Toc::parse("900\n1\t0\t\tfix%20it%0A%09now%20%E2%80%94%20%E2%9C%93\tfix it now — ✓\n1\t400\t\t\ta notification").unwrap();
+        assert_eq!(toc.heads[0].send.as_deref(), Some("fix it\n\tnow — ✓"));
+        assert_eq!(toc.heads[0].title, "fix it now — ✓");
+        assert_eq!(toc.heads[1].send, None);
+        assert_eq!(super::percent_decode("100%"), "100%", "a % not of an escape");
     }
 
     #[test]
