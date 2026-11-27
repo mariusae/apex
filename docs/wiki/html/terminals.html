@@ -303,7 +303,7 @@ unsafe impl Send for Terminal {}
 <p><code>apex_vt_next_event</code> hands out each event's bytes borrowed until the next call. It keeps the last event in a thread-local and frees it on the following call. <code>Terminal::events</code> copies the bytes out immediately.</p>
 <p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/159904621b04f2dad107c9e53490b3cd0f665003/crates/ghostty-vt-sys/src/lib.rs#L1-L273">crates/ghostty-vt-sys/src/lib.rs:1-273</a>, <a href="https://github.com/mariusae/apex/blob/159904621b04f2dad107c9e53490b3cd0f665003/crates/ghostty-vt-sys/src/shim.c#L1-L142">crates/ghostty-vt-sys/src/shim.c:1-142</a>, <a href="https://github.com/mariusae/apex/blob/159904621b04f2dad107c9e53490b3cd0f665003/crates/ghostty-vt-sys/src/shim.c#L146-L196">crates/ghostty-vt-sys/src/shim.c:146-196</a>, <a href="https://github.com/mariusae/apex/blob/159904621b04f2dad107c9e53490b3cd0f665003/crates/ghostty-vt-sys/src/shim.c#L215-L415">crates/ghostty-vt-sys/src/shim.c:215-415</a>, <a href="https://github.com/mariusae/apex/blob/159904621b04f2dad107c9e53490b3cd0f665003/crates/ghostty-vt-sys/src/shim.c#L427-L502">crates/ghostty-vt-sys/src/shim.c:427-502</a>, <a href="https://github.com/mariusae/apex/blob/159904621b04f2dad107c9e53490b3cd0f665003/crates/apex-core/src/entry.rs#L287-L304">crates/apex-core/src/entry.rs:287-304</a></p>
 <h3 id="building-the-library">Building the library</h3>
-<p>libghostty-vt is Zig, and its C API exists only on Ghostty's main branch. <code>build.rs</code> therefore pins a commit (<code>GHOSTTY_COMMIT</code>) and builds that commit with Zig 0.16:</p>
+<p>libghostty-vt is Zig, and its C API exists only on Ghostty's main branch. <code>build.rs</code> therefore pins a commit (<code>GHOSTTY_COMMIT</code>) and builds that commit with Zig 0.17:</p>
 <pre><code>zig build -Demit-lib-vt=true -Demit-xcframework=false -Doptimize=ReleaseFast --prefix &lt;cache&gt;
 </code></pre>
 <p>When cross-compiling, it adds <code>-Dtarget=&lt;zig triple&gt;</code>; <code>zig_target</code> maps cargo triples to Zig's. The source checkout and the built libraries live under <code>$XDG_CACHE_HOME/apex</code> or <code>~/.cache/apex</code>, keyed by commit and target, so the build happens once per commit and target. The shim is compiled with <code>cc</code>, and only the static archive is copied into <code>OUT_DIR</code>, so the linker cannot pick up a dylib instead.</p>
@@ -325,7 +325,7 @@ unsafe impl Send for Terminal {}
 </tr>
 <tr>
 <td><code>ZIG</code></td>
-<td>The Zig to use; otherwise <code>zig</code> on PATH, otherwise the newest <code>~/.local/zig-*-0.16*/zig</code></td>
+<td>The Zig to use; otherwise <code>zig</code> on PATH, otherwise the newest <code>~/.local/zig-*-0.17*/zig</code></td>
 </tr>
 </tbody>
 </table>

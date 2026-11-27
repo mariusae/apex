@@ -4,6 +4,6 @@
 # C library built for the target (ring's) looks empty to the link.
 zig=${ZIG:-}
 if [ -z "$zig" ]; then zig=$(command -v zig || true); fi
-if [ -z "$zig" ]; then zig=$(ls -d "$HOME"/.local/zig-*-0.16*/zig 2>/dev/null | sort | tail -1); fi
-if [ -z "$zig" ]; then echo "zig-ar: no zig 0.16: put it on PATH or set ZIG" >&2; exit 1; fi
+if [ -z "$zig" ]; then zig=$(ls -d "$HOME"/.local/zig-*-0.17*/zig 2>/dev/null | sort | tail -1); fi
+if [ -z "$zig" ]; then echo "zig-ar: no zig 0.17: put it on PATH or set ZIG" >&2; exit 1; fi
 exec "$zig" ar "$@"

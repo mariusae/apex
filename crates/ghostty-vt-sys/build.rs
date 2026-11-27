@@ -3,7 +3,7 @@
 //!
 //! Ghostty's VT library is Zig, and its C API lives only on main (the
 //! tagged releases carry the OSC and SGR parsers alone), so a commit is
-//! pinned here and built with Zig. The build needs `zig` (0.16) and, the
+//! pinned here and built with Zig. The build needs `zig` (0.17) and, the
 //! first time, the network. The source and the built libraries are kept
 //! under a cache directory, keyed by the commit and (the libraries) by
 //! the target, so this happens once per commit and target rather than
@@ -17,13 +17,13 @@
 //! - `APEX_GHOSTTY_LIB`: a directory holding `lib/libghostty-vt.a` and
 //!   `include`, already built; nothing is cloned or built.
 //! - `ZIG`: the Zig to build with (else `zig` on PATH, else the newest
-//!   `~/.local/zig-*-0.16*/zig`).
+//!   `~/.local/zig-*-0.17*/zig`).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// The Ghostty commit the shim is written against (main, 2026-09-21).
-const GHOSTTY_COMMIT: &str = "4ff699343ad039bc73f970ae104cbcec42cc070c";
+/// The Ghostty commit the shim is written against (main, 2026-11-27).
+const GHOSTTY_COMMIT: &str = "ff7068f4eb7d6d93778327e3948a86b2a42c1197";
 const GHOSTTY_REPO: &str = "https://github.com/ghostty-org/ghostty";
 
 fn main() {
@@ -73,7 +73,7 @@ fn build_lib() -> PathBuf {
             src
         }
     };
-    let zig = zig().unwrap_or_else(|| panic!("libghostty-vt needs zig 0.16 to build: put it on PATH or set ZIG"));
+    let zig = zig().unwrap_or_else(|| panic!("libghostty-vt needs zig 0.17 to build: put it on PATH or set ZIG"));
     let mut cmd = Command::new(&zig);
     cmd.current_dir(&src)
         .arg("build")
@@ -134,7 +134,7 @@ fn fetch(src: &Path) {
     run(Command::new("git").args(["checkout", "-q", "FETCH_HEAD"]).current_dir(src), "git checkout");
 }
 
-/// Zig 0.16, as `ZIG` says, on PATH, or where a hand install puts it.
+/// Zig 0.17, as `ZIG` says, on PATH, or where a hand install puts it.
 fn zig() -> Option<PathBuf> {
     if let Some(z) = std::env::var_os("ZIG") {
         return Some(PathBuf::from(z));
@@ -147,7 +147,7 @@ fn zig() -> Option<PathBuf> {
         .ok()?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
-        .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("zig-") && n.contains("-0.16")))
+        .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("zig-") && n.contains("-0.17")))
         .map(|p| p.join("zig"))
         .filter(|p| p.is_file())
         .collect();

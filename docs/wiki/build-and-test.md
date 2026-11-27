@@ -1,6 +1,6 @@
 # Building, Testing and Packaging
 
-apex is one Cargo workspace. It produces the `apex-ui` client, the `apex` command (which is also the daemon and every bundled tool), `apexd`, `apex-bench` and a few helper binaries. Everything builds with a plain `cargo build` except for one non-Rust dependency. The terminal emulator is Ghostty's `libghostty-vt`, a Zig library, so a working build needs Zig 0.16. This page covers the workspace layout and its profiles, the native and patched dependencies, the build id that clients and daemons exchange, where each crate's tests and benchmarks live, and how `mac/build-app.sh` packages `Apex.app`. The app carries a Linux `apex` and `rc` so that it can attach to hosts over ssh.
+apex is one Cargo workspace. It produces the `apex-ui` client, the `apex` command (which is also the daemon and every bundled tool), `apexd`, `apex-bench` and a few helper binaries. Everything builds with a plain `cargo build` except for one non-Rust dependency. The terminal emulator is Ghostty's `libghostty-vt`, a Zig library, so a working build needs Zig 0.17. This page covers the workspace layout and its profiles, the native and patched dependencies, the build id that clients and daemons exchange, where each crate's tests and benchmarks live, and how `mac/build-app.sh` packages `Apex.app`. The app carries a Linux `apex` and `rc` so that it can attach to hosts over ssh.
 
 For what the crates do, see [apex Overview](overview.md). The remote-host side of packaging (how the carried binaries are found and installed) is on [Remote Hosts and Providers](remote-hosts.md). How the terminal library is used at runtime is on [Terminals](terminals.md).
 
@@ -46,7 +46,7 @@ Sources: [third_party/pathfinder_simd/src/lib.rs:11-40](third_party/pathfinder_s
 
 ## libghostty-vt: the Zig-built terminal library
 
-`ghostty-vt-sys` is the one crate that does not build with Cargo alone. Ghostty's VT library is written in Zig. Its C API exists only on Ghostty's `main` branch, because tagged releases carry only the OSC and SGR parsers. The build script therefore pins a commit (`GHOSTTY_COMMIT`, main as of 2026-09-21) and builds it with Zig 0.16.
+`ghostty-vt-sys` is the one crate that does not build with Cargo alone. Ghostty's VT library is written in Zig. Its C API exists only on Ghostty's `main` branch, because tagged releases carry only the OSC and SGR parsers. The build script therefore pins a commit (`GHOSTTY_COMMIT`, main as of 2026-11-27) and builds it with Zig 0.17.
 
 ```mermaid
 flowchart TD
@@ -80,7 +80,7 @@ Once it has a prefix, the script compiles `src/shim.c` with `cc` as `apex_vt_shi
 |---|---|
 | `APEX_GHOSTTY_LIB` | A directory already holding `lib/libghostty-vt.a` and `include/`. Nothing is cloned or built. |
 | `APEX_GHOSTTY_SRC` | A Ghostty checkout to build instead of fetching the pinned commit. The result still goes into the cache's `out/<target>`. |
-| `ZIG` | The Zig binary to use. Otherwise `zig` on the PATH if `zig version` succeeds, otherwise the lexically last `~/.local/zig-*-0.16*/zig`. With none, the build panics with "libghostty-vt needs zig 0.16 to build". |
+| `ZIG` | The Zig binary to use. Otherwise `zig` on the PATH if `zig version` succeeds, otherwise the lexically last `~/.local/zig-*-0.17*/zig`. With none, the build panics with "libghostty-vt needs zig 0.17 to build". |
 | `XDG_CACHE_HOME` | Moves the cache from `~/.cache/apex`. |
 
 All three `APEX_GHOSTTY_*`/`ZIG` variables are declared with `rerun-if-env-changed`, along with `src/shim.c` and `build.rs` itself. Note one quirk: once a cached prefix exists for the target, `APEX_GHOSTTY_SRC` is no longer consulted. To rebuild from a different checkout, use `APEX_GHOSTTY_LIB` or remove the cached `out/` directory.
@@ -125,7 +125,7 @@ Two small wrapper scripts make this work:
 - **`mac/zig-cc`** runs `zig cc -target x86_64-linux-musl`. It first strips any `--target=…` or `-target X` argument, because cc-rs passes Rust's triple, which Zig does not understand.
 - **`mac/zig-ar`** runs `zig ar`. macOS's `ar` writes a BSD symbol table that lld cannot read, so a C library built for the target (ring's is the example given) would look empty at link time.
 
-`link-self-contained=no` stops Rust from adding its bundled musl start files, since Zig brings its own. Both wrappers find Zig the way the ghostty build script does: `$ZIG`, otherwise `zig` on the PATH, otherwise the newest `~/.local/zig-*-0.16*/zig`. In a cross build, `ghostty-vt-sys` sees `TARGET != HOST` and passes `-Dtarget=x86_64-linux-musl` to Zig. The Linux command therefore links a Linux archive, not the Mac's.
+`link-self-contained=no` stops Rust from adding its bundled musl start files, since Zig brings its own. Both wrappers find Zig the way the ghostty build script does: `$ZIG`, otherwise `zig` on the PATH, otherwise the newest `~/.local/zig-*-0.17*/zig`. In a cross build, `ghostty-vt-sys` sees `TARGET != HOST` and passes `-Dtarget=x86_64-linux-musl` to Zig. The Linux command therefore links a Linux archive, not the Mac's.
 
 Sources: [.cargo/config.toml:1-10](.cargo/config.toml#L1-L10), [mac/zig-cc:1-15](mac/zig-cc#L1-L15), [mac/zig-ar:1-5](mac/zig-ar#L1-L5), [crates/ghostty-vt-sys/build.rs:88-92](crates/ghostty-vt-sys/build.rs#L88-L92)
 
@@ -227,7 +227,7 @@ Sources: [crates/apex-core/tests/core.rs:1-3](crates/apex-core/tests/core.rs#L1-
 
 ## Continuous integration
 
-`.github/workflows/rust.yml` defines one job on `ubuntu-latest`, triggered by pushes and pull requests to `main`. It checks out the repository and runs `cargo build --verbose`, then `cargo test --verbose`. That is the whole workflow. There is no Zig setup step, no plan9port, no cache of the Ghostty build, and no Mac or cross-compile job. The Linux job builds the whole workspace, including `ghostty-vt-sys`, so it depends on the runner already having a Zig 0.16 that `build.rs` can find. The sam differential tests skip themselves there, as described above.
+`.github/workflows/rust.yml` defines one job on `ubuntu-latest`, triggered by pushes and pull requests to `main`. It checks out the repository and runs `cargo build --verbose`, then `cargo test --verbose`. That is the whole workflow. There is no Zig setup step, no plan9port, no cache of the Ghostty build, and no Mac or cross-compile job. The Linux job builds the whole workspace, including `ghostty-vt-sys`, so it depends on the runner already having a Zig 0.17 that `build.rs` can find. The sam differential tests skip themselves there, as described above.
 
 Sources: [.github/workflows/rust.yml:1-22](.github/workflows/rust.yml#L1-L22)
 
@@ -241,7 +241,7 @@ Sources: [docs/index.html:105-123](docs/index.html#L105-L123), [README.md:12-34]
 
 ## Practical notes
 
-- **First build:** have Zig 0.16 available, either on the PATH or through `ZIG`, and network access to github.com for the Ghostty fetch. After that, builds are offline and the Zig step is cached under `~/.cache/apex`.
+- **First build:** have Zig 0.17 available, either on the PATH or through `ZIG`, and network access to github.com for the Ghostty fetch. After that, builds are offline and the Zig step is cached under `~/.cache/apex`.
 - **Pointing at a prebuilt Ghostty:** set `APEX_GHOSTTY_LIB=/path/to/prefix` (it must contain `lib/libghostty-vt.a` and `include/`). This skips Zig entirely.
 - **Rebuilding everything a client checks:** any change under `crates/**/*.rs` or to `Cargo.lock` changes `BUILD_ID`. Only a change to `PROTOCOL` makes `check_build` refuse a daemon.
 - **Linux cross-builds:** check the hard-coded Zig path in `mac/zig-cc` and `mac/zig-ar` before running `build-app.sh` on a new machine.

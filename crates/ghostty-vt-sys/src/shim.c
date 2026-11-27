@@ -166,7 +166,9 @@ ApexVt *apex_vt_new(uint16_t cols, uint16_t rows, size_t scrollback) {
   // (10000, raised to one page beyond the screen) would otherwise come
   // first, keeping a few hundred lines, fewer the wider the terminal.
   // The line limit bounds the memory as well, about lines x cols cells.
-  ghostty_terminal_set(vt->term, GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_BYTES, NULL);
+  // (NULL would restore the default; SIZE_MAX is no byte limit)
+  size_t no_byte_limit = SIZE_MAX;
+  ghostty_terminal_set(vt->term, GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_BYTES, &no_byte_limit);
   ghostty_terminal_set(vt->term, GHOSTTY_TERMINAL_OPT_USERDATA, vt);
   // a callback option takes the function itself, not its address
   ghostty_terminal_set(vt->term, GHOSTTY_TERMINAL_OPT_WRITE_PTY, (const void *)on_write_pty);
@@ -209,12 +211,12 @@ void apex_vt_resize(ApexVt *vt, uint16_t cols, uint16_t rows) {
 
 // The viewport moved: `delta` rows, up into the history when negative.
 void apex_vt_scroll(ApexVt *vt, intptr_t delta) {
-  GhosttyTerminalScrollViewport s = {.tag = GHOSTTY_SCROLL_VIEWPORT_DELTA, .value = {.delta = delta}};
+  GhosttyTerminalScrollViewport s = {.tag = GHOSTTY_TERMINAL_SCROLL_VIEWPORT_DELTA, .value = {.delta = delta}};
   ghostty_terminal_scroll_viewport(vt->term, s);
 }
 
 void apex_vt_scroll_bottom(ApexVt *vt) {
-  GhosttyTerminalScrollViewport s = {.tag = GHOSTTY_SCROLL_VIEWPORT_BOTTOM};
+  GhosttyTerminalScrollViewport s = {.tag = GHOSTTY_TERMINAL_SCROLL_VIEWPORT_BOTTOM};
   ghostty_terminal_scroll_viewport(vt->term, s);
 }
 
@@ -300,7 +302,7 @@ int apex_vt_snapshot(ApexVt *vt,
 
   // where the viewport sits in the whole screen, history and all
   *out_top = 0;
-  GhosttyGridRef ref = GHOSTTY_INIT_SIZED(GhosttyGridRef);
+  GhosttyGridRef ref = (GhosttyGridRef){0};
   GhosttyPoint top = {.tag = GHOSTTY_POINT_TAG_VIEWPORT, .value = {.coordinate = {.x = 0, .y = 0}}};
   if (ghostty_terminal_grid_ref(vt->term, top, &ref) == GHOSTTY_SUCCESS) {
     GhosttyPointCoordinate at = {0};
@@ -338,7 +340,8 @@ int apex_vt_snapshot(ApexVt *vt,
         continue;
       }
 
-      GhosttyStyle style = GHOSTTY_INIT_SIZED(GhosttyStyle);
+      GhosttyStyle style;
+      ghostty_style_default(&style);
       ghostty_render_state_row_cells_get(vt->cells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_STYLE, &style);
 
       uint32_t fg = pack_color(style.fg_color, &colors, 0);
@@ -357,25 +360,25 @@ int apex_vt_snapshot(ApexVt *vt,
         GhosttyColorRgb c = {0};
         if (ghostty_cell_get(raw, GHOSTTY_CELL_DATA_COLOR_RGB, &c) == GHOSTTY_SUCCESS) bg = pack_rgb(c);
       }
-      if (style.inverse) {
+      if (style.flags & GHOSTTY_STYLE_FLAG_INVERSE) {
         uint32_t b = bg == 0 ? APEX_DEFAULT_BG : bg;
         bg = fg == 0 ? APEX_DEFAULT_FG : fg;
         fg = b;
       }
-      if (style.faint) fg = 0xff777777u;
+      if (style.flags & GHOSTTY_STYLE_FLAG_FAINT) fg = 0xff777777u;
 
       uint8_t flags = 0;
-      if (style.bold) flags |= APEX_FLAG_BOLD;
-      if (style.italic) flags |= APEX_FLAG_ITALIC;
-      if (style.underline != GHOSTTY_SGR_UNDERLINE_NONE) flags |= APEX_FLAG_UNDERLINE;
+      if (style.flags & GHOSTTY_STYLE_FLAG_BOLD) flags |= APEX_FLAG_BOLD;
+      if (style.flags & GHOSTTY_STYLE_FLAG_ITALIC) flags |= APEX_FLAG_ITALIC;
+      if (GHOSTTY_STYLE_UNDERLINE(style) != GHOSTTY_SGR_UNDERLINE_NONE) flags |= APEX_FLAG_UNDERLINE;
 
-      out->ch = (style.invisible || cp == 0) ? ' ' : cp;
+      out->ch = ((style.flags & GHOSTTY_STYLE_FLAG_INVISIBLE) || cp == 0) ? ' ' : cp;
       out->fg = fg;
       out->bg = bg;
       out->flags = flags;
       out->link = 0;
       if (has_link) {
-        GhosttyGridRef cref = GHOSTTY_INIT_SIZED(GhosttyGridRef);
+        GhosttyGridRef cref = (GhosttyGridRef){0};
         GhosttyPoint p = {.tag = GHOSTTY_POINT_TAG_VIEWPORT, .value = {.coordinate = {.x = x, .y = y}}};
         if (ghostty_terminal_grid_ref(vt->term, p, &cref) == GHOSTTY_SUCCESS) out->link = link_of(vt, &cref);
       }
@@ -447,7 +450,7 @@ static bool mode_on(ApexVt *vt, GhosttyMode m) {
 bool apex_vt_mode(ApexVt *vt, int which) {
   switch (which) {
     case APEX_MODE_APP_CURSOR:
-      return mode_on(vt, GHOSTTY_MODE_DECCKM);
+      return mode_on(vt, GHOSTTY_MODE_CURSOR_KEYS);
     case APEX_MODE_BRACKETED_PASTE:
       return mode_on(vt, GHOSTTY_MODE_BRACKETED_PASTE);
     case APEX_MODE_FOCUS_IN_OUT:
@@ -458,12 +461,12 @@ bool apex_vt_mode(ApexVt *vt, int which) {
       return s == GHOSTTY_TERMINAL_SCREEN_ALTERNATE;
     }
     case APEX_MODE_MOUSE:
-      return mode_on(vt, GHOSTTY_MODE_X10_MOUSE) || mode_on(vt, GHOSTTY_MODE_NORMAL_MOUSE) || mode_on(vt, GHOSTTY_MODE_BUTTON_MOUSE) ||
-             mode_on(vt, GHOSTTY_MODE_ANY_MOUSE);
+      return mode_on(vt, GHOSTTY_MODE_MOUSE_EVENT_X10) || mode_on(vt, GHOSTTY_MODE_MOUSE_EVENT_NORMAL) || mode_on(vt, GHOSTTY_MODE_MOUSE_EVENT_BUTTON) ||
+             mode_on(vt, GHOSTTY_MODE_MOUSE_EVENT_ANY);
     case APEX_MODE_SGR_MOUSE:
-      return mode_on(vt, GHOSTTY_MODE_SGR_MOUSE);
+      return mode_on(vt, GHOSTTY_MODE_MOUSE_FORMAT_SGR);
     case APEX_MODE_ALT_SCROLL:
-      return mode_on(vt, GHOSTTY_MODE_ALT_SCROLL);
+      return mode_on(vt, GHOSTTY_MODE_MOUSE_ALTERNATE_SCROLL);
     default:
       return false;
   }
@@ -484,7 +487,7 @@ void apex_vt_size(ApexVt *vt, uint64_t *out_scrollback, uint64_t *out_total, int
 // Whether row `y` of the whole screen (history first) was soft-wrapped:
 // its line goes on in the row below. 0 for a hard line end or no such row.
 int apex_vt_wrapped(ApexVt *vt, uint32_t y) {
-  GhosttyGridRef ref = GHOSTTY_INIT_SIZED(GhosttyGridRef);
+  GhosttyGridRef ref = (GhosttyGridRef){0};
   GhosttyPoint p = {.tag = GHOSTTY_POINT_TAG_SCREEN, .value = {.coordinate = {.x = 0, .y = y}}};
   GhosttyRow row = 0;
   bool wrap = false;
@@ -497,27 +500,33 @@ int apex_vt_wrapped(ApexVt *vt, uint32_t y) {
 // The text between two points of the whole screen (history first), both
 // ends included; `out` holds it, and the length is returned, or -1.
 intptr_t apex_vt_text(ApexVt *vt, uint16_t x0, uint32_t y0, uint16_t x1, uint32_t y1, uint8_t *out, size_t cap) {
-  GhosttyGridRef start = GHOSTTY_INIT_SIZED(GhosttyGridRef);
-  GhosttyGridRef end = GHOSTTY_INIT_SIZED(GhosttyGridRef);
+  GhosttyGridRef start = (GhosttyGridRef){0};
+  GhosttyGridRef end = (GhosttyGridRef){0};
   GhosttyPoint p0 = {.tag = GHOSTTY_POINT_TAG_SCREEN, .value = {.coordinate = {.x = x0, .y = y0}}};
   GhosttyPoint p1 = {.tag = GHOSTTY_POINT_TAG_SCREEN, .value = {.coordinate = {.x = x1, .y = y1}}};
   if (ghostty_terminal_grid_ref(vt->term, p0, &start) != GHOSTTY_SUCCESS) return -1;
   if (ghostty_terminal_grid_ref(vt->term, p1, &end) != GHOSTTY_SUCCESS) return -1;
 
-  GhosttySelection sel = GHOSTTY_INIT_SIZED(GhosttySelection);
+  GhosttySelection sel = (GhosttySelection){0};
   sel.start = start;
   sel.end = end;
   sel.rectangle = false;
 
-  GhosttyTerminalSelectionFormatOptions opts = GHOSTTY_INIT_SIZED(GhosttyTerminalSelectionFormatOptions);
-  opts.emit = GHOSTTY_FORMATTER_FORMAT_PLAIN;
-  opts.unwrap = true;
-  opts.trim = false;
-  opts.selection = &sel;
-
+  // plain text, wrapped rows joined, nothing trimmed: a formatter on the
+  // terminal, over the selection
+  GhosttyFormatter f = NULL;
+  if (ghostty_formatter_terminal_new(NULL, &f, vt->term) != GHOSTTY_SUCCESS) return -1;
+  GhosttyFormatterFormat emit = GHOSTTY_FORMATTER_FORMAT_PLAIN;
+  bool unwrap = true, trim = false;
   uint8_t *buf = NULL;
   size_t len = 0;
-  if (ghostty_terminal_selection_format_alloc(vt->term, NULL, opts, &buf, &len) != GHOSTTY_SUCCESS) return -1;
+  bool ok = ghostty_formatter_set(f, GHOSTTY_FORMATTER_OPT_EMIT, &emit) == GHOSTTY_SUCCESS &&
+            ghostty_formatter_set(f, GHOSTTY_FORMATTER_OPT_UNWRAP, &unwrap) == GHOSTTY_SUCCESS &&
+            ghostty_formatter_set(f, GHOSTTY_FORMATTER_OPT_TRIM, &trim) == GHOSTTY_SUCCESS &&
+            ghostty_formatter_set(f, GHOSTTY_FORMATTER_OPT_SELECTION, &sel) == GHOSTTY_SUCCESS &&
+            ghostty_formatter_format_alloc(f, NULL, &buf, &len) == GHOSTTY_SUCCESS;
+  ghostty_formatter_free(f);
+  if (!ok) return -1;
   intptr_t got = (intptr_t)len;
   if (len > cap) {
     got = -(intptr_t)len; // say how much room it wants

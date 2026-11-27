@@ -119,7 +119,7 @@ Sources: [crates/ghostty-vt-sys/src/lib.rs:1-273](crates/ghostty-vt-sys/src/lib.
 
 ### Building the library
 
-libghostty-vt is Zig, and its C API exists only on Ghostty's main branch. `build.rs` therefore pins a commit (`GHOSTTY_COMMIT`) and builds that commit with Zig 0.16:
+libghostty-vt is Zig, and its C API exists only on Ghostty's main branch. `build.rs` therefore pins a commit (`GHOSTTY_COMMIT`) and builds that commit with Zig 0.17:
 
 ```
 zig build -Demit-lib-vt=true -Demit-xcframework=false -Doptimize=ReleaseFast --prefix <cache>
@@ -131,7 +131,7 @@ When cross-compiling, it adds `-Dtarget=<zig triple>`; `zig_target` maps cargo t
 |---|---|
 | `APEX_GHOSTTY_SRC` | Build from this checkout instead of cloning |
 | `APEX_GHOSTTY_LIB` | Use a prebuilt directory holding `lib/libghostty-vt.a` and `include`; nothing is fetched or built |
-| `ZIG` | The Zig to use; otherwise `zig` on PATH, otherwise the newest `~/.local/zig-*-0.16*/zig` |
+| `ZIG` | The Zig to use; otherwise `zig` on PATH, otherwise the newest `~/.local/zig-*-0.17*/zig` |
 
 More on the build is in [Building, Testing and Packaging](build-and-test.md).
 

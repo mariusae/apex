@@ -13,9 +13,9 @@ for a in "$@"; do
 done
 eval set -- "$args"
 # the Zig as crates/ghostty-vt-sys finds it: $ZIG, else zig on PATH, else
-# the newest ~/.local/zig-*-0.16*/zig
+# the newest ~/.local/zig-*-0.17*/zig
 zig=${ZIG:-}
 if [ -z "$zig" ]; then zig=$(command -v zig || true); fi
-if [ -z "$zig" ]; then zig=$(ls -d "$HOME"/.local/zig-*-0.16*/zig 2>/dev/null | sort | tail -1); fi
-if [ -z "$zig" ]; then echo "zig-cc: no zig 0.16: put it on PATH or set ZIG" >&2; exit 1; fi
+if [ -z "$zig" ]; then zig=$(ls -d "$HOME"/.local/zig-*-0.17*/zig 2>/dev/null | sort | tail -1); fi
+if [ -z "$zig" ]; then echo "zig-cc: no zig 0.17: put it on PATH or set ZIG" >&2; exit 1; fi
 exec "$zig" cc -target x86_64-linux-musl "$@"
