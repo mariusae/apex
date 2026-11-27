@@ -1,13 +1,13 @@
-remotes should work as long as you can supply a way to execute a command on the remote and connect stdin/out/err. 
+remotes should work as long as you can supply a way to execute a command on the remote and connect stdin/out/err.
 
 for example, fly.io's sprites can run commands in this way:
 
 sprite exec -s apex-test -- bash -c "ls /"
 
-this way, we can execute a bash script that first starts a little control channel: check if there is a running session and attach to it, otherwise upload the binary and start it (uploading has to be done via the control channel too). 
+this way, we can execute a bash script that first starts a little control channel: check if there is a running session and attach to it, otherwise upload the binary and start it (uploading has to be done via the control channel too).
 
 then attach to the binary.
-
+
 we should allow the user to configure *providers* that help make these connections.  ssh provider is straightforward., but we can then also have a 'sprite' provider, etc. a provider can take a single argument (e.g., hostname for ssh, sprite name for above), but that should suffice to get going.
 
 
@@ -24,6 +24,7 @@ plumber!
 fully document `apex` command.
 
 terminal titles
+
 --
 
 scroll responsiveness (w/ trackpad)
@@ -62,3 +63,5 @@ Recommendation:
 - In Apex, `Open` is a navigation/jump operation: it may select the target, record navigation state, and warp the mouse.
 - The closer plan9port acme pattern is: set dot/address, then `show`. That reveals the location without using the stronger open/jump path.
 - Apex should expose an equivalent tool-facing operation, such as `Show` or `Reveal`, that brings a line/range into view without navigation side effects like mouse warp.
+
+unify progress: a terminal's OSC 9;4 progress (TermOp::Progress, its own state) and a window's (WindowOp::Working{by, at}) are one thing in two places; make the terminal's the window's.
