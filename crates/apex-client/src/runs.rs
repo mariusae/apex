@@ -103,9 +103,10 @@ impl Acme {
         let text = transcript(cmd, output);
         match act {
             RunAct::Copy => {
-                // into the snarf buffer, and the clipboard once it lands
-                self.snarf_wanted = Some(self.node.state.layout.snarf.clone());
-                let _ = self.node.append(&mut self.log, Shard::Layout, Op::Layout(LayoutOp::Snarf { text }));
+                // into the snarf buffer, and the clipboard however the
+                // snarf buffer stood (the same text copied again too)
+                let _ = self.node.append(&mut self.log, Shard::Layout, Op::Layout(LayoutOp::Snarf { text: text.clone() }));
+                self.clips.push(text);
                 self.sync();
             }
             RunAct::Open => {

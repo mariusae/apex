@@ -133,6 +133,47 @@ fn execs_and_terminals_over_the_socket() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A terminal copy puts the text on the clipboard of the UI that copied,
+/// every time, even when the snarf buffer holds it already; another UI
+/// on the session keeps its own clipboard.
+#[test]
+fn a_terminal_copy_reaches_the_copiers_clipboard_alone() {
+    let sock = daemon();
+    let mut a = Remote::connect(&sock, "main", "a").unwrap();
+    let mut b = Remote::connect(&sock, "main", "b").unwrap();
+    // b attached last and leads: the terminal is made through it
+    b.node.exec(&mut b.log, ExecCtx::Top, "Newterm").unwrap();
+    b.flush();
+    let term = |r: &Remote| r.node.state.windows.values().find_map(|w| match w.body {
+        Body::Term(t) => Some(t),
+        _ => None,
+    });
+    assert!(wait(&mut b, |r| term(r).is_some()));
+    assert!(wait(&mut a, |r| term(r).is_some()));
+    let t = term(&a).unwrap();
+    for ch in "echo tt-copy-$((6*7))\r".chars() {
+        a.send(&ClientMsg::TermKey { term: t, key: apex_server::TermKey { key: ch.to_string(), text: Some(ch.to_string()), shift: false, control: false, alt: false } });
+    }
+    // the output's row, as a history line
+    let line = |r: &Remote| {
+        let term = r.node.state.terms.get(&t)?;
+        let row = term.grid.iter().position(|row| row.iter().map(|c| c.ch).collect::<String>().trim_end() == "tt-copy-42")?;
+        Some(term.top + row as u64)
+    };
+    assert!(wait(&mut a, |r| line(r).is_some()));
+    let l = line(&a).unwrap();
+    for _ in 0..2 {
+        a.send(&ClientMsg::TermText { term: t, p0: (0, l), p1: (0, l + 1) });
+        assert!(wait(&mut a, |r| !r.link.clips.is_empty()));
+        assert_eq!(a.link.clips.drain(..).collect::<Vec<_>>(), vec!["tt-copy-42\n".to_string()]);
+        assert!(wait(&mut b, |r| r.node.state.layout.snarf == "tt-copy-42\n"));
+    }
+    // b has seen both snarfs land; nothing came for its clipboard
+    assert!(wait(&mut a, |r| r.node.state.layout.snarf == "tt-copy-42\n"));
+    b.step(Duration::from_millis(100)).ok();
+    assert!(b.link.clips.is_empty(), "b's clips: {:?}", b.link.clips);
+}
+
 #[test]
 fn a_tool_works_on_a_headless_session_and_a_ui_takes_over() {
     use apex_server::Proposal;

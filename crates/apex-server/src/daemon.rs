@@ -936,7 +936,13 @@ impl Daemon {
             }
             ClientMsg::TermType { term, text } => s.server.term_type(&mut s.log, term, &text),
             ClientMsg::TermText { term, p0, p1 } => {
+                // the snarf for the session, and the clipboard of the UI
+                // that copied alone: the snarf buffer may hold the text
+                // already, and another UI's clipboard is its own
                 if let Some(p) = s.server.term_text(term, p0, p1) {
+                    if let Proposal::Snarf { text } = &p {
+                        self.send(id, ServerMsg::Clipboard { text: text.clone() });
+                    }
                     props.push(p);
                 }
             }
