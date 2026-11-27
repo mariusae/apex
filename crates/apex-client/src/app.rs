@@ -3517,8 +3517,10 @@ impl Acme {
         self.url_edit = None;
         self.session_edit = None;
         self.session_menu = false;
-        // and one off a tag's field or the path's picker puts it away
-        self.tag_edit = None;
+        // and one off a tag's field puts it away, what was typed taken
+        // (`tag_edit_commit`), the click then going on to what it is on;
+        // one off the path's picker puts it away
+        self.tag_edit_commit();
         self.picker_due = None;
         self.atom_down = None;
         if self.picker.take().is_some() || self.cwd_picker.take().is_some() {
@@ -5413,6 +5415,9 @@ impl Acme {
             }
             return;
         }
+        // a tag's field being typed in: what it says counts first, so a
+        // Put writes to the name typed
+        self.tag_edit_commit();
         // select all in a window's input strip: the strip's text, not the
         // window's body's (which `Edit ,` there would select)
         if text == "Edit ," {

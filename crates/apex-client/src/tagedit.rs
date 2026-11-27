@@ -1,5 +1,6 @@
 //! A window tag's head at work. Its path double-clicked becomes a field
-//! (return moves the window there, as `apex win rename` does; a new
+//! (return, or going on to anything else, moves the window there, as
+//! `apex win rename` does; escape leaves it where it was; a new
 //! window's Untitled is one click); its label double-clicked, the same.
 //! A folder of the path, or its name, clicked brings a picker down under
 //! it, as VS Code's breadcrumbs do: the folder's entries (the name's
@@ -267,19 +268,7 @@ impl Acme {
         e.caret_since = Instant::now();
         match key {
             "escape" => self.tag_edit = None,
-            "enter" => {
-                let Some(e) = self.tag_edit.take() else { return };
-                let text = e.field.trim().to_string();
-                let proposal = match e.part {
-                    Part::Path if text.is_empty() => None,
-                    Part::Path => Some(Proposal::SetPath { window: e.window, path: self.absolute_for(e.window, &text) }),
-                    Part::Label => Some(Proposal::SetLabel { window: e.window, label: Some(text).filter(|t| !t.is_empty()) }),
-                };
-                if let Some(p) = proposal {
-                    apex_server::perform(&mut self.node, &mut self.log, vec![p]);
-                    self.after();
-                }
-            }
+            "enter" => self.tag_edit_commit(),
             _ => {
                 if e.field.key(key, ch, mods) == Edited::No {
                     return;
@@ -287,6 +276,34 @@ impl Acme {
             }
         }
         cx.notify();
+    }
+
+    /// The field put away, what it says taken: the window moved to the
+    /// path typed, or its label changed -- on return, and as well when
+    /// the user goes on to something else (a click anywhere, a command
+    /// run), as an acme tag's name counts as soon as it is typed. Only
+    /// escape throws it away.
+    pub fn tag_edit_commit(&mut self) {
+        let Some(e) = self.tag_edit.take() else { return };
+        if self.node.state.window(e.window).is_err() {
+            return;
+        }
+        let text = e.field.trim().to_string();
+        let proposal = match e.part {
+            Part::Path if text.is_empty() => None,
+            Part::Path => {
+                let path = self.absolute_for(e.window, &text);
+                (path != self.node.window_path(e.window)).then_some(Proposal::SetPath { window: e.window, path })
+            }
+            Part::Label => {
+                let label = Some(text).filter(|t| !t.is_empty());
+                (label != self.node.window_label(e.window)).then_some(Proposal::SetLabel { window: e.window, label })
+            }
+        };
+        if let Some(p) = proposal {
+            apex_server::perform(&mut self.node, &mut self.log, vec![p]);
+            self.after();
+        }
     }
 
     /// A path typed for window `w`, absolute: a relative one is in the
@@ -320,7 +337,7 @@ impl Acme {
         }
         let Some((dir, current)) = folder_of(&path, atom) else { return };
         let Some(b) = self.layouts.get(&ViewId::Tag(w)).and_then(|l| l.atom_bounds(atom)) else { return };
-        self.tag_edit = None;
+        self.tag_edit_commit();
         let windows = self.associated(&dir, w);
         let (right, bottom) = (self.node.state.layout.r.x1 as f32 + self.left(), self.node.state.layout.r.y1 as f32 + self.top());
         let top = f32::from(b.bottom()) + 2.;

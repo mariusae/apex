@@ -186,7 +186,7 @@ impl Acme {
     /// one the session's directory goes through) chosen to begin with.
     fn open_cwd_picker(&mut self, dir: String, current: Option<String>, x: Pixels, cx: &mut Context<Self>) {
         self.picker = None;
-        self.tag_edit = None;
+        self.tag_edit_commit();
         let at = point(x - px(13.), px(crate::title_h() + 2.));
         self.cwd_picker = Some(CwdPicker { dir: dir.clone(), filter: LineEdit::new(), names: None, cursor: 0, at, caret_since: Instant::now(), current });
         self.list_folder_as(ViewId::Top, ExecCtx::Top, CWD_LISTING, &dir);
