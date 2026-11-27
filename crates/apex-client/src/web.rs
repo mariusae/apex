@@ -67,6 +67,9 @@ pub enum WebEvent {
     Scroll { top: f64, height: f64, view: f64, line: Option<u32> },
     /// The page's outline, as `TOC_SCRIPT` says it.
     Toc(String),
+    /// One of the app's shortcuts typed while the page had the keyboard
+    /// (`page_shortcut`): to be dispatched as if gpui had heard it.
+    Key(gpui::Keystroke),
 }
 
 /// The theme, as a page rendered from a buffer sees it: the editor's
@@ -2323,6 +2326,19 @@ fn respond(responder: wry::RequestAsyncResponder, status: u16, mime: &str, body:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_key_a_page_hears_is_said_as_gpui_says_it() {
+        let ctrl_shift = gpui::Modifiers { control: true, shift: true, ..Default::default() };
+        for (c, want) in [('W', "ctrl-shift-w"), ('{', "ctrl-{"), ('|', "ctrl-|")] {
+            let k = keystroke(c, ctrl_shift);
+            let want = gpui::Keystroke::parse(want).unwrap();
+            assert_eq!((k.modifiers, k.key), (want.modifiers, want.key), "{c}");
+        }
+        assert!(crate::shell::app_shortcut(&keystroke('W', ctrl_shift)));
+        assert!(!crate::shell::app_shortcut(&keystroke('c', gpui::Modifiers::control())));
+    }
 
     #[test]
     fn a_tools_page_is_on_the_views_own_scheme_and_back() {

@@ -585,6 +585,18 @@ pub fn install_cli() -> Result<String, String> {
 mod tests {
     use super::*;
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_page_passes_on_the_apps_shortcuts_only() {
+        let k = |s: &str| gpui::Keystroke::parse(s).unwrap();
+        for s in ["ctrl-w", "ctrl-shift-w", "ctrl-n", "ctrl-[", "ctrl-{", "ctrl-=", "ctrl-alt-s", "ctrl-1"] {
+            assert!(app_shortcut(&k(s)), "{s}");
+        }
+        for s in ["ctrl-c", "ctrl-v", "ctrl-x", "ctrl-a", "ctrl-z", "ctrl-shift-z", "ctrl-left", "ctrl-backspace", "w", "ctrl-e"] {
+            assert!(!app_shortcut(&k(s)), "{s}");
+        }
+    }
+
     #[test]
     fn a_daemon_of_another_version_is_not_started_over() {
         use apex_server::proto::{write_frame, ServerMsg, PROTOCOL};

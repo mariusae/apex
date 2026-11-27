@@ -107,6 +107,13 @@ impl Render for Acme {
         self.sync();
         self.measure(window.viewport_size());
         self.sync();
+        // a shortcut typed into a page, passed on: as if typed here, once
+        // this frame is drawn
+        for k in std::mem::take(&mut self.page_keys) {
+            window.defer(cx, move |window, cx| {
+                window.dispatch_keystroke(k, cx);
+            });
+        }
         self.schedule_warp(window);
         let title = self.current_title();
         if title != self.title_shown {
@@ -134,6 +141,7 @@ impl Render for Acme {
         self.layouts.clear();
         self.term_layouts.clear();
         self.web_bars.clear();
+        self.web_heads.clear();
         self.status_pills.borrow_mut().clear();
         self.shelf.preview_at.set(None);
         self.shelf.stack_at.set(None);

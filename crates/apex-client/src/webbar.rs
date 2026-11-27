@@ -1,6 +1,6 @@
 //! A web window's header, as the Claude app's browser has it: the
 //! handle (so the window moves, grows and is stashed as any other does),
-//! back and forward, and the address, and nothing else -- no tag text.
+//! back and forward, the address, and the tag's × (Del) -- no tag text.
 //! The window's tag is still there underneath, the core's: its first
 //! word is the address the page follows, as ever (`web_place`), and
 //! Back, Fwd and Get in it are what the buttons do. A web window made
@@ -11,7 +11,7 @@ use std::time::Instant;
 use gpui::prelude::*;
 use gpui::{div, px, rgb, AnyElement, Context, MouseButton};
 
-use apex_core::WindowId;
+use apex_core::{ExecCtx, WindowId};
 
 use crate::app::Acme;
 use crate::field::{Edited, LineEdit};
@@ -157,6 +157,33 @@ impl Acme {
                     cx.stop_propagation();
                 }),
             );
+        // Del, as any tag's × after its name (the stacked one's over
+        // another window): B1 or B2 on it closes the window
+        let me = cx.entity();
+        let stacked = self.node.state.layout.under(w).is_some();
+        let del = crate::text_element::icon_index(if stacked { crate::text_element::DEL_STACKED } else { "Del" });
+        let close = div()
+            .id(("web-del", w.0))
+            .flex_none()
+            .w(px(22.))
+            .h(px((h - 4.).max(12.)))
+            .rounded(px(5.))
+            .flex()
+            .items_center()
+            .justify_center()
+            .cursor_default()
+            .hover(|s| s.bg(rgb(crate::theme::step(t.tag_bg, 1))))
+            .child(crate::sidebar::icon_element(del, 14., t.text_dim));
+        let close = [MouseButton::Left, MouseButton::Middle].into_iter().fold(close, |d, b| {
+            d.on_mouse_down(
+                b,
+                cx.listener(move |this, _, _, cx| {
+                    this.execute(ExecCtx::Window(w), "Del", cx);
+                    cx.stop_propagation();
+                    cx.notify();
+                }),
+            )
+        });
         div()
             .size_full()
             .flex()
@@ -173,6 +200,10 @@ impl Acme {
             .child(button("web-fwd", "›", Nav::Fwd))
             .child(div().w(px(4.)))
             .child(pill)
+            .child(close)
+            // where it is, for the window under the pointer
+            // (`window_at_pointer`): ^W here is this window's Del
+            .child(gpui::canvas(move |b, _, cx| me.update(cx, |acme, _| acme.web_heads.insert(w, b)), |_, _, _, _| {}).absolute().size_full())
             .into_any_element()
     }
 }

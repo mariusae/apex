@@ -589,6 +589,9 @@ pub struct Acme {
     pub pending_switch: Option<Loc>,
     /// A page reported a cursor: apply it on the next tick.
     page_cursor_now: bool,
+    /// The app's shortcuts a page passed on (`WebEvent::Key`): the next
+    /// render dispatches them.
+    pub page_keys: Vec<gpui::Keystroke>,
     /// ⌘P, when open.
     pub finder: Option<crate::finder::Finder>,
     /// Pages' outlines as ⌘P parsed them from their HTML, by buffer, with
@@ -699,6 +702,10 @@ pub struct Acme {
     pub term_layouts: HashMap<WindowId, TermLayout>,
     /// Where each page's scrollbar was drawn this frame, beside its view.
     pub web_bars: HashMap<WindowId, Bounds<Pixels>>,
+    /// Where each web window's header was drawn this frame, in its tag's
+    /// place (`web_header`): no tag's text is laid out there to say whose
+    /// it is.
+    pub web_heads: HashMap<WindowId, Bounds<Pixels>>,
     /// Where each window's status's pill was drawn this frame: a click on
     /// it clears the status (`clear_status`).
     pub status_pills: std::rc::Rc<std::cell::RefCell<HashMap<WindowId, Bounds<Pixels>>>>,
@@ -901,6 +908,7 @@ impl Acme {
         self.layouts.clear();
         self.term_layouts.clear();
         self.web_bars.clear();
+        self.web_heads.clear();
         self.hl = None;
         self.mouse = Mouse::default();
         self.want_visible.clear();
@@ -1640,6 +1648,7 @@ impl Acme {
         self.layouts.clear();
         self.term_layouts.clear();
         self.web_bars.clear();
+        self.web_heads.clear();
         self.webs = Webs::new(self.io_plane(), self.wake.clone());
         self.hl = None;
         self.mouse = Mouse::default();
@@ -1970,6 +1979,7 @@ impl Acme {
             pending_note: None,
             pending_switch: None,
             page_cursor_now: false,
+            page_keys: Vec::new(),
             finder: None,
             page_outlines: std::collections::HashMap::new(),
             last_windows: std::collections::BTreeMap::new(),
@@ -2002,6 +2012,7 @@ impl Acme {
             layouts: HashMap::new(),
             term_layouts: HashMap::new(),
             web_bars: HashMap::new(),
+            web_heads: HashMap::new(),
             status_pills: Default::default(),
             webs: Webs::new(None, None),
             hl: None,
@@ -2740,7 +2751,7 @@ impl Acme {
                 }
             }
         }
-        self.webs.any_loading() || dismissed
+        self.webs.any_loading() || dismissed || !self.page_keys.is_empty()
     }
 
     /// Is the pointer over a page? Then gpui's cursor rect must say
@@ -4792,6 +4803,7 @@ impl Acme {
                     self.webs.set_cursor(w, &css);
                     self.page_cursor_now = true;
                 }
+                WebEvent::Key(k) => self.page_keys.push(k),
                 // the host's loopback, by its bare name: through the proxy
                 WebEvent::Reroute(url) => {
                     self.webs.load(w, &url);
@@ -5405,6 +5417,9 @@ impl Acme {
         let pos = self.pointer(window);
         if let Some(w) = self.webs.window_at(pos) {
             return Some(w); // a page: the window is its
+        }
+        if let Some((w, _)) = self.web_heads.iter().find(|(_, b)| b.contains(&pos)).filter(|_| !self.over_overlay(pos)) {
+            return Some(*w); // a page's header
         }
         match self.locate(pos) {
             Some((Target::View(v), _)) => v.window().or_else(|| self.node.seltext.and_then(|s| s.window())),
