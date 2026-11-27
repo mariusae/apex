@@ -442,7 +442,7 @@ impl Acme {
                     ),
             );
         }
-        div().absolute().top(px(crate::title_h() + 6.)).left(px(0.)).w_full().flex().justify_center().child(row).into_any_element()
+        div().absolute().top(px(self.bar_h() + 6.)).left(px(0.)).w_full().flex().justify_center().child(row).into_any_element()
     }
 
     fn standing_act(&mut self, act: Action, window: &mut Window, cx: &mut Context<Self>) {
@@ -474,7 +474,7 @@ impl Acme {
         let mut card = crate::shell::popover()
             .id("standing-card")
             .absolute()
-            .top(px(crate::title_h() - 4.))
+            .top(px(self.bar_h() - 4.))
             .left(px(0.))
             .w(px(320.))
             .p(px(10.))

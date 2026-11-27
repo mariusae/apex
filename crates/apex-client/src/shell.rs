@@ -325,6 +325,9 @@ pub struct Remembered {
     pub url: String,
     pub frame: Option<Bounds<Pixels>>,
     pub fullscreen: bool,
+    /// In apex's own full screen (`fullscreen.rs`), `frame` the one it had
+    /// before: opened there, and into it again.
+    pub own_full: bool,
 }
 
 /// The windows open when the app last ran: one line each, the session's
@@ -345,7 +348,8 @@ pub fn remembered() -> Vec<Remembered> {
                         _ => None,
                     };
                     let fullscreen = rest.get(4).is_some_and(|f| *f == "full");
-                    Remembered { url, frame, fullscreen }
+                    let own_full = rest.get(4).is_some_and(|f| *f == "own");
+                    Remembered { url, frame, fullscreen, own_full }
                 })
                 .collect()
         })
@@ -360,7 +364,7 @@ pub fn remember(windows: &[Remembered]) {
     let text: String = windows
         .iter()
         .map(|r| match r.frame {
-            Some(b) => format!("{}\t{}\t{}\t{}\t{}{}\n", r.url, f32::from(b.origin.x), f32::from(b.origin.y), f32::from(b.size.width), f32::from(b.size.height), if r.fullscreen { "\tfull" } else { "" }),
+            Some(b) => format!("{}\t{}\t{}\t{}\t{}{}\n", r.url, f32::from(b.origin.x), f32::from(b.origin.y), f32::from(b.size.width), f32::from(b.size.height), if r.fullscreen { "\tfull" } else if r.own_full { "\town" } else { "" }),
             None => format!("{}\n", r.url),
         })
         .collect();
@@ -396,8 +400,16 @@ pub fn save_open(cx: &mut App) {
             continue;
         }
         let url = a.url.to_string();
-        let (frame, fullscreen) = h.update(cx, |_, window, _| (window.bounds(), window.is_fullscreen())).map(|(b, f)| (Some(b), f)).unwrap_or((None, false));
-        open.push(Remembered { url, frame, fullscreen });
+        // in apex's full screen, the frame it had before (the screen's is
+        // no place to come back to), and that it was in it
+        let (frame, fullscreen, own_full) = h
+            .update(cx, |acme, window, _| match crate::fullscreen::restore(acme, window) {
+                Some(b) => (b, false, true),
+                None => (window.bounds(), window.is_fullscreen(), false),
+            })
+            .map(|(b, f, o)| (Some(b), f, o))
+            .unwrap_or((None, false, false));
+        open.push(Remembered { url, frame, fullscreen, own_full });
     }
     if debug {
         eprintln!("apex-ui: save_open: {} window(s): {:?}", open.len(), open.iter().map(|r| r.url.clone()).collect::<Vec<_>>());

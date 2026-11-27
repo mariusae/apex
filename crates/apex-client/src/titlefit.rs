@@ -97,6 +97,49 @@ const GAP: f32 = 4.;
 const CHEVRON_W: f32 = 16.;
 /// The process fan's least distance from the window's edges.
 const FAN_MARGIN: f32 = 8.;
+/// How the bar is fitted: the directory's and the processes' ways of
+/// being shown, and, split round a notch, how many of its parts -- the
+/// directory, the processes, the top row, in that order -- are in the
+/// left wing, the rest in the right (all of them in a bar not split).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Fit {
+    pub path: PathFit,
+    pub procs: ProcFit,
+    pub left: usize,
+}
+
+/// The bar split round a camera's notch (`fullscreen::Band`): its parts
+/// in their order fill the left wing (`left` of room) as far as they go,
+/// the first that does not fit and those after it the right wing
+/// (`right`); each pair of ways to show the directory and the
+/// processes tried, the richest first -- the directory giving way
+/// first, as in `LADDER` -- the first that so fits taken; the least,
+/// packed as well as it goes, when none does.
+pub fn choose_split(left: f32, right: f32, text: f32, path: impl Fn(PathFit) -> f32, procs: impl Fn(ProcFit) -> f32) -> Fit {
+    let paths = [PathFit::Full, PathFit::Short, PathFit::Last];
+    let procss = [ProcFit::Full, ProcFit::Stack, ProcFit::Count];
+    let mut pairs: Vec<(usize, usize)> = (0..3).flat_map(|a| (0..3).map(move |b| (a, b))).collect();
+    pairs.sort_by_key(|&(a, b)| (a + b, b));
+    let pack = |a: PathFit, b: ProcFit| -> (usize, bool) {
+        let w = [path(a), procs(b), text];
+        let mut n = 0;
+        let mut used = 0.;
+        while n < w.len() && used + w[n] <= left {
+            used += w[n];
+            n += 1;
+        }
+        (n, w[n..].iter().sum::<f32>() <= right)
+    };
+    for (a, b) in pairs {
+        let (a, b) = (paths[a], procss[b]);
+        if let (n, true) = pack(a, b) {
+            return Fit { path: a, procs: b, left: n };
+        }
+    }
+    let n = pack(PathFit::Last, ProcFit::Count).0;
+    Fit { path: PathFit::Last, procs: ProcFit::Count, left: n }
+}
+
 /// The top row when its caret is elsewhere: as much of its text as this.
 const TEXT_MIN: f32 = 200.;
 
@@ -106,6 +149,9 @@ const TEXT_MIN: f32 = 200.;
 #[derive(Default)]
 pub struct Marks {
     pub room: f32,
+    /// The right wing's room, the bar split round a notch (`room` is then
+    /// the left's).
+    pub room_right: f32,
     pub procs: Option<Bounds<Pixels>>,
     pub procs_fan: Option<Bounds<Pixels>>,
     pub path: Option<Bounds<Pixels>>,
@@ -176,7 +222,7 @@ impl Acme {
     }
 
     /// What the bar shows in the room it had last frame.
-    pub fn title_fit(&self, window: &Window) -> (PathFit, ProcFit) {
+    pub fn title_fit(&self, window: &Window) -> Fit {
         let room = self.title_marks.borrow().room;
         let meta = &self.node.state.meta;
         let parts = crate::cwdbar::crumbs(&meta.cwd);
@@ -219,7 +265,12 @@ impl Acme {
         let whole = if text.is_empty() { 0. } else { f32::from(window.text_system().shape_line(text.clone().into(), fs.size, &[run], None).width) + 24. };
         let typing = self.node.seltext == Some(ViewId::Top);
         let need = if typing { whole } else { whole.min(TEXT_MIN) };
-        choose(room, need, path, procs)
+        if self.band.as_ref().is_some_and(|b| b.notch.is_some()) {
+            let right = self.title_marks.borrow().room_right;
+            return choose_split(room, right, need, path, procs);
+        }
+        let (path, procs) = choose(room, need, path, procs);
+        Fit { path, procs, left: 3 }
     }
 
     fn count_w(&self, window: &Window, n: usize) -> f32 {
@@ -229,6 +280,12 @@ impl Acme {
     /// The room the bar's middle has, measured where it is laid out: a
     /// change is drawn again with the fit it makes.
     pub fn title_room_mark(&self, me: &gpui::Entity<Acme>) -> AnyElement {
+        self.title_room_mark_of(me, false)
+    }
+
+    /// The same for one wing of a bar split round a notch: the right's
+    /// (`right`), or the left's (`room`).
+    pub fn title_room_mark_of(&self, me: &gpui::Entity<Acme>, right: bool) -> AnyElement {
         let me = me.clone();
         div()
             .absolute()
@@ -241,8 +298,9 @@ impl Acme {
                         let w = f32::from(b.size.width);
                         me.update(cx, |acme, cx| {
                             let mut m = acme.title_marks.borrow_mut();
-                            if (m.room - w).abs() > 0.5 {
-                                m.room = w;
+                            let room = if right { &mut m.room_right } else { &mut m.room };
+                            if (*room - w).abs() > 0.5 {
+                                *room = w;
                                 cx.notify();
                             }
                         });
@@ -483,6 +541,34 @@ pub fn clear(m: &Rc<RefCell<Marks>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn split_round_a_notch_the_parts_fill_the_left_wing_first() {
+        let path = |f: PathFit| match f {
+            PathFit::Full => 300.,
+            PathFit::Short => 150.,
+            PathFit::Last => 60.,
+        };
+        let procs = |f: ProcFit| match f {
+            ProcFit::Full => 400.,
+            ProcFit::Stack => 120.,
+            ProcFit::Count => 40.,
+        };
+        let fit = |l, r| choose_split(l, r, 200., path, procs);
+        // room on the left for everything: all of it there, whole
+        assert_eq!(fit(1000., 300.), Fit { path: PathFit::Full, procs: ProcFit::Full, left: 3 });
+        // the path and the processes on the left, the top row right
+        assert_eq!(fit(750., 300.), Fit { path: PathFit::Full, procs: ProcFit::Full, left: 2 });
+        // the processes do not fit after the path: they and the top row go
+        // right, whole
+        assert_eq!(fit(320., 700.), Fit { path: PathFit::Full, procs: ProcFit::Full, left: 1 });
+        // not whole on either side: the path whole on the left, the
+        // processes stacked on the right
+        assert_eq!(fit(320., 500.), Fit { path: PathFit::Full, procs: ProcFit::Stack, left: 1 });
+        // nothing fits a narrow left wing: all of it in the right, the path
+        // whole there rather than cut short on the left
+        assert_eq!(fit(100., 700.), Fit { path: PathFit::Full, procs: ProcFit::Stack, left: 0 });
+    }
 
     #[test]
     fn a_fan_is_placed_by_where_the_bar_was_drawn_last() {

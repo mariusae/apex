@@ -36,6 +36,7 @@ mod transfers;
 mod glide;
 mod look;
 mod outline;
+mod fullscreen;
 mod miniature;
 mod restart;
 mod runs;
@@ -221,7 +222,10 @@ impl Render for Acme {
                 this.park_into_pool(cx);
                 window.remove_window()
             }))
-            .on_action(cx.listener(|_, _: &shell::ToggleFullScreen, window, _| window.toggle_fullscreen()))
+            .on_action(cx.listener(|this, _: &shell::ToggleFullScreen, window, cx| {
+                fullscreen::toggle(this, window);
+                cx.notify();
+            }))
             .on_key_down(cx.listener(Self::key_down))
             // a click off the toasts puts them away, wherever it lands (the
             // sidebar and the title bar keep their clicks to themselves)
@@ -255,8 +259,10 @@ impl Render for Acme {
             }))
             .on_modifiers_changed(cx.listener(Self::modifiers_changed))
             .on_scroll_wheel(cx.listener(Self::scroll_wheel));
-        // full screen: acme's area is the whole screen, no title bar
-        self.fullscreen = window.is_fullscreen();
+        // the Mac's full screen (the green button) or apex's own (⌃⌘F),
+        // which takes the menu bar's band, round a notch where there is one
+        self.fullscreen = window.is_fullscreen() || window.is_simple_fullscreen();
+        self.band = if window.is_simple_fullscreen() { fullscreen::band(window) } else { None };
         // full screen: AppKit's own title bar would slide down with the
         // menu bar, an empty bar over our strip; hidden while it lasts
         if self.native_bar_hidden != self.fullscreen {
@@ -277,7 +283,7 @@ impl Render for Acme {
         web::set_traffic_lights(window, true);
         // the title bar over all of it, acme's row and a pinned sidebar
         // under it
-        let root = root.pt(px(title_h()));
+        let root = root.pt(px(self.bar_h()));
         let root = if side { root.flex_row().child(self.sidebar(cx)) } else { root };
         // ctrl-tab: the session just gone to sliding in over the one it
         // replaced, which slides out beside it
@@ -1071,7 +1077,20 @@ fn main() {
             })
             .or(frame);
         let choosing = matches!(target, Target::Choose(_));
+        // last time in apex's full screen: into it again once open, the
+        // frame remembered the one to come back to
+        let own_full = geometry.is_none() && session.is_none() && shell::remembered().first().is_some_and(|r| r.own_full);
         let opened = open_window(cx, target, frame);
+        if let (true, Some(h)) = (own_full, opened) {
+            cx.defer(move |cx| {
+                let _ = h.update(cx, |acme, window, cx| {
+                    if !window.is_simple_fullscreen() {
+                        crate::fullscreen::toggle(acme, window);
+                        cx.notify();
+                    }
+                });
+            });
+        }
         if let (true, Some(h)) = (choosing, opened) {
             let _ = h.update(cx, |acme, _, cx| acme.open_selector(cx));
         }
@@ -1385,6 +1404,15 @@ pub(crate) fn title_h() -> f32 {
     (f32::from(text_element::tag_line_height()) + apex_core::tiling::BORDER as f32).max(38.)
 }
 
+impl app::Acme {
+    /// The title bar's height in this window: in apex's full screen on a
+    /// screen with a notch, the band beside it (`fullscreen::Band`); else
+    /// `title_h`.
+    pub(crate) fn bar_h(&self) -> f32 {
+        self.band.map_or_else(title_h, |b| b.h)
+    }
+}
+
 /// The least room an empty column shows its hint in.
 const EMPTY_W: i32 = 200;
 const EMPTY_H: i32 = 120;
@@ -1523,11 +1551,15 @@ impl app::Acme {
     fn title_bar(&self, me: &gpui::Entity<app::Acme>, window: &mut gpui::Window, cx: &mut gpui::Context<Self>) -> gpui::AnyElement {
         use gpui::{div, prelude::*, px, MouseButton};
         let t = theme::theme();
-        let h = title_h();
+        let h = self.bar_h();
         let font = f32::from(text_element::tag_line_height());
+        // the bar's bare stretches move the window, and a double-click
+        // zooms it -- not in full screen, where it has the screen
+        let fixed = self.fullscreen;
         let bare = |id: &'static str| {
-            div().id(id).flex_none().h_full().on_mouse_down(MouseButton::Left, |e: &gpui::MouseDownEvent, window, cx| {
-                if e.click_count == 2 {
+            div().id(id).flex_none().h_full().on_mouse_down(MouseButton::Left, move |e: &gpui::MouseDownEvent, window, cx| {
+                if fixed {
+                } else if e.click_count == 2 {
                     window.zoom_window();
                 } else {
                     window.start_window_move();
@@ -1563,6 +1595,22 @@ impl app::Acme {
         // the others, a mark when one of them wants the user -- not while
         // the sidebar is out, which says all that; then acme's top row,
         // and the stash's room at the right end
+        // the session's host and directory, the crumbs to change it by;
+        // its processes; the top row -- each as much as the room allows
+        // (`titlefit`), fanning out under the pointer when short
+        let fit = self.title_fit(window);
+        let (path_fit, proc_fit) = (fit.path, fit.procs);
+        let path = self.path_strip(path_fit, cx).map(|b| div().flex_shrink(1.).min_w(px(0.)).flex().flex_row().items_center().child(b).child(bare("title-gap3").w(px(3.))));
+        let procs = self.procs_strip(proc_fit, window.viewport_size().width, cx);
+        let top_row = || div().flex_1().min_w_0().h(px(font)).relative().child(text_element::TextElement { acme: me.clone(), view: apex_core::ViewId::Top }).cursor(gpui::CursorStyle::Arrow);
+        // apex's full screen on a screen with a notch: the bar in the band
+        // beside it, split round it -- nothing behind the camera; its parts
+        // fill the left wing in order as far as they fit, the rest the
+        // right (`choose_split`: `fit.left` of them on the left)
+        let notch = self.band.and_then(|b| b.notch);
+        let (path_here, path_right) = if fit.left >= 1 { (path, None) } else { (None, path) };
+        let (procs_here, procs_right) = if fit.left >= 2 { (procs, None) } else { (None, procs) };
+        let top_here = fit.left >= 3;
         let rest = div()
             .relative()
             .flex_1()
@@ -1586,25 +1634,9 @@ impl app::Acme {
                     .child(div().flex_none().w(px(1.)).h(px(16.)).bg(gpui::rgb(t.body_border)))
                     .child(bare("title-gap2").w(px(8.)))
             })
-            // the session's host and directory, the crumbs to change it by;
-            // its processes; the top row -- each as much as the room
-            // allows (`titlefit`), fanning out under the pointer when short
-            .child({
-                let (path_fit, proc_fit) = self.title_fit(window);
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .h_full()
-                    .relative()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .child(self.title_room_mark(me))
-                    .children(self.path_strip(path_fit, cx).map(|b| div().flex_shrink(1.).min_w(px(0.)).flex().flex_row().items_center().child(b).child(bare("title-gap3").w(px(3.)))))
-                    .children(self.procs_strip(proc_fit, window.viewport_size().width, cx))
-                    .child(div().flex_1().min_w_0().h(px(font)).relative().child(text_element::TextElement { acme: me.clone(), view: apex_core::ViewId::Top }).cursor(gpui::CursorStyle::Arrow))
-            })
-            .child(bare("title-shelf").w(px(self.shelf_room(cx))))
+            // (round a notch, those of them in the left wing)
+            .child(div().flex_1().min_w_0().h_full().relative().flex().flex_row().items_center().child(self.title_room_mark(me)).children(path_here).children(procs_here).when(top_here, |d| d.child(top_row())))
+            .when(notch.is_none(), |d| d.child(bare("title-shelf").w(px(self.shelf_room(cx)))))
             // ⌘ held, the sidebar hidden: the sessions slid out across the
             // bar from where the session's name is, each with its key
             .children(self.numbered_strip(lights + TOGGLE_W + 6., h, cx));
@@ -1672,8 +1704,31 @@ impl app::Acme {
             .flex_row()
             .items_center()
             .bg(gpui::rgb(text_element::ground(&t)))
-            .children(card_top)
-            .child(rest)
+            .map(|d| match notch {
+                None => d.children(card_top).child(rest),
+                // the left wing: the sidebar's card, the session, its
+                // directory; behind the camera, only somewhere to drag the
+                // window by; the right wing: the processes, the top row,
+                // the stash's room
+                Some((x0, x1)) => d
+                    .child(div().absolute().top(px(0.)).left(px(0.)).w(px(x0)).h_full().flex().flex_row().items_center().overflow_hidden().children(card_top).child(rest))
+                    .child(bare("title-notch").absolute().top(px(0.)).left(px(x0)).w(px(x1 - x0)))
+                    .child(
+                        div()
+                            .absolute()
+                            .top(px(0.))
+                            .left(px(x1))
+                            .right(px(0.))
+                            .h_full()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .border_b(px(0.5))
+                            .border_color(gpui::rgb(t.body_border))
+                            .child(div().flex_1().min_w_0().h_full().relative().flex().flex_row().items_center().pl(px(8.)).child(self.title_room_mark_of(me, true)).children(path_right).children(procs_right).when(!top_here, |d| d.child(top_row())))
+                            .child(bare("title-shelf").w(px(self.shelf_room(cx)))),
+                    ),
+            })
             .children(self.shelf(h, self.node.state.layout.r.dx() as f32 + self.left(), cx))
             .into_any_element()
     }

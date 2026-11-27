@@ -580,6 +580,11 @@ pub struct Acme {
     pub term_ran: Option<(WindowId, (usize, u64), (usize, u64), std::time::Instant)>,
     /// The window is full screen: no title bar, acme's area from the top.
     pub fullscreen: bool,
+    /// In apex's own full screen (`fullscreen`): the band at the top of
+    /// its screen the bar takes, when the screen has a notch; and the
+    /// window's frame before, to come back to.
+    pub band: Option<crate::fullscreen::Band>,
+    pub full_restore: Option<gpui::Bounds<Pixels>>,
     /// The strip (a column put away) whose slice is out, by the pointer on
     /// it, and when the pointer left it and its slice (`strips.rs`).
     pub strip_open: Option<ColumnId>,
@@ -2000,6 +2005,8 @@ impl Acme {
             term_hl: None,
             term_ran: None,
             fullscreen: false,
+            band: None,
+            full_restore: None,
             show_at: HashMap::new(),
             held: HashMap::new(),
             dropped: false,
@@ -2879,7 +2886,7 @@ impl Acme {
     /// no title bar (the window's buttons are the sidebar's), so full
     /// screen is the whole screen.
     pub fn top(&self) -> f32 {
-        crate::title_h()
+        self.bar_h()
     }
 
     /// Where acme's area starts across: right of the sidebar, while it
@@ -5670,6 +5677,12 @@ impl Acme {
         // the keys gone elsewhere: ⌘'s letting go will not be heard here
         if !active {
             self.command_released(window, cx);
+        }
+        // back in apex's full screen (a window manager's switch to it, as
+        // well as a click): the menu bar hidden again, as macOS does not
+        // always do of itself
+        if active && window.is_simple_fullscreen() {
+            crate::fullscreen::hide_bars_again();
         }
         // ⌘ or ⌥ let go while another window (or app) had the keys: as
         // they are now, and the pill with them

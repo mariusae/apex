@@ -53,6 +53,19 @@ windows put away out of the tiling, which is the core's
   Settings) take the text a pixel bigger or smaller a step, the mono
   faces in proportion, line heights to whole pixels; ⌘0 back to the
   set's own size. Kept, as the set is.
+- **Full screen, apex's own** (`fullscreen.rs`; ⌃⌘F, View ▸ Enter
+  Full Screen): the window over the whole of its screen where it is --
+  gpui's simple full screen, borderless, in no Space of its own -- the
+  menu bar and the Dock hidden until the pointer goes to them, and the
+  title bar up in the menu bar's place. On a screen with a camera's
+  notch the bar is the band beside it (`safeAreaInsets.top`, 32 on a
+  14-inch MacBook Pro), split round it, nothing behind the camera: the
+  sidebar's card and the session lead the left wing, and the directory,
+  the processes and the top row fill it in that order as far as they
+  fit, the rest going to the right wing before the stash, each shown as
+  richly as the two wings allow (`choose_split`). Kept as the window is: opened there
+  again, its frame from before the one to come back to. The green button
+  is still the Mac's own full screen, in a Space of its own.
 - **Tags as title bars.** The window's name in the primary ink, a
   medium weight; the commands after it in the secondary. Column tags
   and the top row are all secondary. A header's caret is not drawn
