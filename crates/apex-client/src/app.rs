@@ -3802,11 +3802,13 @@ impl Acme {
             match button {
                 MouseButton::Middle => {
                     self.mouse.chorded = true;
+                    let _ = self.node.mark(&mut self.log, d.view);
                     self.cut(d.view, cx);
                     return true;
                 }
                 MouseButton::Right => {
                     self.mouse.chorded = true;
+                    let _ = self.node.mark(&mut self.log, d.view);
                     self.paste(d.view, cx);
                     return true;
                 }
@@ -4252,10 +4254,12 @@ impl Acme {
         let Some(d) = self.mouse.b1 else { return };
         if e.modifiers.alt && !prev.alt {
             self.mouse.chorded = true;
+            let _ = self.node.mark(&mut self.log, d.view);
             self.cut(d.view, cx);
             cx.notify();
         } else if e.modifiers.platform && !prev.platform {
             self.mouse.chorded = true;
+            let _ = self.node.mark(&mut self.log, d.view);
             self.paste(d.view, cx);
             cx.notify();
         }

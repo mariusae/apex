@@ -80,6 +80,10 @@ pub struct DumpBuffer {
     /// unsaved text since is stale.
     #[serde(default)]
     pub disk_hash: Option<String>,
+    /// Marked changed (a 1-2 chord with nothing selected), so dirty
+    /// even when its text is the file's.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub marked: bool,
 }
 
 /// A window: its tag, what it shows, and how.
@@ -203,7 +207,7 @@ pub fn dump(state: &State, history: &mut dyn FnMut(TermId) -> Option<String>) ->
         // what is on disk as it was read is read again (a buffer never
         // read nor put has no file to be read from)
         let on_disk = matches!(b.kind, WinKind::File | WinKind::Dir) && !b.scratch && b.name.starts_with('/') && b.disk_hash.is_some() && !b.dirty();
-        d.buffers.push(DumpBuffer { id: b.id.0, name: b.name.clone(), kind: b.kind, scratch: b.scratch, text: (!on_disk).then(|| b.text.to_string()), disk_hash: b.disk_hash.clone() });
+        d.buffers.push(DumpBuffer { id: b.id.0, name: b.name.clone(), kind: b.kind, scratch: b.scratch, text: (!on_disk).then(|| b.text.to_string()), disk_hash: b.disk_hash.clone(), marked: b.marked });
     }
     let l = unlensed(&state.layout);
     d.layout = serde_json::to_value(DumpLayout { r: l.r, cols: l.cols, full: l.full, stash: l.stash }).ok();
@@ -290,6 +294,9 @@ impl Node {
                     let id = self.create_buffer_as(log, &b.name, disk.as_deref().unwrap_or(""), hash.clone(), b.kind, b.scratch)?;
                     if disk.as_deref() != Some(text.as_str()) {
                         self.set_content(log, id, text)?;
+                    }
+                    if b.marked {
+                        self.append(log, Shard::Buffer(id), Op::Buffer(BufferOp::Mark))?;
                     }
                     if let Some(now) = hash.filter(|h| b.disk_hash.as_ref().is_some_and(|was| was != h)) {
                         self.append(log, Shard::Buffer(id), Op::Buffer(BufferOp::Stale { disk_hash: now }))?;

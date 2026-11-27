@@ -134,6 +134,10 @@ pub enum BufferOp {
     Clean { version: Version, disk_hash: Option<String> },
     /// The file on disk changed underneath a dirty buffer.
     Stale { disk_hash: String },
+    /// Dirty until the next load or Put, though the text has not
+    /// changed: acme's 1-2 or 1-3 chord (or Cut or Paste) in a body,
+    /// which marks the file even when it cuts nothing.
+    Mark,
     Rename { name: String },
     /// A window started viewing this buffer.
     ViewAdd { view: ViewId },

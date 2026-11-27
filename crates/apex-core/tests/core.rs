@@ -98,6 +98,81 @@ fn cut_snarf_paste_undo_redo() {
     assert_eq!(f_hash(&log), node.state.hash());
 }
 
+/// A clean file's window, as Get leaves it.
+fn file_window(log: &mut Log, node: &mut Node, col: ColumnId, name: &str, text: &str) -> WindowId {
+    let b = node.create_buffer(log, name, text, Some(Text::new(text).content_hash())).unwrap();
+    node.open_window(log, col, b).unwrap()
+}
+
+#[test]
+fn a_cut_with_nothing_selected_marks_the_file_changed_until_put() {
+    let (mut log, mut node, col) = session();
+    let w = file_window(&mut log, &mut node, col, "/w/f.txt", "abcdef");
+    let v = ViewId::Body(w);
+    let b = node.state.window(w).unwrap().body_buffer().unwrap();
+    assert!(!node.window_verbs(w).contains(&"Put"));
+    // the 1-2 chord with a null selection: nothing cut, but Put shows
+    node.select(&mut log, v, 2, 2).unwrap();
+    node.mark(&mut log, v).unwrap();
+    node.cut(&mut log, v).unwrap();
+    assert_eq!(text(&node, w), "abcdef");
+    assert!(node.state.buffer(b).unwrap().dirty());
+    assert!(node.window_verbs(w).contains(&"Put"));
+    assert!(node.window_unsaved(w));
+    assert_eq!(f_hash(&log), node.state.hash());
+    assert!(follower(&log).state.buffer(b).unwrap().dirty());
+    // Put clears it
+    let version = node.state.buffer(b).unwrap().version;
+    let disk_hash = Some(Text::new("abcdef").content_hash());
+    node.append(&mut log, Shard::Buffer(b), Op::Buffer(BufferOp::Clean { version, disk_hash })).unwrap();
+    assert!(!node.state.buffer(b).unwrap().dirty());
+    assert!(!node.window_verbs(w).contains(&"Put"));
+    // Cut run as a command marks it too; so does Paste
+    node.run_builtin(&mut log, ExecCtx::Window(w), "Cut").unwrap();
+    assert!(node.state.buffer(b).unwrap().dirty());
+    assert_eq!(f_hash(&log), node.state.hash());
+}
+
+#[test]
+fn marking_leaves_tags_scratch_and_dirty_windows_alone() {
+    let (mut log, mut node, col) = session();
+    let w = file_window(&mut log, &mut node, col, "/w/f.txt", "abc");
+    let tag = node.state.window(w).unwrap().tag;
+    node.mark(&mut log, ViewId::Tag(w)).unwrap();
+    assert!(!node.state.buffer(tag).unwrap().marked);
+    let b = node.state.window(w).unwrap().body_buffer().unwrap();
+    assert!(!node.state.buffer(b).unwrap().marked);
+    let s = node.new_window_as(&mut log, col, "/w/+notes", "x", &Spec::scratch(None)).unwrap();
+    node.mark(&mut log, ViewId::Body(s)).unwrap();
+    assert!(!body_marked(&node, s));
+    // already dirty by its text: nothing to mark, so undoing it all is
+    // clean again
+    node.select(&mut log, ViewId::Body(w), 0, 0).unwrap();
+    node.insert(&mut log, ViewId::Body(w), "X").unwrap();
+    node.mark(&mut log, ViewId::Body(w)).unwrap();
+    assert!(!body_marked(&node, w));
+    node.undo(&mut log, ViewId::Body(w)).unwrap();
+    assert!(!node.state.buffer(b).unwrap().dirty());
+}
+
+fn body_marked(node: &Node, w: WindowId) -> bool {
+    node.state.buffer(node.state.window(w).unwrap().body_buffer().unwrap()).unwrap().marked
+}
+
+#[test]
+fn a_cut_with_a_selection_still_cuts_it() {
+    let (mut log, mut node, col) = session();
+    let w = file_window(&mut log, &mut node, col, "/w/f.txt", "abcdef");
+    let v = ViewId::Body(w);
+    node.select(&mut log, v, 1, 3).unwrap();
+    node.mark(&mut log, v).unwrap();
+    node.cut(&mut log, v).unwrap();
+    assert_eq!(text(&node, w), "adef");
+    assert_eq!(node.state.layout.snarf, "bc");
+    assert_eq!(sel(&node, v), (1, 1));
+    assert!(node.window_verbs(w).contains(&"Put"));
+}
+
 #[test]
 fn typing_undoes_as_one_group_until_a_mouse_action() {
     let (mut log, mut node, col) = session();

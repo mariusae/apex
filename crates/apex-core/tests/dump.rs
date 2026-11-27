@@ -135,6 +135,22 @@ fn unsaved_text_over_a_file_changed_since_is_stale() {
 }
 
 #[test]
+fn a_file_marked_changed_is_still_marked() {
+    let (mut log, mut node, col) = session();
+    let w = file(&mut log, &mut node, col, "/w/f.txt", "one\n");
+    node.mark(&mut log, ViewId::Body(w)).unwrap();
+    assert!(body(&node, w).dirty());
+    let d = again(&dump::dump(&node.state, &mut |_| None));
+    let (mut log2, mut node2) = bare();
+    let mut disk = Disk(BTreeMap::from([("/w/f.txt".into(), "one\n".into())]));
+    node2.load_dump(&mut log2, &d, &mut disk).unwrap();
+    let w = named(&node2, "/w/f.txt")[0];
+    assert_eq!(body(&node2, w).text.to_string(), "one\n");
+    assert!(body(&node2, w).dirty());
+    assert!(!body(&node2, w).stale);
+}
+
+#[test]
 fn a_tiling_that_does_not_read_places_every_window() {
     let (mut log, mut node, col) = session();
     file(&mut log, &mut node, col, "/w/a.txt", "a\n");

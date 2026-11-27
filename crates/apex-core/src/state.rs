@@ -664,11 +664,15 @@ impl State {
                 b.clean_version = *version;
                 b.disk_hash = disk_hash.clone();
                 b.stale = false;
+                b.marked = false;
             }
             BufferOp::Stale { disk_hash } => {
                 let b = self.buffer_mut(id)?;
                 b.stale = true;
                 b.disk_hash = Some(disk_hash.clone());
+            }
+            BufferOp::Mark => {
+                self.buffer_mut(id)?.marked = true;
             }
             BufferOp::Rename { name } => {
                 self.buffer_mut(id)?.name = name.clone();

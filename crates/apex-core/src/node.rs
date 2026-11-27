@@ -1676,6 +1676,23 @@ impl Node {
         Ok(())
     }
 
+    /// Mark a window's file changed, so Put shows in its tag (and Putall
+    /// writes it) even if nothing then changes it: acme's chords and its
+    /// Cut and Paste do this first, so a 1-2 chord with nothing selected
+    /// is how to make Put appear in a clean window.
+    pub fn mark(&mut self, log: &mut Log, view: ViewId) -> Result<()> {
+        if !matches!(view, ViewId::Body(_)) {
+            return Ok(());
+        }
+        let b = self.view_buffer(view)?;
+        let buf = self.state.buffer(b)?;
+        if buf.kind != WinKind::File || buf.scratch || buf.dirty() {
+            return Ok(());
+        }
+        self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::Mark))?;
+        Ok(())
+    }
+
     pub fn paste(&mut self, log: &mut Log, view: ViewId) -> Result<()> {
         let text = self.state.layout.snarf.clone();
         self.replace_selection(log, view, &text)
@@ -2282,8 +2299,14 @@ impl Node {
             "Cut" | "Paste" | "Snarf" | "Undo" | "Redo" => {
                 let Some(target) = self.edit_target(ctx) else { return Ok(false) };
                 match cmd {
-                    "Cut" => self.cut(log, target)?,
-                    "Paste" => self.paste(log, target)?,
+                    "Cut" => {
+                        self.mark(log, target)?;
+                        self.cut(log, target)?
+                    }
+                    "Paste" => {
+                        self.mark(log, target)?;
+                        self.paste(log, target)?
+                    }
                     "Snarf" => self.snarf(log, target)?,
                     "Undo" => {
                         self.undo(log, target)?;
