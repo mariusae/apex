@@ -1591,16 +1591,15 @@ impl Node {
     }
 
     /// acme's `texttype` for ^H, ^U and ^W (and Backspace, which is ^H):
-    /// a selection is cut first, then the width is erased, never past
-    /// the window's origin.
+    /// a selection is deleted first (the client snarfs it beforehand, as
+    /// for any key typed over a selection), then the width is erased,
+    /// never past the window's origin.
     pub fn erase(&mut self, log: &mut Log, view: ViewId, kind: Erase) -> Result<()> {
         let b = self.view_buffer(view)?;
         let (q0, q1) = self.selection(view)?;
         let group = self.typing_group(view);
         let mut q0 = q0;
         if q1 > q0 {
-            let text = self.state.buffer(b)?.text.slice(q0, q1);
-            self.append(log, Shard::Layout, Op::Layout(LayoutOp::Snarf { text }))?;
             self.edit_op(log, b, q0, q1 - q0, "", group)?;
             self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::Select { view, q0, q1: q0 }))?;
         }

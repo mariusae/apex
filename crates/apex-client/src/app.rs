@@ -5867,17 +5867,25 @@ impl Acme {
             self.scroll_by(v, n);
             return;
         }
+        // acme's texttype cuts a non-empty selection, with snarf, before
+        // any key that is not a movement key. Here each editing key snarfs
+        // it (session snarf and clipboard) and then lets the edit delete
+        // it, so the replacement stays in the key's typing group: one Undo
+        // brings the selection back. (`cut` would start a new group.)
         let mut typed = true;
         if m.control {
             match ks.key.as_str() {
                 // acme's textbswidth rules, exactly
                 "u" => {
+                    self.snarf(v, cx);
                     let _ = self.node.erase(&mut self.log, v, Erase::Line);
                 }
                 "w" => {
+                    self.snarf(v, cx);
                     let _ = self.node.erase(&mut self.log, v, Erase::Word);
                 }
                 "h" => {
+                    self.snarf(v, cx);
                     let _ = self.node.erase(&mut self.log, v, Erase::Char);
                 }
                 "a" => {
@@ -5894,13 +5902,14 @@ impl Acme {
                 // reads ^D and ^C out of the text
                 k if k.len() == 1 && k.as_bytes()[0].is_ascii_lowercase() => {
                     let c = (k.as_bytes()[0] - b'a' + 1) as char;
-                    self.type_text(v, &c.to_string());
+                    self.type_text(v, &c.to_string(), cx);
                 }
                 _ => typed = false,
             }
         } else {
             match ks.key.as_str() {
                 "backspace" => {
+                    self.snarf(v, cx);
                     let _ = self.node.erase(&mut self.log, v, Erase::Char);
                 }
                 "delete" => {
@@ -5910,8 +5919,9 @@ impl Acme {
                     // win interrupts what runs; elsewhere the Mac's forward
                     // delete, since DEL typed into a file is only a hazard
                     if matches!(v, ViewId::Body(w) if self.node.window_live(w)) {
-                        self.type_text(v, "\u{7f}");
+                        self.type_text(v, "\u{7f}", cx);
                     } else {
+                        self.snarf(v, cx);
                         let _ = self.node.delete_forward(&mut self.log, v);
                     }
                 }
@@ -5927,9 +5937,9 @@ impl Acme {
                         }
                         _ => String::new(),
                     };
-                    self.type_text(v, &format!("\n{indent}"));
+                    self.type_text(v, &format!("\n{indent}"), cx);
                 }
-                "tab" => self.type_text(v, "\t"),
+                "tab" => self.type_text(v, "\t", cx),
                 "escape" => {
                     // acme's texttype cuts a non-empty selection (with
                     // snarf) before Kesc, which then finds nothing typed;
@@ -5981,7 +5991,7 @@ impl Acme {
                     return;
                 }
                 _ => match &ks.key_char {
-                    Some(s) if !s.is_empty() => self.type_text(v, s),
+                    Some(s) if !s.is_empty() => self.type_text(v, s, cx),
                     _ => typed = false,
                 },
             }
@@ -5996,7 +6006,9 @@ impl Acme {
         self.want_visible.insert(v);
     }
 
-    fn type_text(&mut self, v: ViewId, s: &str) {
+    /// Type `s` over the selection, which is snarfed first (see text_key).
+    fn type_text(&mut self, v: ViewId, s: &str, cx: &mut Context<Self>) {
+        self.snarf(v, cx);
         if let Ok((q0, _)) = self.node.selection(v) {
             let e = self.typed_start.entry(v).or_insert(q0);
             if *e > q0 {
