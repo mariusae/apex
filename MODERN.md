@@ -40,7 +40,11 @@ windows put away out of the tiling, which is the core's
 - **Fonts** (Settings ▸ Fonts, `fonts.rs`; Apex until another is
   chosen), one choice for text windows and tags, mono windows and
   terminals, the sidebar, the palettes and menus, and pages (previews,
-  apex diff, as `--apex-font` and `--apex-mono`): Apex (what was
+  apex diff, as `--apex-font` and `--apex-mono`), with a prose face for
+  pages' running text -- a preview's, an agent's conversation
+  (`--apex-prose`; what the user wrote to an agent is in the sans, the
+  agent's words in the prose) -- Lucida Bright in Apex and Humanist
+  (Lucida Grande where it is not installed), the text's own in System: Apex (what was
   Classic: Lucida Grande 13/17, Menlo 12/16), System (SF Pro with its
   high legibility set and tabular figures, 14/20; Terminal's own SF Mono
   at Medium, 12/16, the Regular being thin) and Humanist (what was

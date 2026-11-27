@@ -7,9 +7,10 @@
   --apex-sel: #EEEE9E; --apex-dim: #6F6F60; --apex-tag-bg: #EAFFFF;
 }
 html, body { margin: 0; background: var(--apex-bg); color: var(--apex-fg); }
+/* running text in the set's prose (Lucida Bright, or the text's) */
 body {
-  font: 13px/1.5 var(--apex-font, "Lucida Grande", "Lucida Sans Unicode", "Helvetica Neue", sans-serif);
-  font-feature-settings: var(--apex-font-features, normal);
+  font: 13px/1.5 var(--apex-prose, var(--apex-font, "Lucida Grande", "Lucida Sans Unicode", "Helvetica Neue", sans-serif));
+  font-feature-settings: var(--apex-prose-features, var(--apex-font-features, normal));
   -webkit-font-smoothing: auto;
 }
 ::selection { background: var(--apex-sel); }

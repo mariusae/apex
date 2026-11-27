@@ -1,7 +1,10 @@
 //! The font sets (Settings ▸ Fonts), one choice for what text windows
 //! and tags are set in, what mono windows and terminals are, what the
 //! sidebar, sheets and menus are, and what pages from buffers
-//! (previews, apex diff) are.
+//! (previews, apex diff) are -- their prose, what a preview or an agent's
+//! conversation reads in, a font of its own (`prose`): Lucida Bright in
+//! Apex and Humanist (Lucida Grande where it is not installed), the
+//! text's in System.
 //!
 //! - Apex (what was Classic, and keeps its word): Lucida Grande and
 //!   Menlo, apex's as it was.
@@ -10,8 +13,7 @@
 //!   its Medium weight, since the Regular draws thin at 12.
 //! - Humanist (what was Lucida): Lucida Grande and Bigelow & Holmes's
 //!   Lucida Grande Mono, its W1G cut -- offered only where that is
-//!   installed; not to be bundled. Or, switched to (`intel_one`), with
-//!   Intel One Mono installed, that for its mono.
+//!   installed; not to be bundled.
 //!
 //! The bundled faces go to gpui at launch (`install`) and to pages by
 //! `@font-face` from `apexfile://localhost/.apex-font/FILE`, which the
@@ -101,8 +103,6 @@ pub fn load() {
     }
     let step = std::fs::read_to_string(crate::shell::state_file().with_file_name("fontsize")).unwrap_or_default();
     STEP.store(step.trim().parse::<i8>().unwrap_or(0).clamp(MIN_STEP, MAX_STEP), Ordering::Relaxed);
-    let mono = std::fs::read_to_string(crate::shell::state_file().with_file_name("humanist-mono")).unwrap_or_default();
-    INTEL_ONE.store(mono.trim() == "intel", Ordering::Relaxed);
 }
 
 /// `--fontsize N`: the step for this launch, clamped like any other;
@@ -170,38 +170,15 @@ static SF_NS_MONO: AtomicBool = AtomicBool::new(false);
 /// (`install` looks: its W1G cut, or another): the Lucida set's mono,
 /// else Menlo.
 static LUCIDA_MONO: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-/// Intel One Mono is installed (`install` looks): Humanist's other mono.
-static INTEL_ONE_MONO: AtomicBool = AtomicBool::new(false);
-/// Humanist with Intel One Mono for its mono: chosen, kept in the
-/// `humanist-mono` state file.
-static INTEL_ONE: AtomicBool = AtomicBool::new(false);
-const INTEL_ONE_FAMILY: &str = "Intel One Mono";
+/// Lucida Bright is installed (`install` looks): Apex's and Humanist's
+/// prose, Lucida Grande's serif -- its x-height and widths the same, so
+/// at the same 13.
+const LUCIDA_BRIGHT: &str = "Lucida Bright";
+static BRIGHT: AtomicBool = AtomicBool::new(false);
 
-/// Whether Intel One Mono can be had here: installed.
-pub fn intel_one_available() -> bool {
-    INTEL_ONE_MONO.load(Ordering::Relaxed)
-}
-
-/// Whether Humanist's mono is Intel One Mono: chosen (whether or not it
-/// is installed here).
-pub fn intel_one() -> bool {
-    INTEL_ONE.load(Ordering::Relaxed)
-}
-
-/// Humanist's mono switched to Intel One Mono, or back.
-pub fn set_intel_one(on: bool) {
-    INTEL_ONE.store(on, Ordering::Relaxed);
-    let _ = std::fs::write(crate::shell::state_file().with_file_name("humanist-mono"), if on { "intel\n" } else { "lucida\n" });
-}
-
-/// Humanist's mono as it is here: Intel One Mono, chosen and installed;
-/// else Lucida Grande Mono; else Menlo.
+/// Humanist's mono as it is here: Lucida Grande Mono, else Menlo.
 fn humanist_mono() -> &'static str {
-    if intel_one() && intel_one_available() {
-        INTEL_ONE_FAMILY
-    } else {
-        LUCIDA_MONO.get().map(String::as_str).unwrap_or("Menlo")
-    }
+    LUCIDA_MONO.get().map(String::as_str).unwrap_or("Menlo")
 }
 
 /// What text windows and tags are set in.
@@ -242,13 +219,6 @@ fn mono_as_set() -> Spec {
             Spec { family, size: px(12.), line_height: px(16.), weight: FontWeight::MEDIUM, features: &[] }
         }
         Set::Classic => Spec { family: "Menlo", size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: &[] },
-        // Intel One Mono's x-height is 12% under Lucida's and its
-        // extenders long: at 13 its x-height is 0.88 of Lucida 13's (at
-        // 12, 0.81) and its cells 8px, 11% wider than Menlo's (at 14 they
-        // would be 8.6, an 80-column terminal 688px); its extenders want
-        // 18px lines. Regular: Medium measures as dark as Lucida but at 13
-        // reads as bold.
-        Set::Lucida if humanist_mono() == INTEL_ONE_FAMILY => Spec { family: INTEL_ONE_FAMILY, size: px(13.), line_height: px(18.), weight: FontWeight::NORMAL, features: &[] },
         Set::Lucida => Spec { family: humanist_mono(), size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: &[] },
     }
 }
@@ -269,6 +239,16 @@ pub fn families(s: Set) -> (String, String) {
             (".SystemUIFont".into(), mono.into())
         }
         Set::Lucida => ("Lucida Grande".into(), humanist_mono().into()),
+    }
+}
+
+/// Set `s`'s prose: what a page's running text is set in (a preview's,
+/// an agent's conversation). Apex's and Humanist's Lucida Bright, where
+/// installed; else the text's own.
+pub fn prose(s: Set) -> String {
+    match s {
+        Set::Classic | Set::Lucida if BRIGHT.load(Ordering::Relaxed) => LUCIDA_BRIGHT.into(),
+        _ => families(s).0,
     }
 }
 
@@ -320,8 +300,8 @@ pub fn install(cx: &mut App) {
     if let Some(name) = names.iter().find(|n| n.as_str() == "Lucida Grande Mono W1G") {
         let _ = LUCIDA_MONO.set(name.clone());
     }
-    if names.iter().any(|n| n.as_str() == INTEL_ONE_FAMILY) {
-        INTEL_ONE_MONO.store(true, Ordering::Relaxed);
+    if names.iter().any(|n| n.as_str() == LUCIDA_BRIGHT) {
+        BRIGHT.store(true, Ordering::Relaxed);
     }
     INSTALLED.store(true, Ordering::Relaxed);
     if !terminal.is_empty() && cx.text_system().add_fonts(terminal).is_ok() {
@@ -346,7 +326,9 @@ pub fn serve(path: &str) -> Option<(&'static [u8], &'static str)> {
 /// For pages: the bundled faces as `@font-face`s (a page loads only
 /// those it uses), and the set's families and features as variables --
 /// `--apex-font`, `--apex-mono`, `--apex-font-features`,
-/// `--apex-mono-features` -- which a page's stylesheet sets itself in.
+/// `--apex-mono-features` -- which a page's stylesheet sets itself in;
+/// and its prose's, for a page's running text (apex's Markdown):
+/// `--apex-prose`, `--apex-prose-features`.
 pub fn page_css() -> String {
     let mut css = String::new();
     for f in FACES {
@@ -362,10 +344,15 @@ pub fn page_css() -> String {
     let (sans, mono, sans_features, mono_features) = match current() {
         Set::System => ("-apple-system, BlinkMacSystemFont, sans-serif", "ui-monospace, \"SF Mono\", Menlo, monospace", "\"ss06\", \"tnum\"", "\"zero\""),
         Set::Classic => ("\"Lucida Grande\", \"Lucida Sans Unicode\", sans-serif", "Menlo, monospace", "normal", "normal"),
-        Set::Lucida if humanist_mono() == INTEL_ONE_FAMILY => ("\"Lucida Grande\", \"Lucida Sans Unicode\", sans-serif", "\"Intel One Mono\", Menlo, monospace", "normal", "normal"),
         Set::Lucida => ("\"Lucida Grande\", \"Lucida Sans Unicode\", sans-serif", "\"Lucida Grande Mono W1G\", Menlo, monospace", "normal", "normal"),
     };
-    css.push_str(&format!(":root{{--apex-font:{sans};--apex-mono:{mono};--apex-font-features:{sans_features};--apex-mono-features:{mono_features}}}"));
+    // the prose: Lucida Bright (Lucida Grande where it is not; the same
+    // x-height and widths), else the text's
+    let (prose, prose_features) = match current() {
+        Set::Classic | Set::Lucida => ("\"Lucida Bright\", \"Lucida Grande\", \"Lucida Sans Unicode\", serif", "normal"),
+        Set::System => (sans, sans_features),
+    };
+    css.push_str(&format!(":root{{--apex-font:{sans};--apex-mono:{mono};--apex-font-features:{sans_features};--apex-mono-features:{mono_features};--apex-prose:{prose};--apex-prose-features:{prose_features}}}"));
     css
 }
 
@@ -391,5 +378,16 @@ mod tests {
         assert!(serve("/etc/passwd").is_none(), "only the bundled faces, nothing else by that path");
         let css = page_css();
         assert!(css.contains("--apex-mono:"));
+    }
+
+    #[test]
+    fn prose_is_lucida_bright_or_the_texts() {
+        // Lucida Bright not looked for (no `install` here): Lucida Grande
+        for s in ALL {
+            assert_eq!(prose(s), families(s).0, "{}", s.title());
+        }
+        // a page's: Lucida Bright first, Lucida Grande where it is not
+        let css = page_css();
+        assert!(css.contains("--apex-prose:\"Lucida Bright\", \"Lucida Grande\""), "{css}");
     }
 }

@@ -38,13 +38,6 @@ pub fn set_fonts(s: crate::fonts::Set, cx: &mut App) {
     apply_theme(cx);
 }
 
-/// Settings ▸ Fonts: Humanist's mono Intel One Mono, or Lucida Grande
-/// Mono again; every window laid out anew.
-pub fn toggle_intel_one(cx: &mut App) {
-    crate::fonts::set_intel_one(!crate::fonts::intel_one());
-    apply_theme(cx);
-}
-
 /// ⌘+, ⌘− and ⌘0: the text a step bigger or smaller, or its own size
 /// again; every window laid out anew.
 pub fn resize_fonts(by: i8, cx: &mut App) {

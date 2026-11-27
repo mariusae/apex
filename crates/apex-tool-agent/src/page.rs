@@ -25,14 +25,15 @@ pub fn markdown(asked: &str, said: &str) -> String {
 }
 
 /// How a conversation looks, as Manifold's does: what you asked in a
-/// bubble at the right, in the page's face (what it quotes as code in
-/// the code face); what the agent did on the way
+/// bubble at the right, in the interface's sans as typed in the strip
+/// (what it quotes as code in the code face), the agent's words in the
+/// page's prose; what the agent did on the way
 /// folded to a line that opens; what it said in between quieter; its
 /// answer as the page's own text; what it is doing now beside dots.
 const STYLE: &str = r#"<style>
 .ax-turn { margin: 0 0 2.2em; }
 .ax-turn + .ax-turn { padding-top: 0.6em; }
-pre.ax-prompt { font: inherit; line-height: 1.45;
+pre.ax-prompt { font: 13px/1.45 var(--apex-font, "Lucida Grande", sans-serif); font-feature-settings: var(--apex-font-features, normal);
   white-space: pre-wrap; word-wrap: break-word; width: fit-content; max-width: 82%; box-sizing: border-box;
   margin: 0 0 1.1em auto; background: var(--apex-code-bg); border: none; border-radius: 14px; padding: 0.55em 0.9em; }
 p.ax-event, details.ax-steps, p.ax-standing, p.ax-earlier { font-family: var(--apex-mono, Menlo, monospace);

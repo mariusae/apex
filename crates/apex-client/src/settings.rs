@@ -206,10 +206,11 @@ impl Settings {
     fn fonts(&self, cx: &mut Context<Self>) -> gpui::Div {
         let t = theme::theme();
         let now = fonts::current();
-        let mut list = div().flex().flex_col().w(px(360.)).p(px(3.)).rounded(px(8.)).border(px(0.5)).border_color(rgb(t.panel_border));
+        let mut list = div().flex().flex_col().w(px(420.)).p(px(3.)).rounded(px(8.)).border(px(0.5)).border_color(rgb(t.panel_border));
         for s in fonts::offered() {
             let on = s == now;
             let (text, mono) = fonts::families(s);
+            let prose = fonts::prose(s);
             list = list.child(
                 div()
                     .id(("font", s as usize))
@@ -223,7 +224,9 @@ impl Settings {
                     .cursor_default()
                     .when(on, |d| d.bg(rgb(t.panel_chosen_bg)).text_color(rgb(t.panel_chosen_text)))
                     .when(!on, |d| d.hover(|h| h.bg(rgb(t.panel_hover))))
-                    .child(div().w(px(110.)).font_family(SharedString::from(text)).text_size(px(14.)).child(s.title()))
+                    .child(div().w(px(100.)).font_family(SharedString::from(text)).text_size(px(14.)).child(s.title()))
+                    // its prose, what pages read in
+                    .child(div().w(px(110.)).font_family(SharedString::from(prose)).text_size(px(14.)).when(!on, |d| d.text_color(rgb(t.panel_dim))).child("Reading prose"))
                     .child(div().flex_1().font_family(SharedString::from(mono)).text_size(px(12.)).when(!on, |d| d.text_color(rgb(t.panel_dim))).child("fn main() { 0O1l }"))
                     .on_mouse_down(
                         MouseButton::Left,
@@ -234,16 +237,16 @@ impl Settings {
                     ),
             );
         }
-        let note = if fonts::Set::Lucida.available() { "Text, the interface and pages in the first; terminals and mono windows in the second." } else { "Humanist is offered with Lucida Grande Mono W1G installed." };
+        let mut note = String::from("Text and the interface in the first; the prose of previews and agents in the second; terminals and mono windows in the third.");
+        if !fonts::Set::Lucida.available() {
+            note.push_str(" Humanist is offered with Lucida Grande Mono W1G installed.");
+        }
         div()
             .flex()
             .flex_col()
             .gap(px(6.))
             .child(list)
-            .when(fonts::Set::Lucida.available() && fonts::intel_one_available(), |d| {
-                d.child(self.check("intel-one", "Humanist's mono in Intel One Mono", fonts::intel_one(), cx, |cx| crate::shell::toggle_intel_one(cx)))
-            })
-            .child(div().text_size(px(11.5)).text_color(rgb(t.panel_dim)).child(note))
+            .child(div().w(px(420.)).text_size(px(11.5)).text_color(rgb(t.panel_dim)).child(note))
     }
 
     /// ⌘+ and ⌘−, here: the text's size a step, back to the set's own.
