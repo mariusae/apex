@@ -311,8 +311,7 @@ extern "C" fn on_stop_signal(_: libc::c_int) {
 }
 
 impl Daemon {
-    /// Listen on `path` (removed first if stale) and run until the process
-    /// ends, with one session `session` to begin with. Returns only on a
+    /// Listen on `path` and run until the process ends, with one session `session` to begin with. Returns only on a
     /// listener error.
     /// Its sessions are kept on disk and come back when it starts again
     /// (`persist`).
@@ -335,8 +334,8 @@ impl Daemon {
         unsafe {
             libc::signal(libc::SIGHUP, libc::SIG_IGN);
         }
-        let _ = std::fs::remove_file(path);
-        let listener = UnixListener::bind(path)?;
+        let mut claim = Claim::take(path)?;
+        let listener = claim.bind()?;
         let (tx, rx) = channel();
         {
             let tx = tx.clone();
@@ -403,7 +402,7 @@ impl Daemon {
                 Event::StartTimeout(sid, tool) => d.start_failed(sid, &tool),
             }
         }
-        let _ = std::fs::remove_file(path);
+        claim.release();
         Ok(())
     }
 
@@ -2022,6 +2021,77 @@ impl Daemon {
 }
 
 /// The daemon's log, `apexd.log` beside its socket, appended to.
+/// A daemon's hold on its socket path: an exclusive `flock` on
+/// `PATH.lock` beside it, held for the daemon's life, so that of two
+/// daemons started on one path only one gets past `take`; and, once
+/// bound, the socket's dev and inode, so that the daemon removes the
+/// path on its way out only while it still names its own socket.
+struct Claim {
+    path: PathBuf,
+    lock_path: PathBuf,
+    // closed (and so unlocked) only when the claim goes; close-on-exec,
+    // so no shell the daemon starts keeps it
+    lock: std::fs::File,
+    bound: Option<(u64, u64)>,
+}
+
+impl Claim {
+    /// Take `path` for a daemon: an error (`AddrInUse`) when one is
+    /// already serving it, whether it holds the lock or (an apex from
+    /// before the lock) only answers on the socket. A socket file nobody
+    /// answers on is stale and goes.
+    fn take(path: &Path) -> io::Result<Claim> {
+        use std::os::unix::fs::MetadataExt;
+        use std::os::unix::io::AsRawFd;
+        let busy = || io::Error::new(io::ErrorKind::AddrInUse, format!("a daemon is already serving {}", path.display()));
+        let mut name = path.as_os_str().to_owned();
+        name.push(".lock");
+        let lock_path = PathBuf::from(name);
+        let lock = loop {
+            let f = std::fs::OpenOptions::new().read(true).write(true).create(true).truncate(false).open(&lock_path)?;
+            // SAFETY: flock on a descriptor we own.
+            if unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+                let e = io::Error::last_os_error();
+                return Err(if e.raw_os_error() == Some(libc::EWOULDBLOCK) { busy() } else { e });
+            }
+            // a daemon on its way out unlinks the lock file it held: the
+            // one we locked must still be the one the path names
+            let (held, named) = (f.metadata()?, std::fs::metadata(&lock_path));
+            if named.is_ok_and(|n| (n.dev(), n.ino()) == (held.dev(), held.ino())) {
+                break f;
+            }
+        };
+        match UnixStream::connect(path) {
+            Ok(_) => return Err(busy()),
+            Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => std::fs::remove_file(path)?,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e),
+        }
+        Ok(Claim { path: path.to_path_buf(), lock_path, lock, bound: None })
+    }
+
+    fn bind(&mut self) -> io::Result<UnixListener> {
+        use std::os::unix::fs::MetadataExt;
+        let listener = UnixListener::bind(&self.path)?;
+        let m = std::fs::symlink_metadata(&self.path)?;
+        self.bound = Some((m.dev(), m.ino()));
+        Ok(listener)
+    }
+
+    /// Remove the socket path if it is still the one we bound, and the
+    /// lock file (still locked, see `take`), then let go of the lock.
+    fn release(self) {
+        use std::os::unix::fs::MetadataExt;
+        if let (Some(id), Ok(m)) = (self.bound, std::fs::symlink_metadata(&self.path)) {
+            if (m.dev(), m.ino()) == id {
+                let _ = std::fs::remove_file(&self.path);
+            }
+        }
+        let _ = std::fs::remove_file(&self.lock_path);
+        drop(self.lock);
+    }
+}
+
 fn daemon_log(socket: &Path) -> Option<std::fs::File> {
     let dir = socket.parent()?;
     std::fs::OpenOptions::new().create(true).append(true).open(dir.join("apexd.log")).ok()

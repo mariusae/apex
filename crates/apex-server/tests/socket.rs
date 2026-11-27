@@ -10,10 +10,7 @@ use apex_server::proto::ClientMsg;
 use apex_server::remote::Remote;
 
 fn daemon() -> PathBuf {
-    // pid plus a counter: the clock is too coarse to tell parallel tests apart
-    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let path = std::env::temp_dir().join(format!("apex-socket-test-{}-{n}.sock", std::process::id()));
+    let path = socket_path();
     let p = path.clone();
     std::thread::spawn(move || Daemon::run_with(&p, "main", None).unwrap());
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -21,6 +18,14 @@ fn daemon() -> PathBuf {
         std::thread::sleep(Duration::from_millis(5));
     }
     path
+}
+
+/// A socket path no other test uses.
+fn socket_path() -> PathBuf {
+    // pid plus a counter: the clock is too coarse to tell parallel tests apart
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    std::env::temp_dir().join(format!("apex-socket-test-{}-{n}.sock", std::process::id()))
 }
 
 /// Pump messages until `done` or the deadline.
@@ -310,6 +315,70 @@ fn the_daemon_says_its_build_first_and_stops_when_told() {
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
     assert!(std::os::unix::net::UnixStream::connect(&sock).is_err(), "daemon still answers");
+}
+
+/// A daemon started on a path another daemon serves refuses, and leaves
+/// the one there reachable; so does one started where something that
+/// holds no lock (an older apex) answers.
+#[test]
+fn a_second_daemon_on_a_live_socket_refuses() {
+    let sock = daemon();
+    let e = Daemon::run_with(&sock, "second", None).unwrap_err();
+    assert_eq!(e.kind(), std::io::ErrorKind::AddrInUse);
+    assert_eq!(e.to_string(), format!("a daemon is already serving {}", sock.display()));
+    let labels: Vec<String> = apex_server::remote::list_sessions(&sock).unwrap().into_iter().map(|s| s.label).collect();
+    assert_eq!(labels, vec!["main".to_string()]);
+    apex_server::remote::stop(&sock).unwrap();
+
+    let other = socket_path();
+    let _l = std::os::unix::net::UnixListener::bind(&other).unwrap();
+    let e = Daemon::run_with(&other, "second", None).unwrap_err();
+    assert_eq!(e.kind(), std::io::ErrorKind::AddrInUse);
+    assert!(std::os::unix::net::UnixStream::connect(&other).is_ok(), "the listener's socket was taken");
+    let _ = std::fs::remove_file(&other);
+}
+
+/// A socket file nobody listens on is stale: a daemon takes its place.
+#[test]
+fn a_daemon_replaces_a_stale_socket() {
+    let sock = socket_path();
+    drop(std::os::unix::net::UnixListener::bind(&sock).unwrap());
+    assert!(sock.exists());
+    let p = sock.clone();
+    let d = std::thread::spawn(move || Daemon::run_with(&p, "main", None));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while apex_server::remote::list_sessions(&sock).is_err() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let labels: Vec<String> = apex_server::remote::list_sessions(&sock).unwrap().into_iter().map(|s| s.label).collect();
+    assert_eq!(labels, vec!["main".to_string()]);
+    apex_server::remote::stop(&sock).unwrap();
+    d.join().unwrap().unwrap();
+    assert!(!sock.exists());
+}
+
+/// A daemon on its way out removes its socket path only while the path
+/// still names its own socket.
+#[test]
+fn a_stopping_daemon_leaves_a_socket_not_its_own() {
+    use std::os::unix::net::{UnixListener, UnixStream};
+    let sock = socket_path();
+    let p = sock.clone();
+    let d = std::thread::spawn(move || Daemon::run_with(&p, "main", None));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while UnixStream::connect(&sock).is_err() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let mut conn = UnixStream::connect(&sock).unwrap();
+    // someone else's socket on the path now
+    std::fs::remove_file(&sock).unwrap();
+    let theirs = UnixListener::bind(&sock).unwrap();
+    apex_server::proto::write_frame(&mut conn, &ClientMsg::Stop).unwrap();
+    d.join().unwrap().unwrap();
+    assert!(sock.exists(), "the daemon removed a socket not its own");
+    assert!(UnixStream::connect(&sock).is_ok());
+    drop(theirs);
+    let _ = std::fs::remove_file(&sock);
 }
 
 /// acme's B3 expansion happens on the server: a click anywhere in
