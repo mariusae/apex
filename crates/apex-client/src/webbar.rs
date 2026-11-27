@@ -157,11 +157,16 @@ impl Acme {
                     cx.stop_propagation();
                 }),
             );
-        // Del, as any tag's × after its name (the stacked one's over
-        // another window): B1 or B2 on it closes the window
+        // Del, as any tag's × after its name (a lens's saying what it goes
+        // back to, a terminal or a page of text, as `tag_head` has it): B1
+        // or B2 on it closes the window
         let me = cx.entity();
-        let stacked = self.node.state.layout.under(w).is_some();
-        let del = crate::text_element::icon_index(if stacked { crate::text_element::DEL_STACKED } else { "Del" });
+        let under = self.node.state.layout.base_of(w).and_then(|b| self.node.state.window(b).ok()).map(|b| matches!(b.body, apex_core::Body::Term(_)));
+        let del = crate::text_element::icon_index(match under {
+            Some(true) => crate::text_element::DEL_TO_TERM,
+            Some(false) => crate::text_element::DEL_TO_PAGE,
+            None => "Del",
+        });
         let close = div()
             .id(("web-del", w.0))
             .flex_none()
