@@ -5522,6 +5522,14 @@ impl Acme {
         // nothing typed takes while another client leads: said again
         self.flash_watching(cx);
         let m = ks.modifiers;
+        // ⌘↑ ⌘↓ in a body with an outline (win's commands, a file's
+        // symbols): from entry to entry, before the other ⌘ keys
+        if let ViewId::Body(w) = v {
+            if m.platform && !m.shift && !m.control && (ks.key == "up" || ks.key == "down") && self.outline_jump(w, ks.key == "up") {
+                cx.notify();
+                return;
+            }
+        }
         if m.platform {
             match ks.key.as_str() {
                 "z" if m.shift => {
@@ -5558,14 +5566,6 @@ impl Acme {
         if (m.control && ks.key == "f") || ks.key == "insert" {
             self.complete(v, q0);
             return;
-        }
-        // ⌘↑ ⌘↓ in a body with an outline (win's commands, a file's
-        // symbols): from entry to entry
-        if let ViewId::Body(w) = v {
-            if m.platform && !m.shift && !m.control && (ks.key == "up" || ks.key == "down") && self.outline_jump(w, ks.key == "up") {
-                cx.notify();
-                return;
-            }
         }
         let fit = self.layouts.get(&v).map(|l| l.lines_that_fit()).unwrap_or(1) as i64;
         // acme's texttype in a tag: Up shrinks it to one line, Down expands it
