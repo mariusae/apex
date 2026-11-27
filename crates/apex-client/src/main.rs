@@ -821,7 +821,27 @@ impl Render for Acme {
             )),
         )
         .with_priority(3);
-        root.child(cutter).into_any_element()
+        // a button held from a press in the window: the pointer is still
+        // followed off it, as X's implicit grab (and AppKit's drag) keep
+        // sending the moves, so a sweep goes on scrolling and tracking
+        // there. The root's on_mouse_move sees only moves over it
+        let me4 = me.clone();
+        let follow = div().absolute().top(px(0.)).left(px(0.)).w(px(0.)).h(px(0.)).child(canvas(
+            |_, _, _| {},
+            move |_, _, window, _| {
+                let me = me4.clone();
+                window.on_mouse_event(move |e: &gpui::MouseMoveEvent, phase, window, cx| {
+                    let vp = window.viewport_size();
+                    let p = e.position;
+                    let inside = p.x >= px(0.) && p.y >= px(0.) && p.x < vp.width && p.y < vp.height;
+                    if phase != gpui::DispatchPhase::Bubble || inside || e.pressed_button.is_none() {
+                        return;
+                    }
+                    me.update(cx, |acme, cx| acme.mouse_move(e, window, cx));
+                });
+            },
+        ));
+        root.child(follow).child(cutter).into_any_element()
     }
 }
 
