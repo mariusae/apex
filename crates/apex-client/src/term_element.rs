@@ -28,6 +28,15 @@ impl TermLayout {
         let y = ((pos.y - self.text_origin.y) / self.line_height).max(0.) as usize;
         (x.min(self.cols.saturating_sub(1) as usize), y.min(self.rows.len().saturating_sub(1)))
     }
+
+    /// The column of the boundary between cells nearest `pos` on its
+    /// row, from 0 (before the first cell) to `cols` (after the last):
+    /// where a click falls between characters, as `TextLayout::offset_at`
+    /// has it in a text window, rather than the cell it lands on.
+    pub fn boundary_at(&self, pos: Point<Pixels>) -> usize {
+        let x = ((pos.x - self.text_origin.x) / self.cell_w + 0.5).max(0.) as usize;
+        x.min(self.cols as usize)
+    }
 }
 
 /// A cell's colour as the theme has it (entry.rs on the packing).

@@ -3725,8 +3725,12 @@ impl Acme {
                     } else if let Some(l) = self.term_layouts.get(&w).filter(|_| e.click_count >= 2) {
                         // double-clicked: what acme's text windows select,
                         // over the rows on screen -- the word, the line at
-                        // either end of it, what brackets or quotes enclose
-                        let ((c0, r0), (c1, r1)) = term_double_click(&l.rows, c, r);
+                        // either end of it, what brackets or quotes enclose.
+                        // It expands from the boundary nearest the pointer, as
+                        // in a text window, not from the start of the cell
+                        // under it: just before a `)` is the place between it
+                        // and the character before, and takes the brackets.
+                        let ((c0, r0), (c1, r1)) = term_double_click(&l.rows, l.boundary_at(e.position), r);
                         self.term_sel = Some((w, (c0, top + r0 as u64), (c1, top + r1 as u64)));
                         self.mouse.term_dbl = Some(p);
                     } else {
@@ -6006,7 +6010,9 @@ fn around(at: usize, len: usize, by: isize) -> usize {
 /// end of a row is a click at the end of its line -- which takes the
 /// line. The selection comes back as two (column, row) cells, the end
 /// exclusive. Rows are one character a cell (`TermLayout::rows`), so a
-/// character's place in its row is its column.
+/// character's place in its row is its column. The click is at `c`, the
+/// boundary before column `c` (`TermLayout::boundary_at`), as a text
+/// window's click is between characters.
 fn term_double_click(rows: &[String], c: usize, r: usize) -> ((usize, usize), (usize, usize)) {
     let lines: Vec<&str> = rows.iter().map(|s| s.trim_end()).collect();
     let mut starts = Vec::with_capacity(lines.len());
@@ -6176,6 +6182,18 @@ mod term_double_click_tests {
         assert_eq!(term_double_click(&screen, 13, 2), ((13, 2), (14, 2)), "'q'");
         // the last line has no newline after it, and still is a line
         assert_eq!(term_double_click(&screen, 39, 2), ((0, 2), (15, 2)));
+    }
+
+    #[test]
+    fn a_double_click_just_inside_either_bracket_selects_what_they_enclose() {
+        let screen = rows(&["foo(bar baz) x", "f(a, g(b, c), d)", "'hi there' [one two]"]);
+        // just after the opener and just before the closer alike
+        assert_eq!(term_double_click(&screen, 4, 0), ((4, 0), (11, 0)));
+        assert_eq!(term_double_click(&screen, 11, 0), ((4, 0), (11, 0)));
+        assert_eq!(term_double_click(&screen, 11, 1), ((7, 1), (11, 1)), "g(b, c)");
+        assert_eq!(term_double_click(&screen, 15, 1), ((2, 1), (15, 1)), "the outer pair");
+        assert_eq!(term_double_click(&screen, 9, 2), ((1, 2), (9, 2)), "'hi there'");
+        assert_eq!(term_double_click(&screen, 19, 2), ((12, 2), (19, 2)), "[one two]");
     }
 }
 
