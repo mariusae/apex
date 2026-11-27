@@ -188,6 +188,9 @@ impl Acme {
                 self.picker_opened = Some((w, Instant::now()));
                 self.head_b1 = Some((w, atom));
             }
+            // B2 on the path: the name runs when the button comes up on
+            // it (`release_head`)
+            (MouseButton::Middle, Atom::Dir(_) | Atom::Name) => self.head_b2 = Some((w, atom)),
             // B3 on the path: plumbed, as far as the part
             (MouseButton::Right, Atom::Dir(k)) => {
                 let path = self.node.window_path(w);

@@ -1445,6 +1445,9 @@ pub struct Source {
     /// What B2 just ran here, drawn as its sweep at this strength (0
     /// blinked off) while it goes (`app::ran_fade`).
     pub ran: Option<(usize, usize, f32)>,
+    /// A window tag's path held by B2, or just run by it: drawn under
+    /// B2's sweep at this strength, as `ran`.
+    pub head_swept: Option<f32>,
     /// What a click would take here with the modifier held (⌘: B3's,
     /// ⌥: B2's), on a pill.
     pub hint: Option<(usize, usize, HlKind)>,
@@ -1488,6 +1491,7 @@ pub struct Prepaint {
     sel: (usize, usize),
     hl: Option<(usize, usize, HlKind)>,
     ran: Option<(usize, usize, f32)>,
+    head_swept: Option<f32>,
     hint: Option<(usize, usize, HlKind)>,
     marks: std::rc::Rc<Vec<(usize, usize)>>,
     strike: Option<(usize, usize)>,
@@ -2121,6 +2125,7 @@ impl Element for TextElement {
                 sel: src.sel,
                 hl: src.hl,
                 ran: src.ran,
+                head_swept: src.head_swept,
                 hint: src.hint,
                 marks: src.marks.clone(),
                 strike: src.strike,
@@ -2159,7 +2164,7 @@ impl Element for TextElement {
         let Some(pp) = prepaint.take() else { return };
         // what B2 ran, going: drawn again until it has gone, blinked off
         // or not
-        if pp.ran.is_some() {
+        if pp.ran.is_some() || pp.head_swept.is_some_and(|f| f < 1.) {
             window.request_animation_frame();
         }
         let pal = palette(pp.kind);
@@ -2366,6 +2371,20 @@ impl Element for TextElement {
                                 let (up, down) = reach(sy);
                                 window.paint_quad(fill(Bounds::from_corners(point(origin.x + x0, sy - up), point(origin.x + x1, sy + lh + down)), color).corner_radii(radii));
                             }
+                        }
+                    }
+
+                    // the path B2 holds or just ran, under B2's sweep: its
+                    // folders and name, one piece on each row they are on
+                    if let Some(f) = pp.head_swept.filter(|&f| f > 0.) {
+                        let color = rgb(crate::theme::theme().sweep(true).0).opacity(f);
+                        for (i, &(ds, de)) in line.subs.iter().enumerate() {
+                            let parts = line.atoms.iter().filter(|x| matches!(x.2, Atom::Dir(_) | Atom::Name)).map(|x| (x.0.max(ds), x.1.min(de))).filter(|(s, e)| s < e);
+                            let Some((s, e)) = parts.reduce(|u, v| (u.0.min(v.0), u.1.max(v.1))) else { continue };
+                            let sy = ly + lh * i as f32;
+                            let (up, down) = reach(sy);
+                            let r = Bounds::from_corners(point(origin.x + x(s) - x(ds), sy - up), point(origin.x + x(e) - x(ds), sy + lh + down));
+                            window.paint_quad(fill(r, color).corner_radii(px(SWEEP_RADIUS)));
                         }
                     }
 
