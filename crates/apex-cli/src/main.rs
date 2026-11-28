@@ -325,6 +325,19 @@ Kill ends every running command named NAME, or the one with pid PID, as
 Kill in the top row does: the command's process group is sent SIGTERM,
 so what a shell started goes with it. The commands left running are
 listed afterwards, as ps lists them." },
+    Cmd { name: "resume", usage: "apex resume TICKET", short: "start a program again where it was (program resume)", flags: &[], run: resume, long: "\
+Resume is what a restored terminal types at its shell's first prompt
+when a program in it said how to start it again (OSC 7577, the program
+resume protocol): TICKET, a file the daemon wrote and only the user can
+read, holds the command and its directory. Resume reads and removes it,
+goes to the directory (or, gone, says so and stops), says what it
+resumes, tells the terminal it is now that program's process, and
+becomes the program, its arguments as they were, never read by a shell.
+
+Which programs a terminal keeps a resume record for is the session's
+Resume.programs setting: names, space-separated, claude and codex unless
+set (apex set Resume.programs 'claude codex nvim' in the profile); off
+keeps none, and resumes none." },
     Cmd { name: "term", usage: "apex term new [CMD...] | apex term send TERM TEXT | apex term read TERM | apex term clear TERM", short: "terminals", flags: &[], run: term, long: "\
 Term new makes a terminal window running the user's shell (the
 Newterm.shell setting, else the daemon's $SHELL), or CMD through it (as
@@ -1062,6 +1075,38 @@ if [ "$TERM_PROGRAM" = apex ]; then
   trap _apex_preexec DEBUG
 fi
 "#;
+
+/// `apex resume TICKET` (`Cmd` "resume"): the restored program started
+/// again in place of this process, as its ticket says.
+fn resume(_: &Ctx, p: &Parsed) -> R {
+    use std::os::unix::process::CommandExt;
+    let ticket = p.args.first().ok_or("usage: apex resume TICKET")?;
+    let text = std::fs::read(ticket).map_err(|e| format!("{ticket}: {e}"))?;
+    // a ticket is good once
+    let _ = std::fs::remove_file(ticket);
+    let r: apex_core::dump::DumpResume = serde_json::from_slice(&text).map_err(|e| format!("{ticket}: {e}"))?;
+    let Some(prog) = r.argv.first() else { return Err("nothing to resume".into()) };
+    // shown as it is, its controls and its direction marks escaped
+    let shown: Vec<String> = r.argv.iter().map(|a| a.escape_debug().to_string()).collect();
+    if let Some(dir) = &r.cwd {
+        if std::env::set_current_dir(dir).is_err() {
+            return Err(format!("{} is gone: not resuming {}", dir.escape_debug(), shown.join(" ")));
+        }
+    }
+    eprintln!("apex: resuming {}", shown.join(" "));
+    // the terminal's record is this process's now, which the program
+    // will be: its pid stays across the exec
+    if let Ok(token) = std::env::var(apex_server::resume::TOKEN_ENV) {
+        use std::io::Write;
+        let ask = apex_server::resume::Ask::Resume { argv: r.argv.clone(), cwd: r.cwd.clone() };
+        let seq = apex_server::resume::sequence(std::process::id(), apex_server::resume::now(), &ask, &token);
+        let mut out = std::io::stdout();
+        let _ = out.write_all(seq.as_bytes());
+        let _ = out.flush();
+    }
+    let e = std::process::Command::new(prog).args(&r.argv[1..]).exec();
+    Err(format!("{}: {e}", prog.escape_debug()))
+}
 
 fn stop(ctx: &Ctx, _: &Parsed) -> R {
     // whatever its version: an old daemon may not read our Stop as one
