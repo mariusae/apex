@@ -46,6 +46,14 @@ typedef struct {
 #define APEX_EVENT_BELL 4
 // a program saying how its work goes (OSC 9;4): its state, and how far
 #define APEX_EVENT_PROGRESS 5
+// a program saying how to resume it (OSC 7577): the report's body, after
+// `7577;`, as it came -- whether to believe it is the daemon's to say
+#define APEX_EVENT_RESUME 6
+
+// The most bytes of an OSC the library does not know that are kept to be
+// looked at: a program resume report's longest (OSC 7577 allows 2048 and
+// more; reports longer are cut short, and a cut report is not read)
+#define APEX_UNKNOWN_MAX 4096
 
 typedef struct ApexEvent {
   int kind;
@@ -126,6 +134,19 @@ static void on_progress(GhosttyTerminal t, void *ud, const GhosttyTerminalProgre
   push((ApexVt *)ud, APEX_EVENT_PROGRESS, out, sizeof(out));
 }
 
+// An OSC the library does not implement: OSC 7577 (program resume), whole,
+// passed on; anything else, or a report cut short, dropped.
+static void on_unknown(GhosttyTerminal t, void *ud, const GhosttyTerminalUnknownSequence *seq) {
+  (void)t;
+  if (!seq || seq->tag != GHOSTTY_TERMINAL_UNKNOWN_SEQUENCE_OSC) return;
+  const GhosttyTerminalUnknownOscSequence *osc = &seq->value.osc;
+  if (osc->truncated) return;
+  static const char prefix[] = "7577;";
+  size_t n = sizeof(prefix) - 1;
+  if (osc->content.len <= n || memcmp(osc->content.ptr, prefix, n) != 0) return;
+  push((ApexVt *)ud, APEX_EVENT_RESUME, osc->content.ptr + n, osc->content.len - n);
+}
+
 // The next event, its bytes borrowed until the call after it.
 int apex_vt_next_event(ApexVt *vt, const uint8_t **out_data, size_t *out_len) {
   static _Thread_local ApexEvent *held = NULL;
@@ -176,6 +197,9 @@ ApexVt *apex_vt_new(uint16_t cols, uint16_t rows, size_t scrollback) {
   ghostty_terminal_set(vt->term, GHOSTTY_TERMINAL_OPT_TITLE_CHANGED, (const void *)on_title);
   ghostty_terminal_set(vt->term, GHOSTTY_TERMINAL_OPT_CLIPBOARD_WRITE, (const void *)on_clipboard);
   ghostty_terminal_set(vt->term, GHOSTTY_TERMINAL_OPT_PROGRESS_REPORT, (const void *)on_progress);
+  ghostty_terminal_set(vt->term, GHOSTTY_TERMINAL_OPT_UNKNOWN_SEQUENCE, (const void *)on_unknown);
+  size_t unknown_max = APEX_UNKNOWN_MAX;
+  ghostty_terminal_set(vt->term, GHOSTTY_TERMINAL_OPT_UNKNOWN_MAX_BYTES, &unknown_max);
   return vt;
 }
 

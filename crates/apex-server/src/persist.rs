@@ -26,10 +26,15 @@ pub fn path_of(dir: &Path, id: &str) -> PathBuf {
 /// Write `d` as session `id`'s dump: whole, or not at all (a dump
 /// half-written by a crash would lose what the last one had).
 pub fn write(dir: &Path, id: &str, d: &Dump) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
     std::fs::create_dir_all(dir)?;
     let text = serde_json::to_vec(d).map_err(std::io::Error::other)?;
     let tmp = dir.join(format!(".{id}.json.tmp"));
-    std::fs::write(&tmp, text)?;
+    // the user's alone: it says what programs to run again (program
+    // resume), and what the windows held
+    let _ = std::fs::remove_file(&tmp);
+    std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&tmp)?.write_all(&text)?;
     std::fs::rename(&tmp, path_of(dir, id))
 }
 
@@ -75,7 +80,7 @@ impl Host for Loader<'_> {
         self.server.read_path(Path::new(name)).ok()
     }
 
-    fn term(&mut self, log: &mut Log, dir: &str, history: &str) -> Option<TermId> {
-        self.server.restored_term(log, dir, history, self.shell.as_deref(), self.scrollback)
+    fn term(&mut self, log: &mut Log, dir: &str, history: &str, resume: Option<&apex_core::dump::DumpResume>) -> Option<TermId> {
+        self.server.restored_term(log, dir, history, self.shell.as_deref(), self.scrollback, resume)
     }
 }

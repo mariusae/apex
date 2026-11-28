@@ -32,7 +32,7 @@ impl Host for Disk {
     fn read(&mut self, name: &str) -> Option<(String, String)> {
         self.0.get(name).map(|t| (name.to_string(), t.clone()))
     }
-    fn term(&mut self, _: &mut Log, _: &str, _: &str) -> Option<TermId> {
+    fn term(&mut self, _: &mut Log, _: &str, _: &str, _: Option<&dump::DumpResume>) -> Option<TermId> {
         None
     }
 }
@@ -173,7 +173,7 @@ fn a_window_that_cannot_be_made_again_is_left_out() {
     let mut d = again(&dump::dump(&node.state, &mut |_| None));
     let mut term = d.windows[0].clone();
     term.id = 999;
-    term.body = dump::DumpBody::Term { history: "$ ls\n".into() };
+    term.body = dump::DumpBody::Term { history: "$ ls\n".into(), resume: None };
     d.windows.push(term);
     let (mut log2, mut node2) = bare();
     let mut disk = Disk(BTreeMap::from([("/w/a.txt".into(), "a\n".into())]));

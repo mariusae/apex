@@ -30,6 +30,9 @@ pub enum Event {
     /// OSC 9;4: how the program's work goes, and how far along it is
     /// when it says (0 to 100).
     Progress(Progress, Option<u8>),
+    /// OSC 7577: a program resume report's body (after `7577;`), not
+    /// yet believed.
+    Resume(String),
 }
 
 /// What a program says of its work (OSC 9;4, ConEmu's).
@@ -269,6 +272,7 @@ impl Terminal {
                     };
                     Event::Progress(state, bytes.get(1).copied().filter(|p| *p <= 100))
                 }
+                6 => Event::Resume(String::from_utf8_lossy(&bytes).to_string()),
                 _ => Event::Bell,
             });
         }
@@ -460,6 +464,17 @@ mod tests {
         assert_eq!(s.cells[0].link, 1);
         assert_eq!(s.cells[3].link, 1);
         assert_eq!(s.cells[5].link, 0);
+    }
+
+    #[test]
+    fn a_program_resume_report_is_passed_on_and_other_unknown_oscs_are_not() {
+        let mut t = Terminal::new(40, 5, 100).unwrap();
+        t.write(b"a\x1b]7577;pid=1:time=2:clear=1:mac=00\x1b\\b\x1b]7400;x=1\x07c\x1b]7577;pid=3:time=4:clear=1:mac=11\x07");
+        let got: Vec<String> = t.events().into_iter().filter_map(|e| match e {
+            Event::Resume(b) => Some(b),
+            _ => None,
+        }).collect();
+        assert_eq!(got, ["pid=1:time=2:clear=1:mac=00", "pid=3:time=4:clear=1:mac=11"]);
     }
 
     #[test]

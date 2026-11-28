@@ -138,10 +138,25 @@ fn yes() -> bool {
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum DumpBody {
     Text { buffer: u64 },
-    /// A terminal: what it showed, history and screen, as text.
-    Term { history: String },
+    /// A terminal: what it showed, history and screen, as text; and the
+    /// program in it to start again, when one said how (OSC 7577).
+    Term {
+        history: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        resume: Option<DumpResume>,
+    },
     /// A page: of a buffer, or (none) at its address.
     Page { buffer: Option<u64> },
+}
+
+/// A program in a terminal to start again when the session is (program
+/// resume, OSC 7577): the command, as it said it, and the directory to
+/// run it in.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct DumpResume {
+    pub argv: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
 }
 
 /// The tiling's parts `LayoutOp::Arrange` lays out.
@@ -155,10 +170,11 @@ struct DumpLayout {
     stash: Vec<Stashed>,
 }
 
-/// `state` written down; `history` gives a terminal's output as text.
+/// `state` written down; `history` gives a terminal's output as text,
+/// and the program in it to resume, when there is one.
 /// The session's identity, settings and directory are the caller's to
 /// fill in.
-pub fn dump(state: &State, history: &mut dyn FnMut(TermId) -> Option<String>) -> Dump {
+pub fn dump(state: &State, history: &mut dyn FnMut(TermId) -> Option<(String, Option<DumpResume>)>) -> Dump {
     let text = |b: BufferId| state.buffers.get(&b).map(|b| b.text.to_string()).unwrap_or_default();
     let mut d = Dump { version: VERSION, ..Default::default() };
     d.top = state.layout.top.map(text).unwrap_or_default();
@@ -177,7 +193,10 @@ pub fn dump(state: &State, history: &mut dyn FnMut(TermId) -> Option<String>) ->
                 DumpBody::Page { buffer: Some(b.0) }
             }
             Body::Page(Source::Url) => DumpBody::Page { buffer: None },
-            Body::Term(t) => DumpBody::Term { history: history(t).unwrap_or_default() },
+            Body::Term(t) => {
+                let (history, resume) = history(t).unwrap_or_default();
+                DumpBody::Term { history, resume }
+            }
         };
         let view = match w.body {
             Body::Text(b) => state.buffers.get(&b).and_then(|b| b.views.get(&ViewId::Body(w.id))).cloned().unwrap_or_default(),
@@ -248,8 +267,9 @@ pub trait Host {
     /// directory's with its slash) and its text; none when it is gone.
     fn read(&mut self, name: &str) -> Option<(String, String)>;
     /// A terminal in `dir` for a window made again, `history` written
-    /// into it before its shell starts.
-    fn term(&mut self, log: &mut Log, dir: &str, history: &str) -> Option<TermId>;
+    /// into it before its shell starts, and `resume` the program to start
+    /// in it again, when one said how.
+    fn term(&mut self, log: &mut Log, dir: &str, history: &str, resume: Option<&DumpResume>) -> Option<TermId>;
 }
 
 impl Node {
@@ -314,7 +334,7 @@ impl Node {
                 DumpBody::Text { buffer } => bufs.get(buffer).map(|&b| Body::Text(b)),
                 DumpBody::Page { buffer: Some(buffer) } => bufs.get(buffer).map(|&b| Body::Page(Source::Buffer(b))),
                 DumpBody::Page { buffer: None } => Some(Body::Page(Source::Url)),
-                DumpBody::Term { history } => host.term(log, &w.path, history).map(Body::Term),
+                DumpBody::Term { history, resume } => host.term(log, &w.path, history, resume.as_ref()).map(Body::Term),
             };
             let Some(body) = body else { continue };
             let id = self.make_window_shards(log, body, w.path.clone(), w.label.clone(), w.diagnostic, w.via.clone(), w.base.clone())?;

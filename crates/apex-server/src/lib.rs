@@ -25,6 +25,7 @@ pub mod pty;
 pub mod proto;
 pub mod providers;
 pub mod remote;
+pub mod resume;
 pub mod term;
 pub mod term_loop;
 pub mod watch;
@@ -242,6 +243,10 @@ pub struct Server {
     /// Texts programs in terminals put on the clipboard (OSC 52), for
     /// the daemon to pass to the UIs.
     clips: Vec<String>,
+    /// Goes up whenever a terminal's program resume record changes: the
+    /// daemon writes the session down again then, though its log has not
+    /// moved (`Daemon::save`).
+    pub resume_gen: u64,
     watches: watch::Watches,
     /// Stale buffers `Put` has refused once (acme: the second Put writes).
     put_warned: BTreeSet<BufferId>,
@@ -326,6 +331,7 @@ impl Server {
             windowed: BTreeSet::new(),
             pending_terms: HashMap::new(),
             clips: Vec::new(),
+            resume_gen: 0,
             watches,
             put_warned: BTreeSet::new(),
             edit: apex_edit::Edit::new(),
@@ -490,7 +496,7 @@ impl Server {
             .map_err(|e| e.to_string())?;
         // the shell starts once the window is there (`spawn_pending`),
         // with the window's id in its environment as acme's win has
-        self.pending_terms.insert(id, PendingTerm { dir: dir.to_path_buf(), cmd: cmd.map(String::from), shell: shell.map(String::from), cols: 80, rows: 24, scrollback, prelude: Vec::new() });
+        self.pending_terms.insert(id, PendingTerm { dir: dir.to_path_buf(), cmd: cmd.map(String::from), shell: shell.map(String::from), cols: 80, rows: 24, scrollback, prelude: Vec::new(), resume: None });
         // win's naming: the directory, and the host (`awd` keeps it so)
         // or the command as the label
         let label = cmd.map(command_name).filter(|n| !n.is_empty()).unwrap_or_else(term::sysname);
@@ -502,20 +508,20 @@ impl Server {
     /// the user's shell in `dir` (home, if it is gone), never the
     /// command it ran, its old output above it and a line saying it was
     /// restored. Its window is the loader's to make.
-    pub fn restored_term(&mut self, log: &mut Log, dir: &str, history: &str, shell: Option<&str>, scrollback: usize) -> Option<TermId> {
+    pub fn restored_term(&mut self, log: &mut Log, dir: &str, history: &str, shell: Option<&str>, scrollback: usize, resume: Option<&apex_core::dump::DumpResume>) -> Option<TermId> {
         let id = TermId(self.next_term);
         self.next_term += 1;
         self.node.create_shard(log, Shard::Term(id)).ok()?;
         self.node.append(log, Shard::Term(id), Op::Term(TermOp::Create { cols: 80, rows: 24 })).ok()?;
         let dir = Some(PathBuf::from(term::expand_tilde(dir.trim_end_matches('/')))).filter(|d| d.is_dir()).or_else(|| std::env::var_os("HOME").map(PathBuf::from)).unwrap_or_else(|| self.cwd.clone());
-        self.pending_terms.insert(id, PendingTerm { dir, cmd: None, shell: shell.map(String::from), cols: 80, rows: 24, scrollback, prelude: term::restored_prelude(history) });
+        self.pending_terms.insert(id, PendingTerm { dir, cmd: None, shell: shell.map(String::from), cols: 80, rows: 24, scrollback, prelude: term::restored_prelude(history), resume: resume.cloned() });
         Some(id)
     }
 
     /// The session written down (`apex_core::dump`): its windows, its
     /// identity and label, its directory and settings.
     pub fn dump(&self, view: &Node) -> apex_core::dump::Dump {
-        let mut d = apex_core::dump::dump(&view.state, &mut |t| self.term_history(t));
+        let mut d = apex_core::dump::dump(&view.state, &mut |t| self.term_history(t).map(|h| (h, self.term_resume(t))));
         d.id = view.state.meta.id.clone();
         d.label = view.state.meta.label.clone();
         d.cwd = self.cwd.display().to_string();
@@ -527,6 +533,12 @@ impl Server {
     /// The dumps `Load` read since the last call.
     pub fn take_loads(&mut self) -> Vec<apex_core::dump::Dump> {
         std::mem::take(&mut self.loads)
+    }
+
+    /// The program in terminal `t` to start again when the session is,
+    /// for a dump: its record's command and directory (program resume).
+    pub fn term_resume(&self, t: TermId) -> Option<apex_core::dump::DumpResume> {
+        self.terms.get(&t)?.resume.as_ref().map(|r| apex_core::dump::DumpResume { argv: r.argv.clone(), cwd: r.cwd.clone() })
     }
 
     /// What terminal `t` has shown, as text, for a dump: its last
@@ -550,6 +562,19 @@ impl Server {
             match TermHost::spawn(id, &p.dir, p.cols, p.rows, self.term_tx.clone(), &env, p.cmd.as_deref(), p.shell.as_deref(), p.scrollback, &p.prelude) {
                 Ok(mut host) => {
                     host.set_colors(&self.term_colors);
+                    // restored with a program to resume: it is this
+                    // terminal's record until the program reports (or
+                    // goes), and it starts once the shell prompts -- or,
+                    // a shell that marks no prompts, a moment after
+                    if let Some(r) = p.resume {
+                        host.resume = Some(resume::Record { pid: None, started: None, time: 0, argv: r.argv.clone(), cwd: r.cwd.clone() });
+                        host.resume_pending = Some(r);
+                        let tx = self.term_tx.clone();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(RESUME_FALLBACK);
+                            let _ = tx.unbounded_send((id, TermEvent::ResumeDue));
+                        });
+                    }
                     self.procs.push(MetaOp::ProcStart { pid: host.pid, name: host.name.clone(), cmd: host.cmd.clone(), dir: host.dir.display().to_string(), origin: ExecCtx::Window(w), kind: ProcKind::Term, out: ProcOut::None, started: host.started });
                     if (p.cols, p.rows) != (80, 24) {
                         let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Resize { cols: p.cols, rows: p.rows }));
@@ -807,6 +832,16 @@ impl Server {
                 match ev {
                     // the screen changed; the publish below carries it
                     TermEvent::Wakeup | TermEvent::Bell => {}
+                    // a program saying how to resume it (OSC 7577)
+                    TermEvent::Resume(body) => {
+                        let programs = view.state.meta.setting(SERVER, "Resume.programs").map(|s| s.to_string()).unwrap_or_else(|| resume::DEFAULT_PROGRAMS.to_string());
+                        if resume_report(h, &body, &programs) {
+                            self.resume_gen += 1;
+                        }
+                    }
+                    // a restored shell has had its moment: what it is to
+                    // resume, now, if its prompt has not run it already
+                    TermEvent::ResumeDue => resume_start(h),
                     // an xterm title is the window's title
                     TermEvent::Title(t) => h.title = Some(t),
                     // OSC 52: into the snarf buffer, and (through the
@@ -879,6 +914,14 @@ impl Server {
                                 // or waiting is over
                                 if h.status.settle() {
                                     status_changed = true;
+                                }
+                                // a restored terminal's first prompt: its
+                                // program resumed; and a program resume's
+                                // record for a program that has gone, gone
+                                resume_start(h);
+                                if h.resume.as_ref().is_some_and(|r| r.gone()) {
+                                    h.resume = None;
+                                    self.resume_gen += 1;
                                 }
                                 if h.marks.last().is_none_or(|m| m.prompt != line) {
                                     h.marks.push(apex_core::PromptMark { prompt: line, output: None, end: None, exit: None, cmd: None, started: None, ended: None });
@@ -2559,6 +2602,91 @@ struct PendingTerm {
     scrollback: usize,
     /// What it shows before its shell's first word (`restored_prelude`).
     prelude: Vec<u8>,
+    /// Restored: the program to start again in it (program resume).
+    resume: Option<apex_core::dump::DumpResume>,
+}
+
+/// How long a restored terminal's shell is given to prompt before what it
+/// is to resume starts anyway (a shell that marks no prompts, OSC 133).
+const RESUME_FALLBACK: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// A program's resume report (OSC 7577) to terminal `h`, its body as it
+/// came: believed or not, and taken or not, as the spec says -- forged
+/// or out of its time, nothing changes; genuine but not to be taken (a
+/// command the session's `Resume.programs` does not name, a process not
+/// the user's or not on this terminal), the terminal's record goes.
+/// Whether the record changed.
+fn resume_report(h: &mut term::TermHost, body: &str, programs: &str) -> bool {
+    // SAFETY: geteuid only reads
+    if unsafe { libc::geteuid() } == 0 {
+        return false; // root takes no reports
+    }
+    let report = match resume::parse(body, &h.resume_token, resume::now()) {
+        Ok(r) => r,
+        Err(resume::Reject::Forged | resume::Reject::Stale) => return false,
+        Err(resume::Reject::Unacceptable(_)) => return h.resume.take().is_some(),
+    };
+    // a report earlier than the last taken from its process is old news
+    if h.resume.as_ref().is_some_and(|r| r.pid == Some(report.pid) && report.time < r.time) {
+        return false;
+    }
+    let me = unsafe { libc::getuid() };
+    let proc = resume::proc_info(report.pid).filter(|p| p.uid == me && resume::in_session(report.pid, h.pid));
+    let Some(proc) = proc else { return h.resume.take().is_some() };
+    let record = match report.ask {
+        resume::Ask::Clear => {
+            // its own record, or one a resume left for it to take up
+            let mine = h.resume.as_ref().is_some_and(|r| r.pid.is_none_or(|p| p == report.pid));
+            return mine && h.resume.take().is_some();
+        }
+        resume::Ask::Resume { argv, cwd } => {
+            if !resume::allowed(programs, &argv[0]) {
+                return h.resume.take().is_some();
+            }
+            // where it runs: where it said, else where it is now
+            let cwd = cwd.or_else(|| resume::proc_cwd(report.pid));
+            resume::Record { pid: Some(report.pid), started: Some(proc.started), time: report.time, argv, cwd }
+        }
+    };
+    if h.resume.as_ref() == Some(&record) {
+        return false;
+    }
+    h.resume = Some(record);
+    true
+}
+
+/// Start what a restored terminal is to resume, once (the first of its
+/// shell's first prompt and `RESUME_FALLBACK`): its command and directory
+/// written to a ticket only the user can read, and `apex resume TICKET`
+/// typed at the prompt -- so the shell, its startup files run, finds the
+/// program on the user's PATH, and never reads the program's arguments
+/// as shell (`apex resume` runs them as they are). Not when the session
+/// no longer allows the program, nor where the daemon runs as root.
+fn resume_start(h: &mut term::TermHost) {
+    let Some(r) = h.resume_pending.take() else { return };
+    // SAFETY: geteuid only reads
+    if unsafe { libc::geteuid() } == 0 || r.argv.is_empty() {
+        return;
+    }
+    let Ok(exe) = std::env::current_exe() else { return };
+    let Ok(ticket) = resume_ticket(&r) else { return };
+    let line = format!("{} resume {}\r", shell_quote(&exe.display().to_string()), shell_quote(&ticket.display().to_string()));
+    h.type_in(&line);
+}
+
+/// The ticket `apex resume` reads (and removes): the command and its
+/// directory as JSON, in `~/.apex/resume/`, the directory and file the
+/// user's alone.
+fn resume_ticket(r: &apex_core::dump::DumpResume) -> std::io::Result<PathBuf> {
+    use std::io::Write;
+    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+    let home = std::env::var_os("HOME").map(PathBuf::from).ok_or_else(|| std::io::Error::other("no HOME"))?;
+    let dir = home.join(".apex").join("resume");
+    std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&dir)?;
+    let path = dir.join(format!("{}.json", resume::token()));
+    let mut f = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&path)?;
+    f.write_all(&serde_json::to_vec(r).map_err(std::io::Error::other)?)?;
+    Ok(path)
 }
 
 /// Where `Dump` and `Load` with no file name write and read: acme's

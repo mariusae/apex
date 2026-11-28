@@ -40,6 +40,11 @@ pub enum TermEvent {
     Status(apex_core::status::Report),
     /// RIS: a full reset.
     Reset,
+    /// OSC 7577: a program resume report's body, not yet believed.
+    Resume(String),
+    /// A restored terminal's shell has had time to start: what it is to
+    /// resume, if its first prompt has not already run it.
+    ResumeDue,
 }
 
 /// The size of a cell as a program is told (`TIOCGWINSZ` pixels, and
@@ -286,6 +291,12 @@ pub struct TermHost {
     /// pressing one's state, what it waits on, how far along, and its
     /// message.
     pub status_said: Option<(apex_core::status::State, Option<apex_core::status::Kind>, Option<u8>, Option<String>)>,
+    /// Program resume (OSC 7577): this terminal's token, in its first
+    /// process's environment; the record a program's report left; and,
+    /// restored, the program to start again once its shell prompts.
+    pub resume_token: String,
+    pub resume: Option<crate::resume::Record>,
+    pub resume_pending: Option<apex_core::dump::DumpResume>,
 }
 
 struct Published {
@@ -335,6 +346,14 @@ impl TermHost {
         for (k, v) in extra {
             env.insert(k.clone(), v.clone());
         }
+        // program resume: a token of its own, for its programs to sign
+        // their reports with (OSC 7577); none for a daemon run as root,
+        // which takes no reports
+        let resume_token = crate::resume::token();
+        // SAFETY: geteuid only reads
+        if unsafe { libc::geteuid() } != 0 {
+            env.insert(crate::resume::TOKEN_ENV.to_string(), resume_token.clone());
+        }
         let opts = Options { program: shell.clone(), args, dir: dir.to_path_buf(), env };
         let pty = Pty::spawn(&opts, cols, rows).map_err(|e| e.to_string())?;
         let pid = pty.pid();
@@ -366,6 +385,7 @@ impl TermHost {
                 // a program at work makes its window's handle pulse; one
                 // that failed, paused or finished is at work no longer
                 Report::Progress(p, at) => TermEvent::Working(matches!(p, Progress::At | Progress::Unknown), at),
+                Report::Resume(body) => TermEvent::Resume(body),
                 Report::Wakeup => TermEvent::Wakeup,
                 Report::Exit(code) => TermEvent::Exit(code),
             };
@@ -374,7 +394,7 @@ impl TermHost {
         let event_loop = EventLoop::new(term.clone(), pty, report).map_err(|e| e.to_string())?;
         let notifier = event_loop.channel();
         let _ = event_loop.spawn();
-        Ok(TermHost { term, notifier, cols, rows, held_size: None, exited: false, dir: dir.to_path_buf(), label, pid, name, cmd: cmdline, started, last: None, cwd: None, title: None, initial_dir: dir.to_path_buf(), colors: None, working: false, progress: None, marks: Vec::new(), status: Default::default(), status_heard: false, status_marked: (false, None), status_said: None })
+        Ok(TermHost { term, notifier, cols, rows, held_size: None, exited: false, dir: dir.to_path_buf(), label, pid, name, cmd: cmdline, started, last: None, cwd: None, title: None, initial_dir: dir.to_path_buf(), colors: None, working: false, progress: None, marks: Vec::new(), status: Default::default(), status_heard: false, status_marked: (false, None), status_said: None, resume_token, resume: None, resume_pending: None })
     }
 
     pub fn write(&self, data: &[u8]) {

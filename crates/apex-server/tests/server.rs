@@ -1678,3 +1678,52 @@ fn a_lens_line_is_the_command_it_shows() {
     assert_eq!(r.cmd, "make");
     assert_eq!(r.output, apex_server::outline::RunOutput::Text("built\n".into()));
 }
+
+#[test]
+fn a_program_says_how_to_resume_it_and_the_session_keeps_it() {
+    // program resume (OSC 7577): a program in a terminal reports the
+    // command that brings it back, signed with the terminal's token, and
+    // the session's dump keeps it with the terminal
+    let (mut log, mut node, _col, mut server, mut rx) = session();
+    node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let t = node.state.terms.keys().copied().next().expect("terminal");
+    prompt(&mut log, &mut node, &mut server, &mut rx, t);
+    let type_in = |server: &mut apex_server::Server, log: &mut Log, text: &str| {
+        for c in text.chars() {
+            server.term_key(log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
+        }
+    };
+    let pump_for = |log: &mut Log, node: &mut Node, server: &mut apex_server::Server, rx: &mut UnboundedReceiver<ServerEvent>, done: &dyn Fn(&apex_server::Server) -> bool| {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while Instant::now() < deadline && !done(server) {
+            match rx.try_recv() {
+                Ok(ev) => {
+                    let props = server.pump(log, node, ev);
+                    perform(node, log, props);
+                }
+                Err(_) => std::thread::sleep(Duration::from_millis(10)),
+            }
+            node.catch_up(log).unwrap();
+        }
+        done(server)
+    };
+    // as the spec's own wrapper does it, for the shell itself: the body,
+    // its mac from the token, the sequence (argv claude --resume s1, in /tmp)
+    let report = |argv: &str, token: &str| format!("b=\"pid=$$:time=$(date +%s):argv={argv}:cwd=L3RtcA==\"; m=$(printf '%s:%s' \"$b\" \"{token}\" | shasum -a 256 | cut -d' ' -f1); printf '\\033]7577;%s:mac=%s\\033\\\\' \"$b\" \"$m\"\r");
+    let want = apex_core::dump::DumpResume { argv: vec!["claude".into(), "--resume".into(), "s1".into()], cwd: Some("/tmp".into()) };
+    type_in(&mut server, &mut log, &report("Y2xhdWRl,LS1yZXN1bWU=,czE=", "$OSC7577_TOKEN"));
+    assert!(pump_for(&mut log, &mut node, &mut server, &mut rx, &|s| s.term_resume(t).is_some()), "the report taken");
+    assert_eq!(server.term_resume(t), Some(want.clone()));
+    let d = server.dump(&node);
+    assert!(d.windows.iter().any(|w| matches!(&w.body, apex_core::dump::DumpBody::Term { resume: Some(r), .. } if *r == want)), "kept with the terminal in the dump");
+    // signed with another token: nothing changes
+    type_in(&mut server, &mut log, &report("bnZpbQ==", "not-the-token-0123456789"));
+    type_in(&mut server, &mut log, "echo marked\r");
+    let text = |n: &Node| n.state.terms.get(&t).map(|t| t.grid.iter().map(|r| r.iter().map(|c| c.ch).collect::<String>()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| text(n).lines().any(|l| l.trim() == "marked")));
+    assert_eq!(server.term_resume(t), Some(want), "a forged report is no report");
+    // genuine, but of a program not on the session's list: the record goes
+    type_in(&mut server, &mut log, &report("bnZpbQ==", "$OSC7577_TOKEN"));
+    assert!(pump_for(&mut log, &mut node, &mut server, &mut rx, &|s| s.term_resume(t).is_none()), "a program not to be resumed clears it");
+}

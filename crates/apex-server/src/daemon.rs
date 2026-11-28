@@ -287,7 +287,7 @@ pub struct Daemon {
     dumps: Option<PathBuf>,
     /// What each session had applied when it was last written down,
     /// terminals' output aside: it is written again once that moves.
-    saved: HashMap<String, BTreeMap<Shard, Seq>>,
+    saved: HashMap<String, (BTreeMap<Shard, Seq>, u64)>,
     rx: Receiver<Event>,
     tx: Sender<Event>,
 }
@@ -604,6 +604,8 @@ impl Daemon {
         let Some(dir) = self.dumps.clone() else { return };
         for (key, s) in &self.sessions {
             let applied: BTreeMap<Shard, Seq> = s.view.state.applied.iter().filter(|(sh, _)| !matches!(sh, Shard::Term(_))).map(|(a, b)| (*a, *b)).collect();
+            // (a terminal's program resume record is not in the log)
+            let applied = (applied, s.server.resume_gen);
             if !all && self.saved.get(key) == Some(&applied) {
                 continue;
             }

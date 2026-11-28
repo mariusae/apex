@@ -190,6 +190,8 @@ pub enum Report {
     /// OSC 9;4: how the program's work goes, and how far along when it
     /// says.
     Progress(Progress, Option<u8>),
+    /// OSC 7577: a program resume report's body, not yet believed.
+    Resume(String),
     /// The screen changed: what is drawn is behind it.
     Wakeup,
     /// The program ended.
@@ -412,6 +414,7 @@ impl EventLoop {
                     VtEvent::Clipboard(t) => (self.report)(Report::Clipboard(t)),
                     VtEvent::Bell => (self.report)(Report::Bell),
                     VtEvent::Progress(p, at) => (self.report)(Report::Progress(p, at)),
+                    VtEvent::Resume(body) => (self.report)(Report::Resume(body)),
                 }
             }
             if !answers.is_empty() {
