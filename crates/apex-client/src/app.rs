@@ -5849,6 +5849,15 @@ impl Acme {
         if ks.key == "enter" && matches!(v, ViewId::ColTag(_) | ViewId::Top) {
             return;
         }
+        // a window's input strip (an agent lens's prompt): Enter sends what
+        // is in it, as a chat's box does, and ⌘↩ still; shift-Enter is a new
+        // line in it
+        if let ViewId::Input(w) = v {
+            if ks.key == "enter" && !m.shift && !m.alt && !m.control && !m.platform {
+                self.execute(ExecCtx::Window(w), "Send", cx);
+                return;
+            }
+        }
         // acme's ^F / Insert: complete the file name before the cursor
         if (m.control && ks.key == "f") || ks.key == "insert" {
             self.complete(v, q0);

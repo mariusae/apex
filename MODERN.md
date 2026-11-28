@@ -592,9 +592,9 @@ windows put away out of the tiling, which is the core's
   nothing over, stop above it, the box in a band of its own at the
   foot. (Over a page it once floated too, through a rounded hole cut in
   the page and a shadow the page drew in CSS: two layers to keep in
-  step, and when they were not the box vanished.) Apex text, replicated, a draft in every UI. ⌘↩ in it
-  is Send, the word its tool claims there to take the text
-  (`take_input`).
+  step, and when they were not the box vanished.) Apex text, replicated, a draft in every UI. Enter
+  in it, as in a chat's box, and ⌘↩ are Send, the word its tool claims
+  there to take the text (`take_input`); shift-Enter is a new line.
 - **An agent's conversation is its terminal's lens**: ⌘↩ in a terminal
   running an agent (`apex tool agent`) shows what was asked and
   answered in its place, kept up as it goes, a prompt written in the
