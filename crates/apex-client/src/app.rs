@@ -2763,6 +2763,11 @@ impl Acme {
         }
         // a click in a page puts the toasts away: drawn again without them
         let toasted = !self.toasts.is_empty();
+        // the window with the keys (its card ringed) before this tick: the
+        // pointer onto a page or off it moves them with no event of gpui's
+        // (the page keeps the pointer's moves), so nothing else draws the
+        // ring where they went
+        let keys_were = self.key_window();
         self.web_events();
         let dismissed = toasted && self.toasts.is_empty();
         if self.overlay_up() {
@@ -2786,7 +2791,7 @@ impl Acme {
                 }
             }
         }
-        self.webs.any_loading() || dismissed || !self.page_keys.is_empty()
+        self.webs.any_loading() || dismissed || !self.page_keys.is_empty() || self.key_window() != keys_were
     }
 
     /// Is the pointer over a page? Then gpui's cursor rect must say
