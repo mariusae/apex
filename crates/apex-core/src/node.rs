@@ -2158,18 +2158,26 @@ impl Node {
     /// Land at a location whose window is open: select, show, warp.
     pub fn land(&mut self, log: &mut Log, loc: &Loc) -> Result<Option<WindowId>> {
         let Some(w) = self.window_named(&loc.name) else { return Ok(None) };
-        // a page: shown, and no more -- its HTML is no text to select in,
-        // nor for commands to act on (`seltext`)
-        if self.state.window(w).is_ok_and(|x| x.is_page()) {
+        // what shows: a window under a lens is shown as its lens, in their
+        // place, and the pointer goes there -- the window under is not in
+        // the tiling, so a warp to it would land nowhere
+        let top = self.state.layout.top_of(w);
+        let is_page = |n: &Self, x: WindowId| n.state.window(x).is_ok_and(|x| x.is_page());
+        // a page: shown, and the pointer onto it -- its HTML is no text to
+        // select in, nor for commands to act on (`seltext`)
+        if is_page(self, w) {
             self.reveal(log, w)?;
+            self.warp = Some(Warp::Sel(ViewId::Body(top)));
             return Ok(Some(w));
         }
         if let Some((q0, q1)) = self.loc_range(w, &loc.pos) {
             self.select(log, ViewId::Body(w), q0, q1)?;
         }
         self.reveal(log, w)?;
-        self.seltext = Some(ViewId::Body(w));
-        self.warp = Some(Warp::Sel(ViewId::Body(w)));
+        if top == w || !is_page(self, top) {
+            self.seltext = Some(ViewId::Body(top));
+        }
+        self.warp = Some(Warp::Sel(ViewId::Body(top)));
         Ok(Some(w))
     }
 

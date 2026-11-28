@@ -1072,6 +1072,12 @@ fn a_lens_stands_in_its_bases_place_and_gives_it_back() {
     node.reveal(&mut log, t).unwrap();
     assert_eq!(node.state.layout.top_of(t), e);
     assert!(node.state.layout.place_of(t).is_none());
+    // and landing on it (⌘P, a Goto) warps onto the lens, which shows,
+    // not the terminal under it, which is nowhere to warp to
+    node.warp = None;
+    node.land(&mut log, &Loc { session: None, name: t.0.to_string(), pos: Pos::Keep }).unwrap();
+    assert_eq!(node.warp, Some(Warp::Sel(ViewId::Body(e))));
+    assert_eq!(node.seltext, Some(ViewId::Body(e)));
     // and a replica sees the same
     assert_eq!(follower(&log).state.layout.chain(t), vec![e, t]);
     // the lens deleted: the terminal back in its place
