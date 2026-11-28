@@ -369,8 +369,14 @@ windows put away out of the tiling, which is the core's
   off the toasts (in a page too). An errors window brought back is
   written to as before.
 - **Session previews**: the pointer on a session in the sidebar (not the
-  one shown) brings its window up beside the row, live, as ctrl-tab's
-  cards draw it.
+  one shown) brings a sketch of its screen up beside the row, live
+  (`sketch.rs`): not its text drawn small, which is too fine to read and
+  says less for it, but its windows where the tiling has them, as
+  Manifold's space switcher draws a space -- each a tile with its
+  handle's dot, what kind of window it is (a file, a directory, a
+  terminal, a page, an agent's conversation, errors) and its name, its
+  body plain with that kind's icon large in it; the window last worked
+  in ringed in the accent, and the stash's count under it.
 - **Prompt marks** (OSC 133): with `eval "$(apex shell-integration zsh)"`
   (or `bash`) in the shell's startup file, the shell marks each
   command's prompt, output and end, and the terminal carries the marks

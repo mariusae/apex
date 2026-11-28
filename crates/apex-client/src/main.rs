@@ -22,6 +22,7 @@ mod fonts;
 mod finder;
 mod menu;
 mod shelf;
+mod sketch;
 mod shell;
 mod sidebar;
 mod bunny;
