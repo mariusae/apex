@@ -57,7 +57,12 @@ windows put away out of the tiling, which is the core's
   Full Screen): the window over the whole of its screen where it is --
   gpui's simple full screen, borderless, in no Space of its own -- the
   menu bar and the Dock hidden until the pointer goes to them, and the
-  title bar up in the menu bar's place. On a screen with a camera's
+  title bar up in the menu bar's place. The menu bar comes only for the
+  pointer at the very top edge, not anywhere in its height, where apex's
+  bar is -- macOS's auto-hiding would show it over the session's chevron
+  and take the click: the bar and the Dock are hidden outright, handed
+  back to macOS at the top edge or the Dock's, and hidden again once the
+  pointer is clear of both and no menu is open (`bars_tick`). On a screen with a camera's
   notch the bar is the band beside it (`safeAreaInsets.top`, 32 on a
   14-inch MacBook Pro), split round it, nothing behind the camera: the
   sidebar's card and the session lead the left wing, and the directory,

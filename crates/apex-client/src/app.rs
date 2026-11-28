@@ -1849,6 +1849,9 @@ impl Acme {
                                 } else if cmd {
                                     acme.command_poll(window, cx);
                                 }
+                                // apex's full screen: the menu bar only for the
+                                // pointer at the very top (`fullscreen`)
+                                crate::fullscreen::bars_tick(window, acme.band, acme.app_active);
                                 if acme.caret_tick() {
                                     cx.notify();
                                 }
