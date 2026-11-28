@@ -60,13 +60,21 @@ pub fn run(agent: &str) -> i32 {
         }
     }
     // program resume (OSC 7577): the terminal told how to bring this
-    // session back when it starts; when the user ends it, that there is
-    // nothing to bring back
+    // session back when it starts and as prompts are sent; when the user
+    // ends it, that there is nothing to bring back
     if matches!(agent, "claude" | "codex") {
+        // (a session the agent has written down -- resumed, or one that
+        // has had a prompt -- is resumed; till then the agent starts afresh)
+        let written = ev.transcript.as_deref().is_some_and(|t| Path::new(t).exists());
         match ev.event.as_str() {
             "SessionStart" => {
                 if let Some(pid) = ev.pid {
-                    crate::resume::report_start(agent, pid, &ev.session, &ev.cwd);
+                    crate::resume::report(agent, pid, written.then_some(ev.session.as_str()), &ev.cwd);
+                }
+            }
+            "UserPromptSubmit" => {
+                if let Some(pid) = ev.pid.or_else(|| agent_pid(agent)) {
+                    crate::resume::report(agent, pid, Some(&ev.session), &ev.cwd);
                 }
             }
             "SessionEnd" => {

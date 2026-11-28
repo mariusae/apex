@@ -175,27 +175,36 @@ fn after_program(argv: &[String]) -> &[String] {
 }
 
 /// The command that resumes session `session` of `agent` (claude,
-/// codex), started as `argv`; None for an agent not known here, or a
-/// run that is no session to resume.
-pub fn command(agent: &str, argv: &[String], session: &str) -> Option<Vec<String>> {
-    if session.is_empty() {
-        return None;
-    }
+/// codex), started as `argv` -- or, `session` none (a session with
+/// nothing in it yet, which the agent has not written down and cannot
+/// resume), that starts the agent afresh as it was started; None for an
+/// agent not known here, or a run that is no session.
+pub fn command(agent: &str, argv: &[String], session: Option<&str>) -> Option<Vec<String>> {
+    let session = session.filter(|s| !s.is_empty());
     let args = after_program(argv);
     match agent {
         "claude" => {
             let mut out = vec!["claude".to_string()];
             out.extend(kept(CLAUDE, args, &mut |_, _| true)?);
-            out.extend(["--resume".to_string(), session.to_string()]);
+            if let Some(id) = session {
+                out.extend(["--resume".to_string(), id.to_string()]);
+            }
             Some(out)
         }
         "codex" => {
             // a first positional is a subcommand, or the prompt; a session
             // only without one, or with resume or fork
             let mut sub_ok = |w: &str, first: bool| !first || CODEX_SESSIONS.contains(&w) || !is_codex_subcommand(w);
-            let mut out = vec!["codex".to_string(), "resume".to_string()];
-            out.extend(kept(CODEX, args, &mut sub_ok)?);
-            out.push(session.to_string());
+            let kept = kept(CODEX, args, &mut sub_ok)?;
+            let mut out = vec!["codex".to_string()];
+            match session {
+                Some(id) => {
+                    out.push("resume".to_string());
+                    out.extend(kept);
+                    out.push(id.to_string());
+                }
+                None => out.extend(kept),
+            }
             Some(out)
         }
         _ => None,
@@ -212,16 +221,19 @@ fn is_codex_subcommand(w: &str) -> bool {
     .contains(&w)
 }
 
-/// The agent's session `session` started (its hook, at SessionStart):
-/// the terminal told how to resume it, when the agent is one apex knows
-/// how to resume, runs in a terminal that takes reports (one that gave
-/// it a token), and is a session. `pid`: the agent's process.
-pub fn report_start(agent: &str, pid: u32, session: &str, cwd: &str) {
+/// The terminal told how to bring the agent back (its hook: at
+/// SessionStart, and at each prompt sent), when the agent is one apex
+/// knows how to resume, runs in a terminal that takes reports (one that
+/// gave it a token), and is a session: resuming `session` once there is
+/// something of it to resume -- the agent writes a session down only
+/// when the first prompt is sent -- and till then, the agent started
+/// afresh (`session` none). `pid`: the agent's process.
+pub fn report(agent: &str, pid: u32, session: Option<&str>, cwd: &str) {
     let Ok(token) = std::env::var(resume::TOKEN_ENV) else { return };
     let Some(argv) = resume::proc_argv(pid) else { return };
     let Some(argv) = command(agent, &argv, session) else { return };
     let cwd = Some(cwd.to_string()).filter(|c| c.starts_with('/'));
-    tell(&resume::sequence(pid, resume::now(), &Ask::Resume { argv, cwd }, &token));
+    tell(&resume::sequence(pid, resume::now(), &Ask::Resume { argv, cwd }, &token), pid);
 }
 
 /// The agent's session ended (its hook, at SessionEnd) for `reason`:
@@ -238,16 +250,33 @@ pub fn report_end(agent: &str, pid: u32, reason: Option<&str>) {
         return;
     }
     let Ok(token) = std::env::var(resume::TOKEN_ENV) else { return };
-    tell(&resume::sequence(pid, resume::now(), &Ask::Clear, &token));
+    tell(&resume::sequence(pid, resume::now(), &Ask::Clear, &token), pid);
 }
 
-/// A report to the terminal: written to it directly (`/dev/tty`), as the
-/// hook's own output is the agent's to read.
-fn tell(seq: &str) {
-    if let Ok(mut tty) = std::fs::OpenOptions::new().write(true).open("/dev/tty") {
-        let _ = tty.write_all(seq.as_bytes());
-        let _ = tty.flush();
-    }
+/// A report to the terminal the agent (`pid`) runs on: written to it
+/// directly, as the hook's own output is the agent's to read -- by
+/// `/dev/tty` where the hook has the terminal still, else by the agent's
+/// terminal device itself (an agent may start its hooks in a session of
+/// their own, with no terminal: Node's detached spawn).
+fn tell(seq: &str, pid: u32) {
+    let open = |path: &str| std::fs::OpenOptions::new().write(true).open(path).ok();
+    let Some(mut tty) = open("/dev/tty").or_else(|| tty_of(pid).and_then(|p| open(&p))) else { return };
+    let _ = tty.write_all(seq.as_bytes());
+    let _ = tty.flush();
+}
+
+/// The terminal device process `pid` runs on (`/dev/ttys094`), as `ps`
+/// says; none for a process without one.
+fn tty_of(pid: u32) -> Option<String> {
+    let out = std::process::Command::new("ps").args(["-o", "tty=", "-p", &pid.to_string()]).output().ok()?;
+    tty_path(String::from_utf8_lossy(&out.stdout).trim())
+}
+
+/// `ps`'s name for a terminal as its device's path: `ttys094` on macOS,
+/// `pts/3` on Linux; none for `??` or `?` (no terminal).
+fn tty_path(name: &str) -> Option<String> {
+    let ok = !name.is_empty() && !name.starts_with('?') && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'/');
+    ok.then(|| format!("/dev/{name}"))
 }
 
 #[cfg(test)]
@@ -261,54 +290,69 @@ mod tests {
     #[test]
     fn claude_keeps_its_options_and_resumes_the_session() {
         let argv = v(&["claude", "--model", "opus", "--dangerously-skip-permissions", "--add-dir", "/a", "/b", "--permission-mode=plan", "fix the bug"]);
-        assert_eq!(command("claude", &argv, "s1"), Some(v(&["claude", "--model", "opus", "--dangerously-skip-permissions", "--add-dir", "/a", "/b", "--permission-mode=plan", "--resume", "s1"])));
+        assert_eq!(command("claude", &argv, Some("s1")), Some(v(&["claude", "--model", "opus", "--dangerously-skip-permissions", "--add-dir", "/a", "/b", "--permission-mode=plan", "--resume", "s1"])));
     }
 
     #[test]
     fn claude_drops_what_was_for_once() {
         // a resume or continue it was started with, its prompt, a worktree
-        assert_eq!(command("claude", &v(&["claude", "--resume", "old", "--model", "opus"]), "new"), Some(v(&["claude", "--model", "opus", "--resume", "new"])));
-        assert_eq!(command("claude", &v(&["claude", "-c", "-w", "feature", "go on"]), "s"), Some(v(&["claude", "--resume", "s"])));
-        assert_eq!(command("claude", &v(&["claude", "--session-id", "u-1", "--", "-not an option"]), "s"), Some(v(&["claude", "--resume", "s"])));
+        assert_eq!(command("claude", &v(&["claude", "--resume", "old", "--model", "opus"]), Some("new")), Some(v(&["claude", "--model", "opus", "--resume", "new"])));
+        assert_eq!(command("claude", &v(&["claude", "-c", "-w", "feature", "go on"]), Some("s")), Some(v(&["claude", "--resume", "s"])));
+        assert_eq!(command("claude", &v(&["claude", "--session-id", "u-1", "--", "-not an option"]), Some("s")), Some(v(&["claude", "--resume", "s"])));
         // a resume with no session named is an option still
-        assert_eq!(command("claude", &v(&["claude", "-r", "--verbose"]), "s"), Some(v(&["claude", "--verbose", "--resume", "s"])));
+        assert_eq!(command("claude", &v(&["claude", "-r", "--verbose"]), Some("s")), Some(v(&["claude", "--verbose", "--resume", "s"])));
     }
 
     #[test]
     fn claude_in_print_mode_or_kept_off_disk_is_no_session() {
-        assert_eq!(command("claude", &v(&["claude", "-p", "hello"]), "s"), None);
-        assert_eq!(command("claude", &v(&["claude", "--no-session-persistence"]), "s"), None);
+        assert_eq!(command("claude", &v(&["claude", "-p", "hello"]), Some("s")), None);
+        assert_eq!(command("claude", &v(&["claude", "--no-session-persistence"]), Some("s")), None);
     }
 
     #[test]
     fn claude_under_node_is_claude() {
-        assert_eq!(command("claude", &v(&["/usr/bin/node", "/x/cli.js", "--verbose"]), "s"), Some(v(&["claude", "--verbose", "--resume", "s"])));
+        assert_eq!(command("claude", &v(&["/usr/bin/node", "/x/cli.js", "--verbose"]), Some("s")), Some(v(&["claude", "--verbose", "--resume", "s"])));
     }
 
     #[test]
     fn codex_resumes_with_its_options_and_none_of_its_prompt() {
         let argv = v(&["codex", "-m", "o3", "-c", "model_reasoning_effort=\"high\"", "--dangerously-bypass-approvals-and-sandbox", "-i", "a.png", "b.png", "do it"]);
-        assert_eq!(command("codex", &argv, "u-2"), Some(v(&["codex", "resume", "-m", "o3", "-c", "model_reasoning_effort=\"high\"", "--dangerously-bypass-approvals-and-sandbox", "u-2"])));
+        assert_eq!(command("codex", &argv, Some("u-2")), Some(v(&["codex", "resume", "-m", "o3", "-c", "model_reasoning_effort=\"high\"", "--dangerously-bypass-approvals-and-sandbox", "u-2"])));
         // started as a resume or a fork: resumed as this session
-        assert_eq!(command("codex", &v(&["codex", "resume", "--last", "-s", "workspace-write"]), "u-3"), Some(v(&["codex", "resume", "-s", "workspace-write", "u-3"])));
-        assert_eq!(command("codex", &v(&["codex", "fork", "old-id"]), "u-4"), Some(v(&["codex", "resume", "u-4"])));
+        assert_eq!(command("codex", &v(&["codex", "resume", "--last", "-s", "workspace-write"]), Some("u-3")), Some(v(&["codex", "resume", "-s", "workspace-write", "u-3"])));
+        assert_eq!(command("codex", &v(&["codex", "fork", "old-id"]), Some("u-4")), Some(v(&["codex", "resume", "u-4"])));
     }
 
     #[test]
     fn codex_exec_and_its_kin_are_no_session() {
-        assert_eq!(command("codex", &v(&["codex", "exec", "do it"]), "u"), None);
-        assert_eq!(command("codex", &v(&["codex", "review"]), "u"), None);
+        assert_eq!(command("codex", &v(&["codex", "exec", "do it"]), Some("u")), None);
+        assert_eq!(command("codex", &v(&["codex", "review"]), Some("u")), None);
     }
 
     #[test]
     fn an_agent_not_known_here_is_not_reported() {
-        assert_eq!(command("muse", &v(&["muse"]), "s"), None);
-        assert_eq!(command("claude", &v(&["claude"]), ""), None);
+        assert_eq!(command("muse", &v(&["muse"]), Some("s")), None);
+    }
+
+    #[test]
+    fn a_session_with_nothing_in_it_yet_starts_afresh_as_it_was() {
+        assert_eq!(command("claude", &v(&["claude", "--model", "opus", "fix it"]), None), Some(v(&["claude", "--model", "opus"])));
+        assert_eq!(command("codex", &v(&["codex", "-m", "o3", "do it"]), None), Some(v(&["codex", "-m", "o3"])));
+        assert_eq!(command("claude", &v(&["claude", "-p", "x"]), None), None, "still no session");
+    }
+
+    #[test]
+    fn a_terminal_as_ps_names_it_is_a_device() {
+        assert_eq!(tty_path("ttys094").as_deref(), Some("/dev/ttys094"));
+        assert_eq!(tty_path("pts/3").as_deref(), Some("/dev/pts/3"));
+        assert_eq!(tty_path("??"), None);
+        assert_eq!(tty_path("?"), None);
+        assert_eq!(tty_path("../x"), None);
     }
 
     #[test]
     fn what_a_hook_reports_the_terminal_reads() {
-        let argv = command("claude", &v(&["claude", "--model", "opus"]), "s1").unwrap();
+        let argv = command("claude", &v(&["claude", "--model", "opus"]), Some("s1")).unwrap();
         let ask = Ask::Resume { argv: argv.clone(), cwd: Some("/p".into()) };
         let seq = resume::sequence(77, 1_800_000_000, &ask, "a-token-of-twenty-two-chars");
         let body = seq.strip_prefix("\x1b]7577;").and_then(|s| s.strip_suffix("\x1b\\")).unwrap();

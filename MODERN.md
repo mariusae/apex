@@ -289,8 +289,10 @@ windows put away out of the tiling, which is the core's
   directory, and `apex resume` goes there, says what it resumes, takes
   the record as its own, and becomes the program, its arguments never a
   shell's to read. apex's hooks report Claude Code and Codex at their
-  session's start -- `claude [its options] --resume ID`, `codex resume
-  [its options] ID`, a prompt, a resume or a worktree it was started
+  session's start and as prompts are sent -- `claude [its options]
+  --resume ID`, `codex resume [its options] ID`, once the agent has
+  written the session down (at its first prompt; till then the agent
+  started afresh, its options as they were) -- a prompt, a resume or a worktree it was started
   with left off, print mode and `codex exec` not reported -- and clear
   when the user ends the session, not when its terminal goes.
 - **Restarting the server** (`restart.rs`), as Manifold offers: an
