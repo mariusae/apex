@@ -2421,13 +2421,46 @@ impl Acme {
             let text = v.window().and_then(|w| self.node.state.window(w).ok()).is_some_and(|w| !matches!(w.body, Body::Term(_)));
             return text.then_some(v);
         }
+        // over a keyless page (an agent's conversation), which gpui hears
+        // no moves on: its strip, wherever gpui last saw the pointer
+        if let Some(s) = self.webs.under().and_then(|w| self.page_strip(w)) {
+            return Some(s);
+        }
         match self.locate(self.pointer.unwrap_or(self.last_mouse)) {
-            Some((Target::View(v), _)) => Some(v),
+            // a read-only body: its window's input strip has the caret
+            Some((Target::View(v), _)) => Some(self.strip_of(v).unwrap_or(v)),
             Some((Target::Term(..), _)) => None,
-            Some((Target::Web(_), _)) => self.node.seltext,
+            Some((Target::Web(w), _)) => self.page_strip(w).or(self.node.seltext),
             // on no window: no keys, and no ring
             None => None,
         }
+    }
+
+    /// The input strip that takes the keys typed in `v`: a body that is
+    /// read-only (`Node::read_only`) for its window's strip, while the
+    /// strip is shown.
+    fn strip_of(&self, v: ViewId) -> Option<ViewId> {
+        let ViewId::Body(w) = v else { return None };
+        let strip = ViewId::Input(w);
+        (self.node.read_only(v) && self.layouts.contains_key(&strip)).then_some(strip)
+    }
+
+    /// The input strip that takes the keys typed over the page in `w`: a
+    /// keyless one's (`Webs::is_keyless`), the page never given them.
+    fn page_strip(&self, w: WindowId) -> Option<ViewId> {
+        let strip = ViewId::Input(w);
+        (self.webs.is_keyless(w) && self.layouts.contains_key(&strip)).then_some(strip)
+    }
+
+    /// The keys a read-only body keeps when its strip takes the rest: the
+    /// ones that move through it or copy from it -- ↑ ↓, page up and down,
+    /// home and end, ⌘↑ ⌘↓ (its outline), ⌘C, ⌘A.
+    fn body_keeps(ks: &Keystroke) -> bool {
+        let m = ks.modifiers;
+        if m.platform {
+            return !m.control && !m.alt && matches!(ks.key.as_str(), "c" | "a" | "up" | "down");
+        }
+        !m.control && !m.alt && !m.shift && matches!(ks.key.as_str(), "up" | "down" | "pageup" | "pagedown" | "home" | "end")
     }
 
     /// The blue caret's state brought up to now: which view has it, and
@@ -2770,6 +2803,9 @@ impl Acme {
         let keys_were = self.key_window();
         self.web_events();
         let dismissed = toasted && self.toasts.is_empty();
+        // the pages whose keys are their input strips' (`strip_of`)
+        let keyless = self.node.state.windows.values().filter(|x| x.is_page() && self.layouts.contains_key(&ViewId::Input(x.id))).map(|x| x.id).collect();
+        self.webs.set_keyless(keyless);
         if self.overlay_up() {
             self.webs.unfocus(window);
         } else {
@@ -5517,7 +5553,9 @@ impl Acme {
         // the pointer on a page: the key was the page's, which let it go
         // (an arrow at its top or foot) and WebKit passed it up to us --
         // not the last selected text's, a window beside it
-        if !e.keystroke.modifiers.platform && crate::web::native_mouse(window).and_then(|p| self.webs.window_at(p)).is_some() {
+        // -- but for a keyless page, whose keys are its strip's
+        let page = crate::web::native_mouse(window).and_then(|p| self.webs.window_at(p));
+        if !e.keystroke.modifiers.platform && page.is_some_and(|w| !self.webs.is_keyless(w)) {
             return;
         }
         let pos = self.pointer(window);
@@ -5527,6 +5565,26 @@ impl Acme {
                 Some(t) => t,
                 None => return,
             },
+            // a keyless page (an agent's conversation): the keys its strip's,
+            // but for those that move through it or copy from it, which are
+            // the page's, passed to it (it does not have the keys to hear them)
+            Some((Target::Web(w), _)) if self.page_strip(w).is_some() => {
+                let ks = &e.keystroke;
+                if Self::body_keeps(ks) {
+                    match ks.key.as_str() {
+                        "c" if ks.modifiers.platform => {
+                            self.webs.edit(w, "copy");
+                        }
+                        "a" if ks.modifiers.platform => {
+                            self.webs.edit(w, "select-all");
+                        }
+                        k if !ks.modifiers.platform => self.webs.scroll_key(w, k),
+                        _ => {}
+                    }
+                    return;
+                }
+                Target::View(ViewId::Input(w))
+            }
             // a page's scrollbar holds no text: the last selected does
             Some((Target::Web(_), _)) => match self.node.seltext {
                 Some(v) => Target::View(v),
@@ -5536,6 +5594,13 @@ impl Acme {
             // acme's rowtype has it -- and no ring says otherwise
             None => return,
             Some((t, _)) => t,
+        };
+        // over a read-only body (an agent lens's transcript): the keys are
+        // its input strip's, wherever in the window the pointer is, but for
+        // those that move through the body or copy from it
+        let target = match target {
+            Target::View(v) if !Self::body_keeps(&e.keystroke) => Target::View(self.strip_of(v).unwrap_or(v)),
+            t => t,
         };
         // a window held while a drop goes to the host: its keys thrown
         // away, Escape stopping the drop (`drops`)
@@ -5741,15 +5806,19 @@ impl Acme {
             self.overlay_edit(what, cx);
             return;
         }
+        // the pointer over a keyless page: paste, cut, undo, redo in its
+        // strip; copy and select all the page's, as below
+        let strip = crate::web::native_mouse(window).and_then(|p| self.webs.window_at(p)).and_then(|w| self.page_strip(w)).filter(|_| !matches!(what, "copy" | "select-all"));
         // the pointer over a page: the page's selection is what Copy
         // means, and Paste goes into its field
-        if let Some(w) = crate::web::native_mouse(window).and_then(|p| self.webs.window_at(p)) {
+        if let Some(w) = crate::web::native_mouse(window).and_then(|p| self.webs.window_at(p)).filter(|_| strip.is_none()) {
             if self.webs.edit(w, what) {
                 return;
             }
         }
         let pos = self.pointer(window);
         let target = match self.locate(pos) {
+            _ if strip.is_some() => Target::View(strip.unwrap()),
             // on a toast or a panel: where the keys went before
             None if self.over_overlay(pos) => match self.kept_target() {
                 Some(t) => t,
@@ -5761,6 +5830,12 @@ impl Acme {
                 None => return,
             },
             Some((t, _)) => t,
+        };
+        // over a read-only body: paste, cut, undo, redo in its input
+        // strip, as the keys go (`body_keeps`); copy and select all its own
+        let target = match target {
+            Target::View(v) if !matches!(what, "copy" | "select-all") => Target::View(self.strip_of(v).unwrap_or(v)),
+            t => t,
         };
         // a window held while a drop goes to the host: nothing goes into
         // it or out of it meanwhile but a copy

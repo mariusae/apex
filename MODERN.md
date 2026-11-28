@@ -595,6 +595,17 @@ windows put away out of the tiling, which is the core's
   step, and when they were not the box vanished.) Apex text, replicated, a draft in every UI. Enter
   in it, as in a chat's box, and ⌘↩ are Send, the word its tool claims
   there to take the text (`take_input`); shift-Enter is a new line.
+  The window's body is then read-only (`Node::read_only`): its tool's
+  to write, the user's to select in and copy from, every edit of the
+  user's refused in the core -- typing, Cut, Paste, Undo, an `Edit`
+  that changes it. So the keys typed with the pointer anywhere on the
+  body are the strip's, its caret shown there, but for those that move
+  through the body or copy from it (↑ ↓, page up and down, home, end,
+  ⌘↑ ⌘↓, ⌘C, ⌘A); the tag keeps its keys. A page with a strip (an
+  agent's conversation) is never given the keyboard (`Webs::keyless`):
+  the keys over it are the strip's, its scroll keys and ⌘C ⌘A passed
+  to it; a click in it gives WebKit the keys for the selection, taken
+  back once the button is up, the selection kept painted.
 - **An agent's conversation is its terminal's lens**: ⌘↩ in a terminal
   running an agent (`apex tool agent`) shows what was asked and
   answered in its place, kept up as it goes, a prompt written in the

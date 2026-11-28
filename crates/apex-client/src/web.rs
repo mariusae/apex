@@ -795,6 +795,13 @@ pub struct Webs {
     /// The overlays over the pages this frame (the window's coordinates):
     /// the pointer there is not on a page.
     cut: Vec<Bounds<Pixels>>,
+    /// Pages never given the keyboard: those whose window has an input
+    /// strip (an agent's conversation), whose keys are the strip's. The
+    /// page is read and scrolled, the keys passed to it by the UI.
+    keyless: std::collections::HashSet<WindowId>,
+    /// The page the pointer was over at the last tick: gpui hears none
+    /// of the pointer's moves there, so what has the keys asks this.
+    under: Option<WindowId>,
 }
 
 /// A page that has the keyboard when its view goes hands it back first.
@@ -835,7 +842,7 @@ impl Webs {
         if std::env::var_os("APEX_WEB_DEBUG").is_some() {
             eprintln!("web: views over a plane: {}, proxy port {proxy:?}", plane.is_some());
         }
-        Webs { hosts: HashMap::new(), tx, rx, plane, proxy, wake, focused: None, cursors: HashMap::new(), cut: Vec::new() }
+        Webs { hosts: HashMap::new(), tx, rx, plane, proxy, wake, focused: None, cursors: HashMap::new(), cut: Vec::new(), keyless: Default::default(), under: None }
     }
 
     /// The shown page under `pos`, if any.
@@ -1086,13 +1093,51 @@ impl Webs {
         self.focused
     }
 
+    /// The pages whose keys are not theirs (`keyless`), as of now.
+    pub fn set_keyless(&mut self, ws: std::collections::HashSet<WindowId>) {
+        self.keyless = ws;
+    }
+
+    /// The page the pointer is over, as of the last tick.
+    pub fn under(&self) -> Option<WindowId> {
+        self.under
+    }
+
+    /// Is the page in `w` keyless?
+    pub fn is_keyless(&self, w: WindowId) -> bool {
+        self.keyless.contains(&w)
+    }
+
     /// Keys go where the pointer is, as everywhere in acme: over a page
     /// the page has the keyboard (the window's first responder), over
     /// anything else gpui's view does. Called on a timer while pages
     /// exist, since a native view keeps the pointer's moves to itself.
     pub fn focus_tick(&mut self, window: &Window) {
-        let Some(pos) = native_mouse(window) else { return };
-        let over = self.window_at(pos);
+        let Some(pos) = native_mouse(window) else {
+            self.under = None;
+            return;
+        };
+        let under = self.window_at(pos);
+        self.under = under;
+        // a keyless page: the keys stay gpui's. A click in it gives it them
+        // (AppKit's), and they are taken back once the button is up -- not
+        // while it is down, a selection being dragged out -- its selection
+        // kept painted
+        let over = under.filter(|w| !self.keyless.contains(w));
+        if let Some(w) = under.filter(|_| over.is_none()) {
+            if mouse_down() {
+                return;
+            }
+            if focus_ui(window) {
+                if let Some(h) = self.hosts.get(&w) {
+                    let _ = h.view.evaluate_script("window.__apexAway&&__apexAway()");
+                }
+            }
+            if let Some(h) = self.focused.take().and_then(|f| self.hosts.get(&f)) {
+                let _ = h.view.evaluate_script("window.__apexAway&&__apexAway()");
+            }
+            return;
+        }
         if over != self.focused {
             // the page left keeps its selection painted; the one come to
             // has it back (`KEEP_SCRIPT`)
@@ -1113,7 +1158,9 @@ impl Webs {
             // taking it, a view of AppKit's), and what `focused` says was
             // asked for is then not what the window has. `focus_ui` looks
             // before it acts, so a tick that finds it right costs nothing.
-            None => focus_ui(window),
+            None => {
+                focus_ui(window);
+            }
         }
         self.focused = over;
     }
@@ -1122,6 +1169,7 @@ impl Webs {
     /// while an overlay is up (a walk ⌘ or control holds open ends when
     /// that key comes up, and a page with the keys would hear it instead).
     pub fn unfocus(&mut self, window: &Window) {
+        self.under = None;
         focus_ui(window);
         if let Some(h) = self.focused.and_then(|w| self.hosts.get(&w)) {
             let _ = h.view.evaluate_script("window.__apexAway&&__apexAway()");
@@ -1547,6 +1595,25 @@ impl Webs {
 
     /// The page scrolled so that `frac` (0 to 1) of the way down it is at
     /// the top: acme's B2 in a scrollbar.
+    /// A movement key for a keyless page, which does not have the keys
+    /// to hear it: ↑ ↓ a few lines, page up and down most of a screen,
+    /// home and end its top and foot -- the user's scroll, as WebKit's
+    /// own would be.
+    pub fn scroll_key(&self, w: WindowId, key: &str) {
+        let to = match key {
+            "up" => "e.scrollBy(0, -40)",
+            "down" => "e.scrollBy(0, 40)",
+            "pageup" => "e.scrollBy(0, -0.85 * innerHeight)",
+            "pagedown" => "e.scrollBy(0, 0.85 * innerHeight)",
+            "home" => "e.scrollTo(0, 0)",
+            "end" => "e.scrollTo(0, e.scrollHeight)",
+            _ => return,
+        };
+        if let Some(h) = self.hosts.get(&w) {
+            let _ = h.view.evaluate_script(&format!("(function(){{if(window.__apexUser){{__apexUser();}}const e = document.scrollingElement || document.documentElement; {to};}})();"));
+        }
+    }
+
     pub fn scroll_to_fraction(&self, w: WindowId, frac: f64) {
         if let Some(h) = self.hosts.get(&w) {
             let _ = h.view.evaluate_script(&format!("(function(){{if(window.__apexUser){{__apexUser();}}const e = document.scrollingElement || document.documentElement; e.scrollTo(0, {frac} * e.scrollHeight);}})();"));
@@ -1812,30 +1879,50 @@ impl Fetcher {
 /// first responder keeps it until someone takes it, and keys then reach
 /// gpui by a roundabout route (WebKit passing them up the responder
 /// chain) that delivers them twice.
+/// Is a mouse button down now, by the system's account (a page has the
+/// pointer's events, gpui none of them)?
 #[cfg(target_os = "macos")]
-pub fn focus_ui(window: &Window) {
+pub fn mouse_down() -> bool {
+    use objc::{class, msg_send, sel, sel_impl};
+    // SAFETY: a class method answering the buttons held now
+    let buttons: u64 = unsafe { msg_send![class!(NSEvent), pressedMouseButtons] };
+    buttons != 0
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn mouse_down() -> bool {
+    false
+}
+
+/// The keyboard to gpui's view: true when it was elsewhere.
+#[cfg(target_os = "macos")]
+pub fn focus_ui(window: &Window) -> bool {
     use objc::{msg_send, sel, sel_impl};
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     // gpui's own `window_handle` is another thing: the trait's, by name
-    let Ok(h) = HasWindowHandle::window_handle(window) else { return };
-    let RawWindowHandle::AppKit(h) = h.as_raw() else { return };
+    let Ok(h) = HasWindowHandle::window_handle(window) else { return false };
+    let RawWindowHandle::AppKit(h) = h.as_raw() else { return false };
     let view = h.ns_view.as_ptr() as *mut objc::runtime::Object;
     // SAFETY: the view is gpui's own NSView, alive while the window is;
     // plain AppKit messages on the main thread.
     unsafe {
         let ns_window: *mut objc::runtime::Object = msg_send![view, window];
         if ns_window.is_null() {
-            return;
+            return false;
         }
         let first: *mut objc::runtime::Object = msg_send![ns_window, firstResponder];
         if first != view {
             let _: bool = msg_send![ns_window, makeFirstResponder: view];
+            return true;
         }
     }
+    false
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn focus_ui(_window: &Window) {}
+pub fn focus_ui(_window: &Window) -> bool {
+    false
+}
 
 /// Whether ⌘ and control are down now, asked of the system rather than
 /// of the events gpui was sent: a page that had the keys hears a

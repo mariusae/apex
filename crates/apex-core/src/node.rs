@@ -1505,6 +1505,23 @@ impl Node {
         }
     }
 
+    /// Is this view's text not the user's to change? A window's body when
+    /// the window has an input strip (an agent lens's prompt, an outline's
+    /// filter): what is typed goes there, and the body is its tool's, to
+    /// read, select in and copy from. Its tool still writes it (a
+    /// proposal's edits, not a view's).
+    pub fn read_only(&self, view: ViewId) -> bool {
+        matches!(view, ViewId::Body(w) if self.state.window(w).is_ok_and(|x| x.input.is_some()))
+    }
+
+    /// The user's edit in `view` refused when it is `read_only`.
+    fn writable(&self, view: ViewId) -> Result<()> {
+        if self.read_only(view) {
+            return Err(CoreError::Missing("read-only: this window's text is its tool's; type in its input strip".into()));
+        }
+        Ok(())
+    }
+
     /// A mouse action or command ends the current run of typing.
     pub fn end_typing(&mut self) {
         self.typing = None;
@@ -1533,6 +1550,7 @@ impl Node {
 
     /// Keyboard insertion at the selection (replacing it).
     pub fn insert(&mut self, log: &mut Log, view: ViewId, text: &str) -> Result<()> {
+        self.writable(view)?;
         let b = self.view_buffer(view)?;
         let (q0, q1) = self.selection(view)?;
         let group = self.typing_group(view);
@@ -1595,6 +1613,7 @@ impl Node {
     /// for any key typed over a selection), then the width is erased,
     /// never past the window's origin.
     pub fn erase(&mut self, log: &mut Log, view: ViewId, kind: Erase) -> Result<()> {
+        self.writable(view)?;
         let b = self.view_buffer(view)?;
         let (q0, q1) = self.selection(view)?;
         let group = self.typing_group(view);
@@ -1626,6 +1645,7 @@ impl Node {
     }
 
     pub fn backspace(&mut self, log: &mut Log, view: ViewId) -> Result<()> {
+        self.writable(view)?;
         let b = self.view_buffer(view)?;
         let (q0, q1) = self.selection(view)?;
         let group = self.typing_group(view);
@@ -1640,6 +1660,7 @@ impl Node {
     }
 
     pub fn delete_forward(&mut self, log: &mut Log, view: ViewId) -> Result<()> {
+        self.writable(view)?;
         let b = self.view_buffer(view)?;
         let (q0, q1) = self.selection(view)?;
         let len = self.state.buffer(b)?.text.len();
@@ -1655,6 +1676,7 @@ impl Node {
 
     /// Replace the selection and select the inserted text (acme's Paste).
     pub fn replace_selection(&mut self, log: &mut Log, view: ViewId, text: &str) -> Result<()> {
+        self.writable(view)?;
         self.end_typing();
         let b = self.view_buffer(view)?;
         let (q0, q1) = self.selection(view)?;
@@ -1673,6 +1695,7 @@ impl Node {
     }
 
     pub fn cut(&mut self, log: &mut Log, view: ViewId) -> Result<()> {
+        self.writable(view)?;
         self.snarf(log, view)?;
         let (q0, q1) = self.selection(view)?;
         if q1 > q0 {
@@ -1690,7 +1713,7 @@ impl Node {
     /// Cut and Paste do this first, so a 1-2 chord with nothing selected
     /// is how to make Put appear in a clean window.
     pub fn mark(&mut self, log: &mut Log, view: ViewId) -> Result<()> {
-        if !matches!(view, ViewId::Body(_)) {
+        if !matches!(view, ViewId::Body(_)) || self.read_only(view) {
             return Ok(());
         }
         let b = self.view_buffer(view)?;
@@ -1708,6 +1731,7 @@ impl Node {
     }
 
     pub fn undo(&mut self, log: &mut Log, view: ViewId) -> Result<bool> {
+        self.writable(view)?;
         self.end_typing();
         let b = self.view_buffer(view)?;
         let version = self.state.buffer(b)?.version;
@@ -1722,6 +1746,7 @@ impl Node {
     }
 
     pub fn redo(&mut self, log: &mut Log, view: ViewId) -> Result<bool> {
+        self.writable(view)?;
         self.end_typing();
         let b = self.view_buffer(view)?;
         let version = self.state.buffer(b)?.version;
@@ -1938,6 +1963,9 @@ impl Node {
     /// An Edit program's changes (in original coordinates, in application
     /// order) made to a view's buffer as one undo step, and its dot.
     fn lower_edit(&mut self, log: &mut Log, view: ViewId, changes: &[(usize, usize, String)], dot: (usize, usize)) -> Result<()> {
+        if !changes.is_empty() {
+            self.writable(view)?;
+        }
         let b = self.view_buffer(view)?;
         let group = self.new_group();
         for (q0, nd, t) in changes {

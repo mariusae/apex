@@ -1287,6 +1287,45 @@ fn an_input_strip_is_text_of_its_own_and_goes_with_its_window() {
     assert_eq!(f_hash(&log), node.state.hash());
 }
 
+#[test]
+fn a_body_with_an_input_strip_is_read_only_but_to_its_tool() {
+    let (mut log, mut node, col) = session();
+    let w = node.new_window(&mut log, col, "/tmp/conv", "the conversation\n").unwrap();
+    let body = ViewId::Body(w);
+    let bb = node.state.window(w).unwrap().body_buffer().unwrap();
+    let text = |node: &Node| node.state.buffer(bb).unwrap().text.to_string();
+    // without a strip: the user's, as any text
+    assert!(!node.read_only(body));
+    node.select(&mut log, body, 0, 0).unwrap();
+    node.insert(&mut log, body, "> ").unwrap();
+    node.undo(&mut log, body).unwrap();
+    // with one: none of the user's edits take
+    node.set_input(&mut log, w, Some("")).unwrap();
+    assert!(node.read_only(body) && !node.read_only(ViewId::Input(w)) && !node.read_only(ViewId::Tag(w)));
+    node.select(&mut log, body, 4, 16).unwrap();
+    assert!(node.insert(&mut log, body, "x").is_err());
+    assert!(node.backspace(&mut log, body).is_err());
+    assert!(node.delete_forward(&mut log, body).is_err());
+    assert!(node.erase(&mut log, body, apex_core::node::Erase::Word).is_err());
+    assert!(node.replace_selection(&mut log, body, "x").is_err());
+    assert!(node.cut(&mut log, body).is_err());
+    assert!(node.paste(&mut log, body).is_err());
+    assert!(node.undo(&mut log, body).is_err());
+    let _ = node.exec(&mut log, ExecCtx::Window(w), "Edit , d"); // said in Errors
+    assert_eq!(text(&node), "the conversation\n");
+    // but selected in and copied from, and an Edit that only looks runs
+    node.snarf(&mut log, body).unwrap();
+    assert_eq!(node.state.layout.snarf, "conversation");
+    assert!(node.exec(&mut log, ExecCtx::Window(w), "Edit , p").is_ok());
+    // its tool writes it still
+    node.insert_text(&mut log, bb, 0, "you: hi\n").unwrap();
+    assert_eq!(text(&node), "you: hi\nthe conversation\n");
+    // the strip gone, the body the user's again
+    node.set_input(&mut log, w, None).unwrap();
+    node.insert(&mut log, body, "x").unwrap();
+    assert_eq!(f_hash(&log), node.state.hash());
+}
+
 /// A command's output in an outline (win's): its ends move with the
 /// edits; more output put in at its start is in it, and the next prompt
 /// put in at its end is not.
