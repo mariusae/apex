@@ -21,6 +21,13 @@ those agents offer and written against the public tool API
     apex tool agent wait ID           # until the agent's turn ends; exits with its state
     apex tool agent events [-all]     # the events as they come, a line each
 
+For Claude Code and Codex the hooks also tell the terminal how to
+resume the session (OSC 7577, the program resume protocol), when the
+terminal gave them a token: at its start the agent's command line, its
+options kept, resuming this session; when the user ends it, that there
+is nothing to resume. apex's terminals run it again when their session
+comes back after the daemon restarts (`apex resume`).
+
 `install` writes the hooks into `~/.claude/settings.json`,
 `~/.codex/hooks.json`, `~/.config/muse/settings.json` (wherever
 `$XDG_CONFIG_HOME` says, for Muse) and `~/.gemini/config/hooks.json`

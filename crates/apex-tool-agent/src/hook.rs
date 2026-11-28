@@ -59,6 +59,24 @@ pub fn run(agent: &str) -> i32 {
             ev.rev = crate::vcs::head(Path::new(&ev.cwd));
         }
     }
+    // program resume (OSC 7577): the terminal told how to bring this
+    // session back when it starts; when the user ends it, that there is
+    // nothing to bring back
+    if matches!(agent, "claude" | "codex") {
+        match ev.event.as_str() {
+            "SessionStart" => {
+                if let Some(pid) = ev.pid {
+                    crate::resume::report_start(agent, pid, &ev.session, &ev.cwd);
+                }
+            }
+            "SessionEnd" => {
+                if let Some(pid) = ev.pid.or_else(|| agent_pid(agent)) {
+                    crate::resume::report_end(agent, pid, ev.kind.as_deref());
+                }
+            }
+            _ => {}
+        }
+    }
     let log = event::log_path(&dir, &ev.session);
     // a question is asked of the pane, when there is one: the answer
     // comes back as a `Decision` event in the log, and is the agent's

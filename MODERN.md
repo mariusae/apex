@@ -273,6 +273,26 @@ windows put away out of the tiling, which is the core's
   shows where a dragged sheet would go. It is the drop itself, done on a
   copy of the layout (`Node::drag_window_preview` and its kin), so what
   is shown is what happens.
+- **Programs resumed through a server restart** (`apex_server::resume`,
+  the Program Resume Protocol, OSC 7577, as Rex has it): each terminal's
+  shell gets a token of its own (`OSC7577_TOKEN`), and a program in it
+  that says the command to bring it back -- signed with the token, so
+  output from a file or a remote host cannot -- is kept with the
+  terminal in the session's dump (the user's alone), when the session's
+  `Resume.programs` names it (claude and codex unless set; off keeps
+  none). A genuine report of another, or of a process not the user's or
+  not on that terminal, clears it; its process gone when the shell
+  prompts again clears it, and so does the program saying so. When the
+  daemon starts the session again, at the restored shell's first prompt
+  (or two seconds on, a shell that marks none) `apex resume TICKET` is
+  typed there: the ticket, the user's alone, holds the command and its
+  directory, and `apex resume` goes there, says what it resumes, takes
+  the record as its own, and becomes the program, its arguments never a
+  shell's to read. apex's hooks report Claude Code and Codex at their
+  session's start -- `claude [its options] --resume ID`, `codex resume
+  [its options] ID`, a prompt, a resume or a worktree it was started
+  with left off, print mode and `codex exec` not reported -- and clear
+  when the user ends the session, not when its terminal goes.
 - **Restarting the server** (`restart.rs`), as Manifold offers: an
   attach that finds this machine's server of another version (which
   this Apex cannot talk to) offers, once a launch, to restart it, and

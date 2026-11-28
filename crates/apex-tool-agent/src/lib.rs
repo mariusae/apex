@@ -70,6 +70,7 @@ pub mod history;
 pub mod hook;
 pub mod install;
 pub mod page;
+pub mod resume;
 pub mod transcript;
 pub mod vcs;
 pub mod win;
