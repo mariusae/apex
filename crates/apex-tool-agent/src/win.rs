@@ -761,12 +761,31 @@ impl Pane {
 
     /// Sessions over are cleaned away, log and all; those whose
     /// process is gone were found so by `check_alive`.
+    /// A log written to since it was read is not cleaned away: an agent
+    /// resumed (`claude --resume`, as a restored terminal starts it again)
+    /// keeps its session, and its `SessionStart` can land in the log of
+    /// the process that ended as the tool reads the others -- the two
+    /// start together when the daemon does. What was written is taken
+    /// as any is, and the agent, begun again, stays.
     fn sweep(&mut self) {
         let over: Vec<String> = self.agents.map.values().filter(|a| a.state == State::Ended).map(|a| a.session.clone()).collect();
         for s in over {
-            let _ = std::fs::remove_file(event::log_path(&self.opts.dir, &s));
-            self.logs.remove(&s);
-            let _ = self.ended(&s);
+            match self.logs.get_mut(&s).map(|t| t.take_away()) {
+                Some(event::Swept::Kept(lines)) => {
+                    for ev in event::events(&lines) {
+                        let was = self.agents.get(&ev.session).map(|a| a.state);
+                        self.agents.apply(&ev);
+                        let _ = self.heard(&ev, was);
+                    }
+                }
+                swept => {
+                    if swept.is_none() {
+                        let _ = std::fs::remove_file(event::log_path(&self.opts.dir, &s));
+                    }
+                    self.logs.remove(&s);
+                    let _ = self.ended(&s);
+                }
+            }
         }
     }
 

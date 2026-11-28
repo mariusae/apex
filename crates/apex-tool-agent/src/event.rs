@@ -189,6 +189,51 @@ impl Tail {
     }
 }
 
+/// What became of a log taken away (`Tail::take_away`).
+#[derive(Debug, PartialEq)]
+pub enum Swept {
+    /// Removed: nothing had been written to it since it was last read.
+    Gone,
+    /// Kept, for these lines written since: an agent's word come as its
+    /// log went -- a resumed agent's `SessionStart`, its process started
+    /// again as the last one's log was ending.
+    Kept(Vec<String>),
+}
+
+impl Tail {
+    /// The log removed, unless something was written to it since it was
+    /// last read. It is moved aside first, so that nothing a hook writes
+    /// while it goes is lost: a hook writing after the move makes a new
+    /// log, which is kept, after the old one's lines when the old one is
+    /// kept too.
+    pub fn take_away(&mut self) -> Swept {
+        let path = self.path.clone();
+        let mut name = path.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+        name.push(".swept");
+        let aside = path.with_file_name(name);
+        if std::fs::rename(&path, &aside).is_err() {
+            return Swept::Gone; // not there: nothing to keep
+        }
+        self.path = aside.clone();
+        let lines = self.lines();
+        self.path = path.clone();
+        if lines.iter().all(|l| l.trim().is_empty()) {
+            let _ = std::fs::remove_file(&aside);
+            return Swept::Gone;
+        }
+        // back in its place, with what a hook began again meanwhile after it
+        let read = std::fs::metadata(&aside).map(|m| m.len()).unwrap_or(0);
+        if let Ok(new) = std::fs::read(&path) {
+            if let Ok(mut f) = std::fs::OpenOptions::new().append(true).open(&aside) {
+                let _ = f.write_all(&new);
+            }
+        }
+        let _ = std::fs::rename(&aside, &path);
+        self.read = read;
+        Swept::Kept(lines)
+    }
+}
+
 /// The events in `lines`, the lines that are not events passed over.
 pub fn events(lines: &[String]) -> Vec<Event> {
     lines.iter().filter_map(|l| serde_json::from_str::<Event>(l).ok()).collect()
@@ -222,6 +267,35 @@ mod tests {
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].event, "Stop");
         assert_eq!(session_of(&t.path).as_deref(), Some("s1"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn a_log_taken_away_is_kept_for_what_was_written_since_it_was_read() {
+        let dir = std::env::temp_dir().join(format!("apex-tool-agent-take-away-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let ev = |e: &str| Event { ms: 1, agent: "claude".into(), event: e.into(), session: "s1".into(), ..Event::default() };
+        let path = log_path(&dir, "s1");
+        // all of it read: removed, and nothing left beside it
+        append(&dir, &ev("SessionEnd")).unwrap();
+        let mut t = Tail::new(path.clone());
+        t.lines();
+        assert_eq!(t.take_away(), Swept::Gone);
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+        // the agent resumed as it went: its SessionStart, unread, kept
+        append(&dir, &ev("SessionEnd")).unwrap();
+        let mut t = Tail::new(path.clone());
+        t.lines();
+        append(&dir, &ev("SessionStart")).unwrap();
+        match t.take_away() {
+            Swept::Kept(lines) => assert_eq!(events(&lines).iter().map(|e| e.event.as_str()).collect::<Vec<_>>(), ["SessionStart"]),
+            Swept::Gone => panic!("the SessionStart went with it"),
+        }
+        // the log whole, in its place, and read up to where it was
+        assert_eq!(events(&std::fs::read_to_string(&path).unwrap().lines().map(String::from).collect::<Vec<_>>()).len(), 2);
+        assert!(t.lines().is_empty());
+        append(&dir, &ev("UserPromptSubmit")).unwrap();
+        assert_eq!(events(&t.lines())[0].event, "UserPromptSubmit");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "nothing left aside");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
